@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+      - 'feat/**'
+  schedule:
+    - cron: '0 0 * * 0' # at midnight of each sunday
+  workflow_dispatch:
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    steps:
+      # - uses: de-vri-es/setup-git-credentials@v2
+      #   with:
+      #     credentials: ${{secrets.GH_ACTION_PAT_CREDENTIALS }}
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@just
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: just ci
