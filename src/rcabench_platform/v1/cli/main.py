@@ -2,6 +2,7 @@ from ..utils.env import getenv_bool
 from ..logging import logger
 
 import multiprocessing
+import importlib
 
 from tqdm.auto import tqdm
 import typer
@@ -22,6 +23,15 @@ def main():
     )
 
 
-@app.command()
-def self_test() -> None:
-    logger.info("Hello from rcabench-platform!")
+def with_subcommands() -> typer.Typer:
+    module_map = {
+        "self_": "self",
+    }
+
+    for module_name, subcommand in module_map.items():
+        module = importlib.import_module(f".{module_name}", package=__package__)
+        sub_app = getattr(module, "app")
+        assert isinstance(sub_app, typer.Typer)
+        app.add_typer(sub_app, name=subcommand)
+
+    return app

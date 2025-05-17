@@ -91,5 +91,5 @@ We have the following localhost services running in the background:
 Test if the environment is set up correctly by running the following command:
 
 ```bash
-./main.py self-test
+./main.py self test
 ```
