@@ -85,3 +85,11 @@ docker compose down
 
 We have the following localhost services running in the background:
 + [neo4j](https://neo4j.com/): for graph visualization
+
+### Commands
+
+Test if the environment is set up correctly by running the following command:
+
+```bash
+./main.py self-test
+```

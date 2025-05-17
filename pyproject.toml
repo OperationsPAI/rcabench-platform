@@ -7,7 +7,11 @@ authors = [
     { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "loguru>=0.7.3",
+    "tqdm>=4.67.1",
+    "typer>=0.15.4",
+]
 
 [build-system]
 requires = ["hatchling"]
