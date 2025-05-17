@@ -16,7 +16,6 @@ def main():
     logger.remove()
     logger.add(
         lambda msg: tqdm.write(msg, end=""),
-        format="<lvl>[{time}][{elapsed}][{level}][{file}:{line}][{function}]</lvl>: {message}",
         colorize=getenv_bool("LOGURU_COLORIZE", default=True),
         enqueue=True,
         context=multiprocessing.get_context("spawn"),
