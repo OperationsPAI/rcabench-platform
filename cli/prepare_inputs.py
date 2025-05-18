@@ -1,9 +1,11 @@
 #!/usr/bin/env -S uv run -s
+from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
 from rcabench_platform.v1.utils.fmap import fmap_threadpool
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.logging import timeit
 
 from pathlib import Path
+from typing import Any
 import subprocess
 import functools
 import shutil
@@ -226,6 +228,19 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
     convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
 
 
+@timeit()
+def query_dataset(name: str) -> dict[str, Any] | None:
+    sdk = CustomRCABenchSDK()
+
+    try:
+        resp = sdk.query_dataset(name)
+    except:
+        logger.error(f"Failed to query dataset: {name}")
+        return None
+
+    return resp
+
+
 @app.command()
 @timeit()
 def run():
@@ -311,6 +326,11 @@ def run():
             "ABNORMAL_END": str(abnormal_end),
         }
         json.dump(env_params, f, indent=4)
+
+    dataset_info = query_dataset(output_path.name)
+    if dataset_info:
+        with open(tempdir / "info.json", "w") as f:
+            json.dump(dataset_info, f, indent=4)
 
     # Move the downloaded files to the output directory
     for file in tempdir.iterdir():
