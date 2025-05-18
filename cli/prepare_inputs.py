@@ -230,18 +230,9 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
     convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
 
 
-@timeit()
-def query_dataset(name: str) -> dict[str, Any] | None:
-    sdk = CustomRCABenchSDK()
-
-    try:
-        resp = sdk.query_dataset(name)
-    except Exception:
-        traceback.print_exc()
-        logger.error(f"Failed to query dataset: {name}")
-        return None
-
-    return resp
+# @timeit()
+# def query_injection_config(name: str) -> dict[str, Any] | None:
+#     return None  # TODO
 
 
 @timeit()
@@ -341,9 +332,9 @@ def run():
     }
     save_json(env_params, path=tempdir / "env.json")
 
-    dataset_info = query_dataset(output_path.name)
-    if dataset_info:
-        save_json(dataset_info, path=tempdir / "info.json")
+    # injection_config = query_injection_config(output_path.name)
+    # if injection_config:
+    #     save_json(injection_config, path=tempdir / "injection_config.json")
 
     kube_info = query_kube_info(namespace)
     if kube_info:
