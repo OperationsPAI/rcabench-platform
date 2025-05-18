@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "clickhouse-connect>=0.8.17",
+    "kubernetes>=32.0.1",
     "loguru>=0.7.3",
     "marimo[recommended]>=0.13.10",
     "pandas>=2.2.3",
@@ -53,6 +54,7 @@ exclude = [ #
 dev = [
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
+    "kubernetes-stubs-elephant-fork>=32.0.1",
     "pyright>=1.1.400",
     "ruff>=0.11.10",
 ]
