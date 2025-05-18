@@ -47,7 +47,7 @@ def timeit(*, log_level: str = "DEBUG", log_args: bool | set[str] = True):
                 if isinstance(log_args, set):
                     args_dict = {k: v for k, v in args_dict.items() if k in log_args}
 
-                args_message = "\n" + pformat(args_dict)
+                args_message = "\n<magenta>" + pformat(args_dict) + "</magenta>"
             else:
                 args_message = ""
 
@@ -58,8 +58,8 @@ def timeit(*, log_level: str = "DEBUG", log_args: bool | set[str] = True):
             end = datetime.datetime.now()
 
             duration = end - start
-
-            logger_.log(log_level, f"exit  {func_name} duration={duration.total_seconds():.6f}s{args_message}")
+            duration_message = f"duration=<yellow>{duration.total_seconds():.6f}s</yellow>"
+            logger_.log(log_level, f"exit  {func_name} {duration_message}{args_message}")
 
             return result
 
