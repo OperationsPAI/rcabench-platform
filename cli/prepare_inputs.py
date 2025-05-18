@@ -357,6 +357,16 @@ def run():
         elif file.suffix == ".json":
             shutil.copyfile(file, output_path / file.name)
 
+    legacy_links = [
+        ("normal_metrics_sum.csv", "normal_metric_sum.csv"),
+        ("abnormal_metrics_sum.csv", "abnormal_metric_sum.csv"),
+    ]
+
+    for new_name, old_name in legacy_links:
+        old_path = tempdir / old_name
+        old_path.symlink_to(new_name, target_is_directory=False)
+
+    logger.debug("compressing files")
     other_files = list(os.listdir(tempdir))
     subprocess.run(["tar", "-czf", "data.tar.gz", *other_files], check=True, cwd=tempdir)
 
