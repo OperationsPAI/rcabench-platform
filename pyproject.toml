@@ -13,6 +13,7 @@ dependencies = [
     "marimo[recommended]>=0.13.10",
     "pandas>=2.2.3",
     "pyarrow>=20.0.0",
+    "requests>=2.32.3",
     "tqdm>=4.67.1",
     "typer>=0.15.4",
 ]

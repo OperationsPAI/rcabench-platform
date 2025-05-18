@@ -25,6 +25,7 @@ def main():
 def with_subcommands() -> typer.Typer:
     module_map = {
         "self_": "self",
+        "rcabench_": "rcabench",
     }
 
     for module_name, subcommand in module_map.items():
