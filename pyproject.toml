@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "clickhouse-connect>=0.8.17",
     "loguru>=0.7.3",
+    "marimo[recommended]>=0.13.10",
     "pandas>=2.2.3",
     "pyarrow>=20.0.0",
     "tqdm>=4.67.1",
@@ -49,6 +50,8 @@ exclude = [ #
 
 [dependency-groups]
 dev = [
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.7",
     "pyright>=1.1.400",
     "ruff>=0.11.10",
 ]
