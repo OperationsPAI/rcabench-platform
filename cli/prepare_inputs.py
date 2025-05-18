@@ -166,7 +166,7 @@ def query_logs(save_path: Path, namespace: str, start_time: str, end_time: str):
         ServiceName,
         Body,
         toJSONString(ResourceAttributes) AS ResourceAttributes,
-        LogAttributes
+        toJSONString(LogAttributes) as LogAttributes
     FROM
         otel_logs ol
     WHERE
@@ -193,7 +193,7 @@ def query_traces(save_path: Path, namespace: str, start_time: str, end_time: str
         SpanKind,
         ServiceName,
         toJSONString(ResourceAttributes) AS ResourceAttributes,
-        SpanAttributes,
+        toJSONString(SpanAttributes) AS SpanAttributes,
         Duration,
         StatusCode,
         StatusMessage
