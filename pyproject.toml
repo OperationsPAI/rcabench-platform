@@ -8,7 +8,10 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "clickhouse-connect>=0.8.17",
     "loguru>=0.7.3",
+    "pandas>=2.2.3",
+    "pyarrow>=20.0.0",
     "tqdm>=4.67.1",
     "typer>=0.15.4",
 ]
