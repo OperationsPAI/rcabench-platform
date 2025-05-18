@@ -1,15 +1,17 @@
 #!/usr/bin/env -S uv run -s
+from rcabench_platform.v1.clients.k8s import download_kube_info
 from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
-from rcabench_platform.v1.utils.fmap import fmap_threadpool
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.logging import timeit
+from rcabench_platform.v1.utils.fmap import fmap_processpool
+from rcabench_platform.v1.utils.serde import save_json
 
 from pathlib import Path
 from typing import Any
 import subprocess
+import traceback
 import functools
 import shutil
-import json
 import os
 
 from clickhouse_connect.driver.client import Client
@@ -234,11 +236,24 @@ def query_dataset(name: str) -> dict[str, Any] | None:
 
     try:
         resp = sdk.query_dataset(name)
-    except:
+    except Exception:
+        traceback.print_exc()
         logger.error(f"Failed to query dataset: {name}")
         return None
 
     return resp
+
+
+@timeit()
+def query_kube_info(namespace: str) -> dict[str, Any] | None:
+    try:
+        resp = download_kube_info(ns=namespace)
+    except Exception:
+        traceback.print_exc()
+        logger.error(f"Failed to query kube info: {namespace}")
+        return None
+
+    return resp.to_dict()
 
 
 @app.command()
@@ -314,23 +329,25 @@ def run():
             save_path = tempdir / f"{prefix}_{query_name}.parquet"
             tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
 
-    fmap_threadpool(tasks, parallel=8)
+    fmap_processpool(tasks, parallel=8)
 
-    with open(tempdir / "env.json", "w") as f:
-        env_params = {
-            "NAMESPACE": namespace,
-            "TIMEZONE": timezone,
-            "NORMAL_START": str(normal_start),
-            "NORMAL_END": str(normal_end),
-            "ABNORMAL_START": str(abnormal_start),
-            "ABNORMAL_END": str(abnormal_end),
-        }
-        json.dump(env_params, f, indent=4)
+    env_params = {
+        "NAMESPACE": namespace,
+        "TIMEZONE": timezone,
+        "NORMAL_START": str(normal_start),
+        "NORMAL_END": str(normal_end),
+        "ABNORMAL_START": str(abnormal_start),
+        "ABNORMAL_END": str(abnormal_end),
+    }
+    save_json(env_params, path=tempdir / "env.json")
 
     dataset_info = query_dataset(output_path.name)
     if dataset_info:
-        with open(tempdir / "info.json", "w") as f:
-            json.dump(dataset_info, f, indent=4)
+        save_json(dataset_info, path=tempdir / "info.json")
+
+    kube_info = query_kube_info(namespace)
+    if kube_info:
+        save_json(kube_info, path=tempdir / "k8s.json")
 
     # Move the downloaded files to the output directory
     for file in tempdir.iterdir():
