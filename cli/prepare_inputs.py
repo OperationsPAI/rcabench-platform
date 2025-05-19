@@ -1,7 +1,11 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v1.clients.k8s import download_kube_info
 from rcabench_platform.v1.cli.main import app, logger
+
+from rcabench_platform.v1.clients.clickhouse_ import ClickHouseClient, get_clickhouse_client
+from rcabench_platform.v1.clients.k8s import download_kube_info
+from rcabench_platform.v1.clients.minio_ import get_minio_client
 from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
+
 from rcabench_platform.v1.logging import timeit
 from rcabench_platform.v1.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v1.utils.serde import save_json
@@ -14,26 +18,9 @@ import tempfile
 import shutil
 import os
 
-from clickhouse_connect.driver.client import Client
-import clickhouse_connect
+
 import pandas as pd
 import minio
-
-
-def get_clickhouse_client() -> Client:
-    host = "10.10.10.58"
-    username = "default"
-    password = "password"
-    database = "default"
-
-    client = clickhouse_connect.get_client(
-        host=host,
-        username=username,
-        password=password,
-        database=database,
-    )
-
-    return client
 
 
 @app.command()
@@ -53,16 +40,6 @@ def convert_to_clickhouse_time(unix_timestamp: int, tz: str) -> str:
     )
 
 
-def get_minio_client() -> minio.Minio:
-    client = minio.Minio(
-        endpoint="10.10.10.38:9000",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        secure=False,
-    )
-    return client
-
-
 @app.command()
 @timeit()
 def ping_minio() -> None:
@@ -71,7 +48,7 @@ def ping_minio() -> None:
     logger.info("minio is reachable")
 
 
-def query_parquet_stream(client: Client, query: str, save_path: Path):
+def query_parquet_stream(client: ClickHouseClient, query: str, save_path: Path):
     assert save_path.suffix == ".parquet", "save_path must be a parquet file"
     assert save_path.parent.is_dir(), "save_path parent must be a directory"
 
