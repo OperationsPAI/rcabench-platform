@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "clickhouse-connect>=0.8.17",
     "kubernetes>=32.0.1",
