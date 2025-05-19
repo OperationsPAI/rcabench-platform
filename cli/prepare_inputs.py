@@ -3,7 +3,7 @@ from rcabench_platform.v1.clients.k8s import download_kube_info
 from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.utils.fmap import fmap_processpool
+from rcabench_platform.v1.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v1.utils.serde import save_json
 
 from pathlib import Path
@@ -11,15 +11,16 @@ from typing import Any
 import subprocess
 import traceback
 import functools
+import tempfile
 import shutil
 import os
 
 from clickhouse_connect.driver.client import Client
 import clickhouse_connect
 import pandas as pd
+import minio
 
 
-@timeit()
 def get_clickhouse_client() -> Client:
     host = "10.10.10.58"
     username = "default"
@@ -38,7 +39,7 @@ def get_clickhouse_client() -> Client:
 
 @app.command()
 @timeit()
-def ping() -> None:
+def ping_clickhouse() -> None:
     with get_clickhouse_client() as client:
         assert client.ping(), "clickhouse should be reachable"
         logger.info("clickhouse is reachable")
@@ -51,6 +52,24 @@ def convert_to_clickhouse_time(unix_timestamp: int, tz: str) -> str:
         .astimezone(tz)  # type:ignore
         .strftime("%Y-%m-%d %H:%M:%S")
     )
+
+
+def get_minio_client() -> minio.Minio:
+    client = minio.Minio(
+        endpoint="10.10.10.38:9000",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        secure=False,
+    )
+    return client
+
+
+@app.command()
+@timeit()
+def ping_minio() -> None:
+    client = get_minio_client()
+    assert client.bucket_exists("rcabench-dataset"), "minio should be reachable"
+    logger.info("minio is reachable")
 
 
 def query_parquet_stream(client: Client, query: str, save_path: Path):
@@ -250,7 +269,8 @@ def query_kube_info(namespace: str) -> dict[str, Any] | None:
 @app.command()
 @timeit()
 def run():
-    ping()
+    ping_clickhouse()
+    ping_minio()
 
     # Prepare the output directory
     output_path = Path(os.environ["OUTPUT_PATH"])
@@ -296,79 +316,87 @@ def run():
     logger.debug(f"ch_normal_time_range:   `{ch_normal_time_range}`")
     logger.debug(f"ch_abnormal_time_range: `{ch_abnormal_time_range}`")
 
-    # Create a temporary directory for downloading
-    tempdir = output_path / ".downloading"
-    if tempdir.exists():
-        shutil.rmtree(tempdir)
-    tempdir.mkdir()
+    with tempfile.TemporaryDirectory() as tempdir:
+        tempdir = Path(tempdir)
 
-    # Download the data
-    prefixes = ["normal", "abnormal"]
-    time_ranges = [ch_normal_time_range, ch_abnormal_time_range]
-    queries = {
-        "metrics": query_metrics,
-        "metrics_sum": query_metrics_sum,
-        "metrics_histogram": query_metrics_histogram,
-        "logs": query_logs,
-        "traces": query_traces,
-        "trace_id_ts": query_trace_id_ts,
-    }
+        # Download the data
+        prefixes = ["normal", "abnormal"]
+        time_ranges = [ch_normal_time_range, ch_abnormal_time_range]
+        queries = {
+            "metrics": query_metrics,
+            "metrics_sum": query_metrics_sum,
+            "metrics_histogram": query_metrics_histogram,
+            "logs": query_logs,
+            "traces": query_traces,
+            "trace_id_ts": query_trace_id_ts,
+        }
+
+        tasks = []
+        for prefix, time_range in zip(prefixes, time_ranges):
+            for query_name, query_func in queries.items():
+                save_path = tempdir / f"{prefix}_{query_name}.parquet"
+                tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
+
+        fmap_processpool(tasks, parallel=8)
+
+        env_params = {
+            "NAMESPACE": namespace,
+            "TIMEZONE": timezone,
+            "NORMAL_START": str(normal_start),
+            "NORMAL_END": str(normal_end),
+            "ABNORMAL_START": str(abnormal_start),
+            "ABNORMAL_END": str(abnormal_end),
+        }
+        save_json(env_params, path=tempdir / "env.json")
+
+        # injection_config = query_injection_config(output_path.name)
+        # if injection_config:
+        #     save_json(injection_config, path=tempdir / "injection_config.json")
+
+        kube_info = query_kube_info(namespace)
+        if kube_info:
+            save_json(kube_info, path=tempdir / "k8s.json")
+
+        legacy_links = [
+            ("normal_metrics_sum.csv", "normal_metric_sum.csv"),
+            ("abnormal_metrics_sum.csv", "abnormal_metric_sum.csv"),
+        ]
+
+        for new_name, old_name in legacy_links:
+            old_path = tempdir / old_name
+            old_path.symlink_to(new_name, target_is_directory=False)
+
+        logger.debug("compressing files")
+        other_files = list(x for x in os.listdir(tempdir) if x.endswith(".csv") or x.endswith(".json"))
+        subprocess.run(["tar", "-czf", "data.tar.gz", *other_files], check=True, cwd=tempdir)
+
+        minio_upload_dir(tempdir, key_prefix=output_path.name)
+
+        for file in tempdir.iterdir():
+            if file.suffix == ".csv":
+                continue
+            shutil.move(file, output_path / file.name)
+
+
+@timeit()
+def minio_upload_file(client: minio.Minio, bucket_name: str, key: str, file_path: str):
+    logger.debug(f"Uploading {file_path} to minio://{bucket_name}/{key}")
+    client.fput_object(bucket_name, key, file_path)
+
+
+@timeit()
+def minio_upload_dir(tempdir: Path, *, key_prefix: str):
+    minio_client = get_minio_client()
+    bucket_name = "rcabench-dataset"
 
     tasks = []
-    for prefix, time_range in zip(prefixes, time_ranges):
-        for query_name, query_func in queries.items():
-            save_path = tempdir / f"{prefix}_{query_name}.parquet"
-            tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
-
-    fmap_processpool(tasks, parallel=8)
-
-    env_params = {
-        "NAMESPACE": namespace,
-        "TIMEZONE": timezone,
-        "NORMAL_START": str(normal_start),
-        "NORMAL_END": str(normal_end),
-        "ABNORMAL_START": str(abnormal_start),
-        "ABNORMAL_END": str(abnormal_end),
-    }
-    save_json(env_params, path=tempdir / "env.json")
-
-    # injection_config = query_injection_config(output_path.name)
-    # if injection_config:
-    #     save_json(injection_config, path=tempdir / "injection_config.json")
-
-    kube_info = query_kube_info(namespace)
-    if kube_info:
-        save_json(kube_info, path=tempdir / "k8s.json")
-
-    # Move the downloaded files to the output directory
     for file in tempdir.iterdir():
-        assert file.is_file()
-        if file.suffix == ".parquet":
-            file.rename(output_path / file.name)
-        elif file.suffix == ".json":
-            shutil.copyfile(file, output_path / file.name)
+        if file.suffix == ".csv":
+            continue
+        key = f"{key_prefix}/{file.name}"
+        tasks.append(functools.partial(minio_upload_file, minio_client, bucket_name, key, str(file)))
 
-    legacy_links = [
-        ("normal_metrics_sum.csv", "normal_metric_sum.csv"),
-        ("abnormal_metrics_sum.csv", "abnormal_metric_sum.csv"),
-    ]
-
-    for new_name, old_name in legacy_links:
-        old_path = tempdir / old_name
-        old_path.symlink_to(new_name, target_is_directory=False)
-
-    logger.debug("compressing files")
-    other_files = list(os.listdir(tempdir))
-    subprocess.run(["tar", "-czf", "data.tar.gz", *other_files], check=True, cwd=tempdir)
-
-    for file in tempdir.iterdir():
-        if file.suffix == ".gz":
-            file.rename(output_path / file.name)
-        else:
-            file.unlink()
-
-    # Remove the temporary directory
-    tempdir.rmdir()
+    fmap_threadpool(tasks, parallel=8)
 
 
 @app.command()

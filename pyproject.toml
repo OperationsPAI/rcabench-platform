@@ -12,6 +12,7 @@ dependencies = [
     "kubernetes>=32.0.1",
     "loguru>=0.7.3",
     "marimo[recommended]>=0.13.10",
+    "minio>=7.2.15",
     "pandas>=2.2.3",
     "pyarrow>=20.0.0",
     "requests>=2.32.3",
