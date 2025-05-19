@@ -1,8 +1,7 @@
-#!/usr/bin/env -S uv run -s
-from rcabench_platform.v1.cli.main import app, logger
-from rcabench_platform.v1.clients.minio_ import get_minio_client
-from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.utils.fmap import fmap_threadpool
+from ..cli.main import app, logger
+from ..clients.minio_ import get_minio_client
+from ..logging import timeit
+from ..utils.fmap import fmap_threadpool
 
 from pprint import pprint
 from pathlib import Path
