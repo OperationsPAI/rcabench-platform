@@ -240,7 +240,7 @@ def run():
     output_path = Path(os.environ["OUTPUT_PATH"])
     logger.debug(f"output_path: `{output_path}`")
 
-    output_path.mkdir(exist_ok=True)
+    output_path.mkdir(parents=True, exist_ok=True)
 
     # Check input parameters
     namespace = os.environ["NAMESPACE"]
@@ -280,51 +280,45 @@ def run():
     logger.debug(f"ch_normal_time_range:   `{ch_normal_time_range}`")
     logger.debug(f"ch_abnormal_time_range: `{ch_abnormal_time_range}`")
 
-    with tempfile.TemporaryDirectory() as tempdir:
-        tempdir = Path(tempdir)
+    # Download the data
+    prefixes = ["normal", "abnormal"]
+    time_ranges = [ch_normal_time_range, ch_abnormal_time_range]
+    queries = {
+        "metrics": query_metrics,
+        "metrics_sum": query_metrics_sum,
+        "metrics_histogram": query_metrics_histogram,
+        "logs": query_logs,
+        "traces": query_traces,
+        "trace_id_ts": query_trace_id_ts,
+    }
 
-        # Download the data
-        prefixes = ["normal", "abnormal"]
-        time_ranges = [ch_normal_time_range, ch_abnormal_time_range]
-        queries = {
-            "metrics": query_metrics,
-            "metrics_sum": query_metrics_sum,
-            "metrics_histogram": query_metrics_histogram,
-            "logs": query_logs,
-            "traces": query_traces,
-            "trace_id_ts": query_trace_id_ts,
-        }
+    tasks = []
+    for prefix, time_range in zip(prefixes, time_ranges):
+        for query_name, query_func in queries.items():
+            save_path = output_path / f"{prefix}_{query_name}.parquet"
+            tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
 
-        tasks = []
-        for prefix, time_range in zip(prefixes, time_ranges):
-            for query_name, query_func in queries.items():
-                save_path = tempdir / f"{prefix}_{query_name}.parquet"
-                tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
+    fmap_processpool(tasks, parallel=8)
 
-        fmap_processpool(tasks, parallel=8)
+    env_params = {
+        "NAMESPACE": namespace,
+        "TIMEZONE": timezone,
+        "NORMAL_START": str(normal_start),
+        "NORMAL_END": str(normal_end),
+        "ABNORMAL_START": str(abnormal_start),
+        "ABNORMAL_END": str(abnormal_end),
+    }
+    save_json(env_params, path=output_path / "env.json")
 
-        env_params = {
-            "NAMESPACE": namespace,
-            "TIMEZONE": timezone,
-            "NORMAL_START": str(normal_start),
-            "NORMAL_END": str(normal_end),
-            "ABNORMAL_START": str(abnormal_start),
-            "ABNORMAL_END": str(abnormal_end),
-        }
-        save_json(env_params, path=tempdir / "env.json")
+    injection = query_injection(output_path.name)
+    if injection:
+        save_json(injection, path=output_path / "injection.json")
 
-        injection = query_injection(output_path.name)
-        if injection:
-            save_json(injection, path=tempdir / "injection.json")
+    kube_info = query_kube_info(namespace)
+    if kube_info:
+        save_json(kube_info, path=output_path / "k8s.json")
 
-        kube_info = query_kube_info(namespace)
-        if kube_info:
-            save_json(kube_info, path=tempdir / "k8s.json")
-
-        minio_upload_dir(tempdir, key_prefix=output_path.name)
-
-        for file in tempdir.iterdir():
-            shutil.move(file, output_path / file.name)
+    minio_upload_dir(output_path, key_prefix=output_path.name)
 
 
 @timeit()
