@@ -1,6 +1,5 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v1.clients.k8s import download_kube_info
-from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.logging import timeit
 from rcabench_platform.v1.utils.fmap import fmap_processpool, fmap_threadpool
@@ -8,7 +7,6 @@ from rcabench_platform.v1.utils.serde import save_json
 
 from pathlib import Path
 from typing import Any
-import subprocess
 import traceback
 import functools
 import tempfile
@@ -84,15 +82,6 @@ def query_parquet_stream(client: Client, query: str, save_path: Path):
 
 
 @timeit()
-def convert_parquet_to_csv(parquet_path: Path, csv_path: Path):
-    assert parquet_path.suffix == ".parquet", "parquet_path must be a parquet file"
-    assert csv_path.suffix == ".csv", "csv_path must be a csv file"
-
-    df = pd.read_parquet(parquet_path)
-    df.to_csv(csv_path, index=False)
-
-
-@timeit()
 def query_metrics(save_path: Path, namespace: str, start_time: str, end_time: str):
     query = f"""
     SELECT
@@ -113,8 +102,6 @@ def query_metrics(save_path: Path, namespace: str, start_time: str, end_time: st
 
     with get_clickhouse_client() as client:
         query_parquet_stream(client, query, save_path)
-
-    convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
 
 
 @timeit()
@@ -138,8 +125,6 @@ def query_metrics_sum(save_path: Path, namespace: str, start_time: str, end_time
 
     with get_clickhouse_client() as client:
         query_parquet_stream(client, query, save_path)
-
-    convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
 
 
 @timeit()
@@ -169,8 +154,6 @@ def query_metrics_histogram(save_path: Path, namespace: str, start_time: str, en
     with get_clickhouse_client() as client:
         query_parquet_stream(client, query, save_path)
 
-    convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
-
 
 @timeit()
 def query_logs(save_path: Path, namespace: str, start_time: str, end_time: str):
@@ -195,8 +178,6 @@ def query_logs(save_path: Path, namespace: str, start_time: str, end_time: str):
 
     with get_clickhouse_client() as client:
         query_parquet_stream(client, query, save_path)
-
-    convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
 
 
 @timeit()
@@ -226,8 +207,6 @@ def query_traces(save_path: Path, namespace: str, start_time: str, end_time: str
     with get_clickhouse_client() as client:
         query_parquet_stream(client, query, save_path)
 
-    convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
-
 
 @timeit()
 def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time: str):
@@ -245,8 +224,6 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
     with get_clickhouse_client() as client:
         query_parquet_stream(client, query, save_path)
-
-    convert_parquet_to_csv(save_path, save_path.with_suffix(".csv"))
 
 
 # @timeit()
@@ -357,30 +334,14 @@ def run():
         if kube_info:
             save_json(kube_info, path=tempdir / "k8s.json")
 
-        legacy_links = [
-            ("normal_metrics_sum.csv", "normal_metric_sum.csv"),
-            ("abnormal_metrics_sum.csv", "abnormal_metric_sum.csv"),
-        ]
-
-        for new_name, old_name in legacy_links:
-            old_path = tempdir / old_name
-            old_path.symlink_to(new_name, target_is_directory=False)
-
-        logger.debug("compressing files")
-        other_files = list(x for x in os.listdir(tempdir) if x.endswith(".csv") or x.endswith(".json"))
-        subprocess.run(["tar", "-czf", "data.tar.gz", *other_files], check=True, cwd=tempdir)
-
         minio_upload_dir(tempdir, key_prefix=output_path.name)
 
         for file in tempdir.iterdir():
-            if file.suffix == ".csv":
-                continue
             shutil.move(file, output_path / file.name)
 
 
 @timeit()
 def minio_upload_file(client: minio.Minio, bucket_name: str, key: str, file_path: str):
-    logger.debug(f"Uploading {file_path} to minio://{bucket_name}/{key}")
     client.fput_object(bucket_name, key, file_path)
 
 
@@ -391,8 +352,6 @@ def minio_upload_dir(tempdir: Path, *, key_prefix: str):
 
     tasks = []
     for file in tempdir.iterdir():
-        if file.suffix == ".csv":
-            continue
         key = f"{key_prefix}/{file.name}"
         tasks.append(functools.partial(minio_upload_file, minio_client, bucket_name, key, str(file)))
 
