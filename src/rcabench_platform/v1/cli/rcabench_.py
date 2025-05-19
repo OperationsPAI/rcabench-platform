@@ -24,6 +24,15 @@ def query_dataset(name: str):
 
 @app.command()
 @timeit()
+def query_injection(name: str):
+    sdk = CustomRCABenchSDK()
+
+    output = sdk.query_injection(name=name)
+    pprint(output)
+
+
+@app.command()
+@timeit()
 def kube_info(save_path: Path = TEMP / "kube_info.json"):
     kube_info = download_kube_info(ns="ts1")
     save_json(kube_info.to_dict(), path=save_path)
