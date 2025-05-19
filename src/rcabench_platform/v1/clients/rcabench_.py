@@ -3,8 +3,14 @@ from ..logging import logger
 from typing import Any, Literal
 
 import requests
+import rcabench.rcabench
+
 
 BASE_URL = "http://10.10.10.220:32080"
+
+
+def get_rcabench_sdk() -> rcabench.rcabench.RCABenchSDK:
+    return rcabench.rcabench.RCABenchSDK(base_url=BASE_URL)
 
 
 class CustomRCABenchSDK:
