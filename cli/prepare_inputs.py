@@ -1,6 +1,7 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v1.clients.k8s import download_kube_info
 from rcabench_platform.v1.cli.main import app, logger
+from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
 from rcabench_platform.v1.logging import timeit
 from rcabench_platform.v1.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v1.utils.serde import save_json
@@ -226,9 +227,18 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
         query_parquet_stream(client, query, save_path)
 
 
-# @timeit()
-# def query_injection_config(name: str) -> dict[str, Any] | None:
-#     return None  # TODO
+@timeit()
+def query_injection(name: str) -> dict[str, Any] | None:
+    sdk = CustomRCABenchSDK()
+
+    try:
+        resp = sdk.query_injection(name=name)
+    except Exception:
+        traceback.print_exc()
+        logger.error(f"Failed to query injection: {name}")
+        return None
+
+    return resp
 
 
 @timeit()
@@ -326,9 +336,9 @@ def run():
         }
         save_json(env_params, path=tempdir / "env.json")
 
-        # injection_config = query_injection_config(output_path.name)
-        # if injection_config:
-        #     save_json(injection_config, path=tempdir / "injection_config.json")
+        injection = query_injection(output_path.name)
+        if injection:
+            save_json(injection, path=tempdir / "injection.json")
 
         kube_info = query_kube_info(namespace)
         if kube_info:
