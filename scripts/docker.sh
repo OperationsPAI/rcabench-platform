@@ -32,6 +32,7 @@ function run() {
 function push() {
     docker push ${IMAGE_FULL}
     docker tag ${IMAGE_FULL} "${IMAGE_PREFIX}/${IMAGE_NAME}:latest"
+    docker push "${IMAGE_PREFIX}/${IMAGE_NAME}:latest"
 }
 
 case $1 in
