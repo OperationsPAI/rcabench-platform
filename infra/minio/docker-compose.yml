@@ -1,10 +1,8 @@
 services:
   minio:
-    image: minio/minio:latest
+    image: minio/minio
     environment:
       MINIO_PROMETHEUS_AUTH_TYPE: public
-      MINIO_PROMETHEUS_URL: http://prometheus:9090
-      MINIO_PROMETHEUS_JOB_ID: minio-job
     volumes:
       - /srv/minio/data:/data
     ports:
@@ -19,6 +17,15 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
       - "9090:9090"
+    restart: always
+
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    ports:
+      - "3000:3000"
     restart: always
 
 networks:
