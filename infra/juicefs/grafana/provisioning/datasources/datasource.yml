@@ -5,4 +5,4 @@ datasources:
     type: prometheus
     uid: DS_PROMETHEUS
     access: proxy
-    url: http://prometheus:9090
+    url: http://localhost:9090
