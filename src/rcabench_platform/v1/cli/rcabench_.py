@@ -1,6 +1,6 @@
 from ..utils.serde import save_json
 from ..clients.k8s import download_kube_info
-from ..folders import TEMP
+from ..spec.data import TEMP
 from ..clients.rcabench_ import CustomRCABenchSDK, get_rcabench_sdk
 from ..logging import logger, timeit
 
