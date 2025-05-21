@@ -15,3 +15,10 @@ def getenv_bool(var_name: str, *, default: bool | None = None) -> bool:
     if env is None and default is not None:
         return default
     return (env or "").lower() in ("true", "1")
+
+
+DEBUG = getenv_bool("DEBUG", default=True)
+
+
+def debug() -> bool:
+    return DEBUG
