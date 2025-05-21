@@ -1,3 +1,4 @@
+from ..spec.data import DATA_ROOT
 from ..clients.rcabench_ import get_rcabench_sdk
 from ..clients.clickhouse_ import get_clickhouse_client
 from ..logging import logger, timeit
@@ -41,5 +42,12 @@ def test() -> None:
     except Exception as e:
         traceback.print_exc()
         logger.error(f"RCABench ping failed: {e}")
+
+    try:
+        DATA_ROOT.stat()
+        logger.info(f"DATA_ROOT is found: {DATA_ROOT}")
+    except Exception as e:
+        traceback.print_exc()
+        logger.error(f"DATA_ROOT is not found: {e}")
 
     logger.info("Hello from rcabench-platform!")

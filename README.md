@@ -71,7 +71,7 @@ cd rcabench-platform
 just dev
 ```
 
-If the basic checks pass, then your python environment is correct and ready for development.
+If the basic checks pass, then your python environment is ready for development.
 
 #### Local development services
 
@@ -85,6 +85,24 @@ docker compose down
 
 We have the following localhost services running in the background:
 + [neo4j](https://neo4j.com/): for graph visualization
+
+#### Link datasets
+
+Mount JuiceFS to your machine:
+
+```bash
+sudo juicefs mount redis://10.10.10.38:6379/1 /mnt/jfs -d --cache-size=1024
+```
+
+See [infra/README.md](infra/README.md) for more details.
+
+Link the datasets to the project directory:
+
+```bash
+mkdir -p data
+cd data
+ln -s /mnt/jfs/rcabench_platform_datasets ./
+```
 
 ### Commands
 
