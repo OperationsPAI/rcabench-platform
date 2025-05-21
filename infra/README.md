@@ -17,8 +17,10 @@ Install JuiceFS client: <https://juicefs.com/docs/zh/community/getting-started/i
 Mount JuiceFS to your machine:
 
 ```bash
-sudo juicefs mount redis://10.10.10.38:6379/1 /mnt/jfs -d
+sudo juicefs mount redis://10.10.10.38:6379/1 /mnt/jfs -d --cache-size=1024
 ```
+
+Note that the cache size is set to 1024MiB instead of the default 100GiB. If your machine has enough disk space, you can set it to `--cache-size=102400` or other values.
 
 Check if the mount was successful:
 
