@@ -1,17 +1,15 @@
 from ..cli.main import app, logger
-from ..clients.minio_ import get_minio_client
 from ..logging import timeit
-from ..utils.fmap import fmap_threadpool
 
 from pprint import pprint
 from pathlib import Path
 from typing import Any
 import importlib.util
-import functools
-import traceback
 import inspect
 import sys
 import os
+
+import pandas as pd
 
 
 @timeit()
@@ -58,38 +56,12 @@ def build_params() -> dict[str, Any]:
         "abnormal_profiling_file": input_path / "abnormal_profilings.parquet",
     }
 
-    try:
-        download_from_minio(input_path)
-    except Exception:
-        traceback.print_exc()
-        logger.error("Failed to download files from MinIO")
-
     return dict(
         workspace=workspace,
         input_path=input_path,
         output_path=output_path,
         **files,
     )
-
-
-@timeit()
-def download_from_minio(input_path: Path):
-    dataset_name = input_path.name
-
-    minio_client = get_minio_client()
-    bucket_name = "rcabench-dataset"
-
-    tasks = []
-    for object in minio_client.list_objects(bucket_name, prefix=dataset_name + "/"):
-        assert isinstance(object.object_name, str)
-        file_name = object.object_name.split("/")[-1]
-        file_path = input_path / file_name
-        if file_path.exists():
-            continue
-        tasks.append(functools.partial(minio_client.fget_object, bucket_name, object.object_name, str(file_path)))
-
-    if tasks:
-        fmap_threadpool(tasks)
 
 
 def show_params(params: dict[str, Any]) -> None:
@@ -116,6 +88,18 @@ def run(entrypoint: Path | None = None):
         asyncio.run(func(params))
     else:
         func(params)
+
+
+@timeit()
+def submit_conclusion_csv(df: pd.DataFrame):
+    output_path = os.environ["OUTPUT_PATH"]
+    assert output_path is not None and isinstance(output_path, str)
+
+    output_path = Path(output_path)
+    assert output_path.is_dir()
+
+    output_path = output_path / "conclusion.csv"
+    df.to_csv(output_path, index=False)
 
 
 if __name__ == "__main__":

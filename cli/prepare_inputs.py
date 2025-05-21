@@ -3,7 +3,6 @@ from rcabench_platform.v1.cli.main import app, logger
 
 from rcabench_platform.v1.clients.clickhouse_ import ClickHouseClient, get_clickhouse_client
 from rcabench_platform.v1.clients.k8s import download_kube_info
-from rcabench_platform.v1.clients.minio_ import get_minio_client
 from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
 
 from rcabench_platform.v1.logging import timeit
@@ -18,9 +17,7 @@ import tempfile
 import shutil
 import os
 
-
 import pandas as pd
-import minio
 
 
 @app.command()
@@ -38,14 +35,6 @@ def convert_to_clickhouse_time(unix_timestamp: int, tz: str) -> str:
         .astimezone(tz)  # type:ignore
         .strftime("%Y-%m-%d %H:%M:%S")
     )
-
-
-@app.command()
-@timeit()
-def ping_minio() -> None:
-    client = get_minio_client()
-    assert client.bucket_exists("rcabench-dataset"), "minio should be reachable"
-    logger.info("minio is reachable")
 
 
 def query_parquet_stream(client: ClickHouseClient, query: str, save_path: Path):
@@ -234,7 +223,6 @@ def query_kube_info(namespace: str) -> dict[str, Any] | None:
 @timeit()
 def run():
     ping_clickhouse()
-    ping_minio()
 
     # Prepare the output directory
     output_path = Path(os.environ["OUTPUT_PATH"])
@@ -292,49 +280,47 @@ def run():
         "trace_id_ts": query_trace_id_ts,
     }
 
-    tasks = []
-    for prefix, time_range in zip(prefixes, time_ranges):
-        for query_name, query_func in queries.items():
-            save_path = output_path / f"{prefix}_{query_name}.parquet"
-            tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
+    with tempfile.TemporaryDirectory() as tempdir:
+        tempdir = Path(tempdir)
 
-    fmap_processpool(tasks, parallel=8)
+        tasks = []
+        for prefix, time_range in zip(prefixes, time_ranges):
+            for query_name, query_func in queries.items():
+                save_path = tempdir / f"{prefix}_{query_name}.parquet"
+                tasks.append(functools.partial(query_func, save_path, namespace, time_range[0], time_range[1]))
 
-    env_params = {
-        "NAMESPACE": namespace,
-        "TIMEZONE": timezone,
-        "NORMAL_START": str(normal_start),
-        "NORMAL_END": str(normal_end),
-        "ABNORMAL_START": str(abnormal_start),
-        "ABNORMAL_END": str(abnormal_end),
-    }
-    save_json(env_params, path=output_path / "env.json")
+        fmap_processpool(tasks, parallel=8)
 
-    injection = query_injection(output_path.name)
-    if injection:
-        save_json(injection, path=output_path / "injection.json")
+        env_params = {
+            "NAMESPACE": namespace,
+            "TIMEZONE": timezone,
+            "NORMAL_START": str(normal_start),
+            "NORMAL_END": str(normal_end),
+            "ABNORMAL_START": str(abnormal_start),
+            "ABNORMAL_END": str(abnormal_end),
+        }
+        save_json(env_params, path=tempdir / "env.json")
 
-    kube_info = query_kube_info(namespace)
-    if kube_info:
-        save_json(kube_info, path=output_path / "k8s.json")
+        injection = query_injection(output_path.name)
+        if injection:
+            save_json(injection, path=tempdir / "injection.json")
 
-    minio_upload_dir(output_path, key_prefix=output_path.name)
+        kube_info = query_kube_info(namespace)
+        if kube_info:
+            save_json(kube_info, path=tempdir / "k8s.json")
 
-
-@timeit()
-def minio_upload_file(client: minio.Minio, bucket_name: str, key: str, file_path: str):
-    client.fput_object(bucket_name, key, file_path)
+        copy_files(tempdir, output_path)
 
 
 @timeit()
-def minio_upload_dir(tempdir: Path, *, key_prefix: str):
-    minio_client = get_minio_client()
-    bucket_name = "rcabench-dataset"
+def copy_files(src: Path, dst: Path):
+    assert src.is_dir()
+    assert dst.is_dir()
 
     tasks = []
-    for file in tempdir.iterdir():
-        key = f"{key_prefix}/{file.name}"
-        tasks.append(functools.partial(minio_upload_file, minio_client, bucket_name, key, str(file)))
+    for file in src.iterdir():
+        if file.is_file():
+            tasks.append(functools.partial(shutil.copyfile, file, dst / file.name))
 
     fmap_threadpool(tasks, parallel=8)
 
@@ -342,13 +328,13 @@ def minio_upload_dir(tempdir: Path, *, key_prefix: str):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "/tmp/rcabench/ts1-ts-rebook-service-time-8kxslc",
-        "NAMESPACE": "ts1",
+        "OUTPUT_PATH": "/mnt/jfs/temp/ts1-ts-rebook-service-time-8kxslc",
+        "NAMESPACE": "ts5",
         "TIMEZONE": "Asia/Shanghai",
-        "NORMAL_START": "1747467514",
-        "NORMAL_END": "1747467754",
-        "ABNORMAL_START": "1747467754",
-        "ABNORMAL_END": "1747467992",
+        "NORMAL_START": "1747815230",
+        "NORMAL_END": "1747815470",
+        "ABNORMAL_START": "1747815470",
+        "ABNORMAL_END": "1747815708",
     }
 
     for key, value in env_params.items():
