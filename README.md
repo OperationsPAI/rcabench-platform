@@ -93,3 +93,11 @@ Test if the environment is set up correctly by running the following command:
 ```bash
 ./main.py self test
 ```
+
+### Notebooks
+
+Edit the *SDG Visualization* notebook:
+
+```bash
+./notebooks/sdg.py
+```
