@@ -90,7 +90,7 @@ def run(entrypoint: Path | None = None):
         func(params)
 
 
-@timeit()
+@timeit(log_args=False)
 def submit_conclusion_csv(df: pd.DataFrame):
     output_path = os.environ["OUTPUT_PATH"]
     assert output_path is not None and isinstance(output_path, str)

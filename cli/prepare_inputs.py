@@ -11,6 +11,7 @@ from rcabench_platform.v1.utils.serde import save_json
 
 from pathlib import Path
 from typing import Any
+import subprocess
 import traceback
 import functools
 import tempfile
@@ -317,6 +318,8 @@ def copy_files(src: Path, dst: Path):
     assert src.is_dir()
     assert dst.is_dir()
 
+    subprocess.run("sha256sum * > sha256sum.txt", cwd=src, shell=True, check=True)
+
     tasks = []
     for file in src.iterdir():
         if file.is_file():
@@ -328,7 +331,7 @@ def copy_files(src: Path, dst: Path):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "/mnt/jfs/temp/ts1-ts-rebook-service-time-8kxslc",
+        "OUTPUT_PATH": "/mnt/jfs/temp/ts5-ts-order-service-return-bbzg49",
         "NAMESPACE": "ts5",
         "TIMEZONE": "Asia/Shanghai",
         "NORMAL_START": "1747815230",
