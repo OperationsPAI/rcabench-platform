@@ -17,19 +17,18 @@ Install JuiceFS client: <https://juicefs.com/docs/zh/community/getting-started/i
 Mount JuiceFS to your machine:
 
 ```bash
-sudo mkdir -p /mnt/jfs1
-sudo juicefs mount redis://10.10.10.38:6379/1 /mnt/jfs1 -d
+sudo juicefs mount redis://10.10.10.38:6379/1 /mnt/jfs -d
 ```
 
 Check if the mount was successful:
 
 ```bash
 df -h
-ls /mnt/jfs1
+ls /mnt/jfs
 ```
 
 Umount JuiceFS:
 
 ```bash
-sudo juicefs umount /mnt/jfs1
+sudo juicefs umount /mnt/jfs
 ```

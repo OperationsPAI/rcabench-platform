@@ -1,2 +1,2 @@
 #!/bin/bash -ex
-sudo juicefs umount /mnt/jfs1
+sudo juicefs umount /mnt/jfs
