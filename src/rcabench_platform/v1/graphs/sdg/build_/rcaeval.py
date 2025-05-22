@@ -228,6 +228,20 @@ def apply_metrics(sdg: SDG, metrics: pl.DataFrame) -> None:
             strict=False,
         )
 
+        df = (
+            df.lazy()
+            .select(
+                "time",
+                pl.col("value").cast(pl.Float64),
+                pl.col("anomal"),
+            )
+            .filter(
+                pl.col("value").is_not_null(),
+                pl.col("value").is_not_nan(),
+            )
+            .collect()
+        )
+
         service_node.add_indicator(Indicator(name=metric, df=df))
 
 
