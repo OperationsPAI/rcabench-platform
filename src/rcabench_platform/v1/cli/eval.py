@@ -116,6 +116,17 @@ def run(alg: str, dataset: str, datapack: str, *, clear: bool = False) -> None:
     save_parquet(perf_df, path=output_folder / "perf.parquet")
 
 
+def get_usable_cpu_count() -> int:
+    usable_cpu_count = multiprocessing.cpu_count()
+
+    if (max_cpu_env := os.environ.get("RCABENCH_CPU_COUNT")) is not None:
+        usable_cpu_count = min(int(max_cpu_env), usable_cpu_count)
+    else:
+        usable_cpu_count //= 2
+
+    return usable_cpu_count
+
+
 @app.command()
 @timeit()
 def run_all(
@@ -147,8 +158,8 @@ def run_all(
             parallel = 0
         else:
             assert alg_cpu_count > 0
-            total_cpu_count = multiprocessing.cpu_count()
-            parallel = max(total_cpu_count - 4, 0) // alg_cpu_count
+            usable_cpu_count = get_usable_cpu_count()
+            parallel = usable_cpu_count // alg_cpu_count
 
             if parallel:
                 os.environ["POLARS_MAX_THREADS"] = str(alg_cpu_count)
