@@ -66,6 +66,7 @@ def _(dataset_dropdown, dataset_index_path, mo, pl):
 @app.cell
 def _(datapack_table, dataset, mo):
     from rcabench_platform.v1.graphs.sdg.build_ import build_sdg
+    from rcabench_platform.v1.graphs.sdg.statistics import calc_statistics
 
     datapack = datapack_table.value[0, "datapack"]
     mo.stop(
@@ -75,6 +76,7 @@ def _(datapack_table, dataset, mo):
 
     mo.output.append("Building SDG ...")
     sdg = build_sdg(dataset, datapack)
+    calc_statistics(sdg)
     mo.output.append("Done!")
 
     mo.output.append({"|V|": sdg.num_nodes(), "|E|": sdg.num_edges()})
