@@ -1,3 +1,4 @@
+from ..algorithms.traceback.a7 import TraceBackA7
 from ..algorithms.random_ import Random
 
 from ..evaluation.ranking import calc_all_perf
@@ -28,6 +29,7 @@ app = typer.Typer()
 
 ALGORITHMS: dict[str, Callable[..., Algorithm]] = {
     "random": Random,
+    "traceback-A7": TraceBackA7,
 }
 
 
