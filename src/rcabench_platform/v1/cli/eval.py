@@ -38,7 +38,7 @@ def build_algorithm(alg: str) -> Algorithm:
 
 
 @app.command()
-@timeit()
+@timeit(log_level="INFO")
 def run(alg: str, dataset: str, datapack: str, *, clear: bool = False) -> None:
     algorithm = build_algorithm(alg)
 
@@ -128,7 +128,7 @@ def get_usable_cpu_count() -> int:
 
 
 @app.command()
-@timeit()
+@timeit(log_level="INFO")
 def run_all(
     alg_pattern: str,
     dataset: str,
@@ -184,7 +184,7 @@ def run_all(
 
 
 @app.command()
-@timeit()
+@timeit(log_level="INFO")
 def perf(dataset: str):
     index_path = dataset_index_path(dataset)
     index_df = pl.read_parquet(index_path)
@@ -232,7 +232,7 @@ def perf(dataset: str):
 
 
 @app.command()
-@timeit()
+@timeit(log_level="INFO")
 def exp_rcaeval(clear: bool = False):
     datasets = [
         "rcaeval_re2_tt",
