@@ -115,6 +115,8 @@ def run(alg: str, dataset: str, datapack: str, *, clear: bool = False) -> None:
     perf_df = calc_all_perf(output_df, agg_level="datapack")
     save_parquet(perf_df, path=output_folder / "perf.parquet")
 
+    finished.touch()
+
 
 def get_usable_cpu_count() -> int:
     usable_cpu_count = multiprocessing.cpu_count()
