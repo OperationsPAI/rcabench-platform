@@ -8,7 +8,7 @@ def running_mark(folder: Path, *, clear: bool = False):
     running = folder / ".running"
 
     if clear or running.exists():
-        shutil.rmtree(folder)
+        shutil.rmtree(folder, ignore_errors=True)
 
     folder.mkdir(parents=True, exist_ok=True)
     running.touch()
