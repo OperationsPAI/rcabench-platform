@@ -15,11 +15,13 @@ dependencies = [
     "mysql-connector-python>=9.3.0",
     "neo4j>=5.28.1",
     "networkx>=3.4.2",
+    "numpy>=2.2.5",
     "pandas>=2.2.3",
     "plotly>=6.1.1",
     "pyarrow>=20.0.0",
     "rcabench>=0.3.26",
     "requests>=2.32.3",
+    "scipy>=1.15.3",
     "tqdm>=4.67.1",
     "typer>=0.15.4",
 ]
