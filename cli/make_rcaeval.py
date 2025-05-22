@@ -38,9 +38,36 @@ def convert_traces_csv(src: Path, dst: Path):
 
 
 @timeit()
-def convert_datapack(src_folder: Path, dataset: str, datapack: str, *, skip: bool):
-    dst_folder = DATA_ROOT / dataset / datapack
+def convert_metrics_csv(src: Path, dst: Path):
+    assert src.exists()
 
+    lf = pl.scan_csv(src, infer_schema_length=50000)
+
+    lf = lf.with_columns(pl.from_epoch("time", time_unit="s").dt.replace_time_zone("UTC").alias("time"))
+
+    lf = lf.unpivot(
+        on=None,
+        index="time",
+        variable_name="metric",
+        value_name="value",
+    )
+
+    lf = lf.with_columns(
+        pl.col("metric").str.split("_").alias("_split"),
+    )
+
+    lf = lf.with_columns(
+        pl.col("_split").list.get(0).alias("attr.service_name"),
+        pl.col("_split").list.get(1).alias("metric"),
+    )
+
+    lf = lf.drop("_split")
+
+    lf.sink_parquet(dst)
+
+
+@timeit()
+def convert_datapack(src_folder: Path, dst_folder: Path, dataset: str, datapack: str, *, skip: bool):
     needs_skip = skip and dst_folder.exists()
 
     if not needs_skip:
@@ -49,7 +76,7 @@ def convert_datapack(src_folder: Path, dataset: str, datapack: str, *, skip: boo
 
             if dataset == "rcaeval_re2_tt":
                 convert_traces_csv(src_folder / "traces.csv", dst_folder / "traces.parquet")
-                # TODO
+                convert_metrics_csv(src_folder / "simple_metrics.csv", dst_folder / "simple_metrics.parquet")
             else:
                 raise NotImplementedError  # TODO
 
@@ -67,10 +94,14 @@ def convert_dataset(src_folder: Path, dataset: str, *, skip: bool):
         for num_path in service_path.iterdir():
             if not num_path.is_dir():
                 continue
+
             service = service_path.name
             num = num_path.name
             datapack = f"{service}_{num}"
-            tasks.append(functools.partial(convert_datapack, num_path, dataset, datapack, skip=skip))
+
+            dst_folder = DATA_ROOT / dataset / datapack
+
+            tasks.append(functools.partial(convert_datapack, num_path, dst_folder, dataset, datapack, skip=skip))
 
     results = fmap_threadpool(tasks, parallel=16)
 
@@ -96,6 +127,18 @@ def run(skip: bool = True):
 
     for dataset in rcaeval_datasets:
         convert_dataset(src_root / dataset, "rcaeval_" + dataset.lower().replace("-", "_"), skip=skip)
+
+
+@app.command()
+@timeit()
+def local_test():
+    convert_datapack(
+        src_folder=Path("data/RCAEval/RE2-TT/ts-auth-service_cpu/1"),
+        dst_folder=Path("temp/rcaeval_re2_tt/ts-auth-service_cpu_1"),
+        dataset="rcaeval_re2_tt",
+        datapack="ts-auth-service_cpu_1",
+        skip=False,
+    )
 
 
 if __name__ == "__main__":
