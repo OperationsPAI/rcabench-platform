@@ -24,14 +24,19 @@ def build_sdg_from_rcaeval(dataset: str, datapack: str) -> SDG:
     sdg.data["inject_time"] = inject_time
 
     traces = load_traces_parquet(datapack_folder, inject_time)
+    metrics = load_metrics_parquet(datapack_folder, inject_time)
 
     logger.debug("loading all dataframes")
-    (traces,) = pl.collect_all([traces])
+    (traces, metrics) = pl.collect_all([traces, metrics])
 
     logger.debug(f"len(traces)={len(traces)}")
+    logger.debug(f"len(metrics)={len(metrics)}")
 
     apply_traces(sdg, traces)
     del traces
+
+    apply_metrics(sdg, metrics)
+    del metrics
 
     # TODO: load more information
 
@@ -196,3 +201,40 @@ def apply_traces(sdg: SDG, traces: pl.DataFrame) -> None:
             logger.debug(f"top_op_name: {op_name}")
     else:
         logger.debug("No top_op_names")
+
+
+def load_metrics_parquet(datapack_folder: Path, inject_time: datetime.datetime) -> pl.LazyFrame:
+    lf = pl.scan_parquet(datapack_folder / "simple_metrics.parquet")
+
+    lf = lf.with_columns((pl.col("time") >= inject_time).cast(pl.UInt8).alias("anomal"))
+
+    return lf
+
+
+def apply_metrics(sdg: SDG, metrics: pl.DataFrame) -> None:
+    df_map = metrics.partition_by("metric", "attr.service_name", as_dict=True)
+    del metrics
+
+    for (metric, service_name), df in df_map.items():
+        assert isinstance(metric, str) and metric
+        assert isinstance(service_name, str) and service_name
+
+        if is_constant_metric(df):
+            logger.debug(f"ignore constant metric `{metric}`")
+            continue
+
+        service_node = sdg.add_node(
+            PlaceNode(kind=PlaceKind.service, self_name=service_name),
+            strict=False,
+        )
+
+        service_node.add_indicator(Indicator(name=metric, df=df))
+
+
+def is_constant_metric(df: pl.DataFrame) -> bool:
+    col = pl.col("value")
+    df = df.select(min=col.min(), max=col.max())
+    min_value, max_value = df.row(0)
+    assert isinstance(min_value, float)
+    assert isinstance(max_value, float)
+    return (max_value - min_value) < 1e-8
