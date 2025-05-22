@@ -17,6 +17,8 @@ def build_sdg_from_rcaeval(dataset: str, datapack: str) -> SDG:
     datapack_folder = DATA_ROOT / dataset / datapack
 
     sdg = SDG()
+    sdg.data["dataset"] = dataset
+    sdg.data["datapack"] = datapack
 
     inject_time = load_inject_time(datapack_folder)
     sdg.data["inject_time"] = inject_time
