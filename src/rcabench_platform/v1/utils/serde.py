@@ -5,6 +5,7 @@ from typing import Any
 import datetime
 import json
 import dataclasses
+import pickle
 
 import polars as pl
 
@@ -37,6 +38,23 @@ def save_json(obj: Any, *, path: str | Path) -> None:
         json.dump(obj, f, ensure_ascii=False, indent=4, default=json_default)
 
     logger.opt(colors=True).debug(f"saved json to <green>{file_path}</green>")
+
+
+def load_pickle(*, path: str | Path) -> Any:
+    logger.opt(colors=True).debug(f"loading pickle from <green>{path}</green>")
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def save_pickle(obj, *, path: str | Path) -> None:
+    file_path = Path(path)
+    assert file_path.suffix == ".pkl"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "wb") as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+    logger.opt(colors=True).debug(f"saved pickle to <green>{file_path}</green>")
 
 
 def save_parquet(df: pl.DataFrame, *, path: str | Path) -> None:
