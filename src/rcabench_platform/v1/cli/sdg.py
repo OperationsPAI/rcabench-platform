@@ -1,6 +1,6 @@
 from ..graphs.sdg.dump import dump_place_indicators
 from ..graphs.sdg.neo4j import export_sdg_to_neo4j
-from ..spec.data import TEMP_SDG
+from ..spec.data import DATA_ROOT, TEMP_SDG
 from ..utils.serde import save_parquet, save_pickle
 from ..graphs.sdg.build_ import build_sdg
 from ..logging import logger, timeit
@@ -20,7 +20,7 @@ def build(
     datapack: str,
     neo4j: bool = True,
 ) -> None:
-    sdg = build_sdg(dataset, datapack)
+    sdg = build_sdg(dataset, datapack, DATA_ROOT / dataset / datapack)
 
     maxrss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     maxrss_mib = maxrss_kib / 1024

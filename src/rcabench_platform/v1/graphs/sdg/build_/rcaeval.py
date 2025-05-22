@@ -13,18 +13,16 @@ import polars as pl
 
 
 @timeit()
-def build_sdg_from_rcaeval(dataset: str, datapack: str) -> SDG:
-    datapack_folder = DATA_ROOT / dataset / datapack
-
+def build_sdg_from_rcaeval(dataset: str, datapack: str, input_folder: Path) -> SDG:
     sdg = SDG()
     sdg.data["dataset"] = dataset
     sdg.data["datapack"] = datapack
 
-    inject_time = load_inject_time(datapack_folder)
+    inject_time = load_inject_time(input_folder)
     sdg.data["inject_time"] = inject_time
 
-    traces = load_traces_parquet(datapack_folder, inject_time)
-    metrics = load_metrics_parquet(datapack_folder, inject_time)
+    traces = load_traces_parquet(input_folder, inject_time)
+    metrics = load_metrics_parquet(input_folder, inject_time)
 
     logger.debug("loading all dataframes")
     (traces, metrics) = pl.collect_all([traces, metrics])
@@ -43,8 +41,8 @@ def build_sdg_from_rcaeval(dataset: str, datapack: str) -> SDG:
     return sdg
 
 
-def load_inject_time(datapack_folder: Path) -> datetime.datetime:
-    inject_time_file = datapack_folder / "inject_time.txt"
+def load_inject_time(input_folder: Path) -> datetime.datetime:
+    inject_time_file = input_folder / "inject_time.txt"
 
     with open(inject_time_file) as f:
         timestamp = int(f.read().strip())
@@ -54,8 +52,8 @@ def load_inject_time(datapack_folder: Path) -> datetime.datetime:
     return inject_time
 
 
-def load_traces_parquet(datapack_folder: Path, inject_time: datetime.datetime) -> pl.LazyFrame:
-    lf = pl.scan_parquet(datapack_folder / "traces.parquet")
+def load_traces_parquet(input_folder: Path, inject_time: datetime.datetime) -> pl.LazyFrame:
+    lf = pl.scan_parquet(input_folder / "traces.parquet")
 
     lf = lf.select(
         "time",
@@ -203,8 +201,8 @@ def apply_traces(sdg: SDG, traces: pl.DataFrame) -> None:
         logger.debug("No top_op_names")
 
 
-def load_metrics_parquet(datapack_folder: Path, inject_time: datetime.datetime) -> pl.LazyFrame:
-    lf = pl.scan_parquet(datapack_folder / "simple_metrics.parquet")
+def load_metrics_parquet(input_folder: Path, inject_time: datetime.datetime) -> pl.LazyFrame:
+    lf = pl.scan_parquet(input_folder / "simple_metrics.parquet")
 
     lf = lf.with_columns((pl.col("time") >= inject_time).cast(pl.UInt8).alias("anomal"))
 

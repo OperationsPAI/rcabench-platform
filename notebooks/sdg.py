@@ -17,7 +17,7 @@ def _():
 
 @app.cell
 def _():
-    from rcabench_platform.v1.spec.data import dataset_index_path
+    from rcabench_platform.v1.spec.data import dataset_index_path, DATA_ROOT
 
     from rcabench_platform.v1.graphs.sdg.defintion import (
         SDG,
@@ -27,7 +27,7 @@ def _():
         DepEdge,
     )
 
-    return (dataset_index_path,)
+    return DATA_ROOT, dataset_index_path
 
 
 @app.cell
@@ -64,7 +64,7 @@ def _(dataset_dropdown, dataset_index_path, mo, pl):
 
 
 @app.cell
-def _(datapack_table, dataset, mo):
+def _(DATA_ROOT, datapack_table, dataset, mo):
     from rcabench_platform.v1.graphs.sdg.build_ import build_sdg
     from rcabench_platform.v1.graphs.sdg.statistics import calc_statistics
 
@@ -75,7 +75,7 @@ def _(datapack_table, dataset, mo):
     )
 
     mo.output.append("Building SDG ...")
-    sdg = build_sdg(dataset, datapack)
+    sdg = build_sdg(dataset, datapack, DATA_ROOT / dataset / datapack)
     calc_statistics(sdg)
     mo.output.append("Done!")
 
