@@ -4,10 +4,10 @@ import shutil
 
 
 @contextmanager
-def running_mark(folder: Path):
+def running_mark(folder: Path, *, clear: bool = False):
     running = folder / ".running"
 
-    if running.exists():
+    if clear or running.exists():
         shutil.rmtree(folder)
 
     folder.mkdir(parents=True, exist_ok=True)
