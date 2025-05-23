@@ -8,6 +8,7 @@ import dataclasses
 import pickle
 
 import polars as pl
+import pandas as pd
 
 
 def json_default(obj):
@@ -57,11 +58,52 @@ def save_pickle(obj, *, path: str | Path) -> None:
     logger.opt(colors=True).debug(f"saved pickle to <green>{file_path}</green>")
 
 
-def save_parquet(df: pl.DataFrame, *, path: str | Path) -> None:
+def save_txt(content: str, *, path: str | Path) -> None:
+    file_path = Path(path)
+    assert file_path.suffix == ".txt"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w") as f:
+        f.write(content)
+
+    logger.opt(colors=True).debug(f"saved txt to <green>{file_path}</green>")
+
+
+def save_parquet(df: pl.LazyFrame | pl.DataFrame | pd.DataFrame, *, path: str | Path) -> None:
     file_path = Path(path)
     assert file_path.suffix == ".parquet"
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    df.write_parquet(file_path)
+    if isinstance(df, pl.LazyFrame):
+        len_df = "?"
+        df.sink_parquet(file_path)
+    elif isinstance(df, pl.DataFrame):
+        len_df = len(df)
+        df.write_parquet(file_path)
+    elif isinstance(df, pd.DataFrame):
+        len_df = len(df)
+        df.to_parquet(file_path, index=False)
+    else:
+        raise TypeError(f"Unsupported type: {type(df)}")
 
-    logger.opt(colors=True).debug(f"saved parquet (len(df)={len(df)}) to <green>{file_path}</green>")
+    logger.opt(colors=True).debug(f"saved parquet (len(df)={len_df}) to <green>{file_path}</green>")
+
+
+def save_csv(df: pl.LazyFrame | pl.DataFrame | pd.DataFrame, *, path: str | Path) -> None:
+    file_path = Path(path)
+    assert file_path.suffix == ".csv"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(df, pl.LazyFrame):
+        len_df = "?"
+        df.sink_csv(file_path)
+    elif isinstance(df, pl.DataFrame):
+        len_df = len(df)
+        df.write_csv(file_path)
+    elif isinstance(df, pd.DataFrame):
+        len_df = len(df)
+        df.to_csv(file_path, index=False)
+    else:
+        raise TypeError(f"Unsupported type: {type(df)}")
+
+    logger.opt(colors=True).debug(f"saved csv (len(df)={len_df}) to <green>{file_path}</green>")
