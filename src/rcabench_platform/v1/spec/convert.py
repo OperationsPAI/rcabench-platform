@@ -1,13 +1,14 @@
-from pathlib import Path
+from .data import DATA_ROOT, dataset_index_path, dataset_label_path
 
 from ..logging import timeit
 from ..utils.fs import running_mark
-from .data import DATA_ROOT, dataset_index_path, dataset_label_path
 from ..utils.serde import save_csv, save_json, save_parquet, save_txt
 from ..utils.fmap import fmap_threadpool
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pprint import pprint
+from pathlib import Path
 from typing import Any
 import functools
 import shutil
@@ -88,6 +89,14 @@ def convert_datapack(loader: DatapackLoader, dst_folder: Path, *, skip: bool = T
 def save_data_file(dst_folder: Path, name: str, value: Any):
     file_path = dst_folder / name
     ext = file_path.suffix
+    stem = file_path.stem
+
+    if stem.endswith("traces"):
+        validate_traces(value)
+    elif stem.endswith("metrics"):
+        validate_metrics(value)
+    elif stem.endswith("logs"):
+        validate_logs(value)
 
     if isinstance(value, Path):
         assert value.exists()
@@ -107,3 +116,71 @@ def save_data_file(dst_folder: Path, name: str, value: Any):
 
     else:
         raise NotImplementedError(f"Unsupported file type: {ext}")
+
+
+def validate_traces(value: Any):
+    if isinstance(value, pl.LazyFrame):
+        lf = value
+
+        required = {
+            "time": pl.Datetime,
+            "trace_id": pl.String,
+            "span_id": pl.String,
+            "parent_span_id": pl.String,
+            "service_name": pl.String,
+            "span_name": pl.String,
+            "duration": pl.UInt64,
+        }
+
+        validate_by_model(lf, required, extra_prefix="attr.")
+    else:
+        raise NotImplementedError  # TODO
+
+
+def validate_metrics(value: Any):
+    if isinstance(value, pl.LazyFrame):
+        lf = value
+
+        required = {
+            "time": pl.Datetime,
+            "metric": pl.String,
+            "value": pl.Float64,
+        }
+
+        validate_by_model(lf, required, extra_prefix="attr.")
+    else:
+        raise NotImplementedError  # TODO
+
+
+def validate_logs(value: Any):
+    if isinstance(value, pl.LazyFrame):
+        lf = value
+
+        required = {
+            "time": pl.Datetime,
+            "trace_id": pl.String,
+            "span_id": pl.String,
+            "service_name": pl.String,
+            "level": pl.String,
+            "message": pl.String,
+        }
+
+        validate_by_model(lf, required, extra_prefix="attr.")
+
+    else:
+        raise NotImplementedError  # TODO
+
+
+def validate_by_model(lf: pl.LazyFrame, model: dict[str, pl.DataType], extra_prefix: str):
+    schema = lf.collect_schema()
+
+    for name, dtype in model.items():
+        if name not in schema:
+            raise ValueError(f"Missing required column: {name} {dtype}")
+        if schema[name] != dtype:
+            raise ValueError(f"Column {name} has incorrect type: {schema[name]}")
+
+    for name, dtype in schema.items():
+        if name not in model:
+            if not name.startswith(extra_prefix):
+                raise ValueError(f"Unexpected column: {name} {dtype}")
