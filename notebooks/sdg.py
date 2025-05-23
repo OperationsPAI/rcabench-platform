@@ -40,6 +40,7 @@ def _(mo):
 def _(mo):
     all_datasets = [
         "rcaeval_re2_tt",
+        "rcaeval_re2_ob",
     ]
     dataset_dropdown = mo.ui.dropdown(
         options=all_datasets,

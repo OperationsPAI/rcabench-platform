@@ -238,6 +238,7 @@ def perf(dataset: str):
 def exp_rcaeval(clear: bool = False):
     datasets = [
         "rcaeval_re2_tt",
+        "rcaeval_re2_ob",
     ]
 
     for dataset in datasets:
