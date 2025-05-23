@@ -7,7 +7,6 @@ from ..utils.fmap import fmap_threadpool
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pprint import pprint
 from pathlib import Path
 from typing import Any
 import functools
@@ -119,8 +118,8 @@ def save_data_file(dst_folder: Path, name: str, value: Any):
 
 
 def validate_traces(value: Any):
-    if isinstance(value, pl.LazyFrame):
-        lf = value
+    if isinstance(value, (pl.LazyFrame, pl.DataFrame)):
+        df = value
 
         required = {
             "time": pl.Datetime,
@@ -132,14 +131,14 @@ def validate_traces(value: Any):
             "duration": pl.UInt64,
         }
 
-        validate_by_model(lf, required, extra_prefix="attr.")
+        validate_by_model(df, required, extra_prefix="attr.")
     else:
         raise NotImplementedError  # TODO
 
 
 def validate_metrics(value: Any):
-    if isinstance(value, pl.LazyFrame):
-        lf = value
+    if isinstance(value, (pl.LazyFrame, pl.DataFrame)):
+        df = value
 
         required = {
             "time": pl.Datetime,
@@ -147,14 +146,14 @@ def validate_metrics(value: Any):
             "value": pl.Float64,
         }
 
-        validate_by_model(lf, required, extra_prefix="attr.")
+        validate_by_model(df, required, extra_prefix="attr.")
     else:
         raise NotImplementedError  # TODO
 
 
 def validate_logs(value: Any):
-    if isinstance(value, pl.LazyFrame):
-        lf = value
+    if isinstance(value, (pl.LazyFrame, pl.DataFrame)):
+        df = value
 
         required = {
             "time": pl.Datetime,
@@ -165,14 +164,19 @@ def validate_logs(value: Any):
             "message": pl.String,
         }
 
-        validate_by_model(lf, required, extra_prefix="attr.")
+        validate_by_model(df, required, extra_prefix="attr.")
 
     else:
         raise NotImplementedError  # TODO
 
 
-def validate_by_model(lf: pl.LazyFrame, model: dict[str, pl.DataType], extra_prefix: str):
-    schema = lf.collect_schema()
+def validate_by_model(df: pl.LazyFrame | pl.DataFrame, model: dict[str, pl.DataType], extra_prefix: str):
+    if isinstance(df, pl.LazyFrame):
+        schema = df.collect_schema()
+    elif isinstance(df, pl.DataFrame):
+        schema = df.schema
+    else:
+        raise TypeError(f"Unsupported type: {type(df)}")
 
     for name, dtype in model.items():
         if name not in schema:
