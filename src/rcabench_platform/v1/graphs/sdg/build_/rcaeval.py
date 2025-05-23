@@ -240,6 +240,9 @@ def apply_metrics(sdg: SDG, metrics: pl.DataFrame) -> None:
             .collect()
         )
 
+        if len(df) == 0:
+            continue
+
         service_node.add_indicator(Indicator(name=metric, df=df))
 
 
