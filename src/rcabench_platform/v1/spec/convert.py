@@ -1,16 +1,18 @@
 from .data import DATA_ROOT, dataset_index_path, dataset_label_path
 
-from ..logging import timeit
+from ..logging import timeit, logger
 from ..utils.fs import running_mark
 from ..utils.serde import save_csv, save_json, save_parquet, save_txt
-from ..utils.fmap import fmap_threadpool
+from ..utils.fmap import fmap_processpool, fmap_threadpool
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import functools
+import tempfile
 import shutil
+import sys
 
 import polars as pl
 
@@ -44,16 +46,22 @@ class DatasetLoader(ABC):
 
 
 @timeit(log_args={"skip", "parallel"})
-def convert_dataset(loader: DatasetLoader, *, skip: bool = True, parallel: int | None = None) -> None:
+def convert_dataset(
+    loader: DatasetLoader,
+    *,
+    skip: bool = True,
+    parallel: int | None = None,
+    ignore_exceptions: bool = False,
+) -> None:
     dataset = loader.name()
 
-    tasks = []
-    for i in range(len(loader)):
-        datapack = loader[i]
-        dst_folder = DATA_ROOT / dataset / datapack.name()
-        tasks.append(functools.partial(convert_datapack, datapack, dst_folder, skip=skip))
+    tasks = [functools.partial(_convert_datapack, loader, i, skip) for i in range(len(loader))]
 
-    results = fmap_threadpool(tasks, parallel=parallel)
+    results = fmap_processpool(
+        tasks,
+        parallel=parallel,
+        ignore_exceptions=ignore_exceptions,
+    )
 
     index_rows = []
     label_rows = []
@@ -70,22 +78,55 @@ def convert_dataset(loader: DatasetLoader, *, skip: bool = True, parallel: int |
     save_parquet(label_df, path=dataset_label_path(dataset))
 
 
+def _convert_datapack(loader: DatasetLoader, index: int, skip: bool) -> tuple[str, list[Label]]:
+    datapack = loader[index]
+    dst_folder = DATA_ROOT / loader.name() / datapack.name()
+    return convert_datapack(datapack, dst_folder, skip=skip)
+
+
 @timeit(log_args={"dst_folder", "skip"})
 def convert_datapack(loader: DatapackLoader, dst_folder: Path, *, skip: bool = True) -> tuple[str, list[Label]]:
     needs_skip = skip and dst_folder.exists() and not (dst_folder / ".running").exists()
 
     if not needs_skip:
         with running_mark(dst_folder):
-            data = loader.data()
-            for k, v in data.items():
-                save_data_file(dst_folder, k, v)
+            with tempfile.TemporaryDirectory() as tempdir:
+                tempdir = Path(tempdir)
+
+                data = loader.data()
+                keys = list(data.keys())
+
+                for i, k in enumerate(keys, start=1):
+                    save_data_file(tempdir, k, data[k])
+                    del data[k]
+
+                    size = (tempdir / k).stat().st_size
+                    logger.debug(f"saved data [{i}/{len(keys)}] {loader.name()}/{k} size={human_byte_size(size)}")
+
+                move_files(keys, tempdir, dst_folder)
 
     datapack = loader.name()
     labels = loader.labels()
     return datapack, labels
 
 
-def save_data_file(dst_folder: Path, name: str, value: Any):
+@timeit(log_args={"src", "dst"})
+def move_files(keys: list[str], src: Path, dst: Path) -> None:
+    for key in keys:
+        shutil.move(src / key, dst / key)
+
+
+def human_byte_size(size_bytes: int) -> str:
+    s = float(size_bytes)
+    for unit in ["B", "KiB", "MiB"]:
+        if s < 1024:
+            return f"{s:.3f} {unit}"
+        s /= 1024
+    return f"{s:.3f} GiB"
+
+
+@timeit(log_args={"dst_folder", "name"})
+def save_data_file(dst_folder: Path, name: str, value: Any) -> None:
     file_path = dst_folder / name
     ext = file_path.suffix
     stem = file_path.stem
@@ -96,6 +137,8 @@ def save_data_file(dst_folder: Path, name: str, value: Any):
         validate_metrics(value)
     elif stem.endswith("logs"):
         validate_logs(value)
+
+    sys.stdout.flush()
 
     if isinstance(value, Path):
         assert value.exists()
