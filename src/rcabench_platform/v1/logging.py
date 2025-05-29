@@ -2,6 +2,7 @@ from functools import wraps
 from pprint import pformat
 import datetime
 import inspect
+import sys
 
 from loguru import logger as global_logger
 from loguru._logger import Logger  # type:ignore
@@ -52,6 +53,7 @@ def timeit(*, log_level: str = "DEBUG", log_args: bool | set[str] = True):
                 args_message = ""
 
             logger_.log(log_level, f"enter {func_name}{args_message}")
+            sys.stdout.flush()
 
             start = datetime.datetime.now()
             result = func(*args, **kwargs)
@@ -60,6 +62,7 @@ def timeit(*, log_level: str = "DEBUG", log_args: bool | set[str] = True):
             duration = end - start
             duration_message = f"duration=<yellow>{duration.total_seconds():.6f}s</yellow>"
             logger_.log(log_level, f"exit  {func_name} {duration_message}{args_message}")
+            sys.stdout.flush()
 
             return result
 
