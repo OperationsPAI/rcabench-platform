@@ -1,11 +1,10 @@
-from ..logging import get_real_logger, set_real_logger, logger
+from ..logging import get_real_logger, set_real_logger, logger, timeit
 
 from collections.abc import Callable, Sequence
 from typing import Literal
 import multiprocessing
 import multiprocessing.pool
 import traceback
-import sys
 
 from tqdm.auto import tqdm
 
@@ -25,43 +24,47 @@ def _fmap[R](
     else:
         num_workers = 1
 
-    if num_workers > 1:
-        if mode == "threadpool":
-            pool = multiprocessing.pool.ThreadPool(
-                processes=num_workers,
-            )
-        elif mode == "processpool":
-            pool = multiprocessing.get_context("spawn").Pool(
-                processes=num_workers,
-                initializer=set_real_logger,
-                initargs=(get_real_logger(),),
-            )
-        else:
-            raise ValueError(f"Unknown mode: {mode}")
+    logger_ = logger.opt(depth=2)
 
-        with pool:
-            asyncs = [pool.apply_async(task) for task in tasks]
-            results = []
-            for result in tqdm(asyncs, desc=f"fmap_{mode}"):
-                if ignore_exceptions:
-                    try:
-                        results.append(result.get())
-                    except Exception as e:
-                        traceback.print_exc()
-                        logger.opt(depth=1).error(f"Error in task: {e}")
-                else:
-                    results.append(result.get())
-                sys.stdout.flush()
+    if mode == "threadpool":
+        pool = multiprocessing.pool.ThreadPool(
+            processes=num_workers,
+        )
+    elif mode == "processpool":
+        pool = multiprocessing.get_context("spawn").Pool(
+            processes=num_workers,
+            initializer=set_real_logger,
+            initargs=(get_real_logger(),),
+        )
     else:
-        results = []
-        for task in tqdm(tasks, desc=f"fmap_{mode}"):
-            result = task()
-            results.append(result)
-            sys.stdout.flush()
+        raise ValueError(f"Unknown mode: {mode}")
+
+    with pool:
+        asyncs = [pool.apply_async(task) for task in tasks]
+        results: list[R] = []
+        exception_count = 0
+
+        for async_ in tqdm(asyncs, desc=f"fmap_{mode}"):
+            try:
+                result = async_.get()
+                results.append(result)
+            except Exception as e:
+                exception_count += 1
+                if ignore_exceptions:
+                    traceback.print_exc()
+                    logger_.error(f"Exception in task: {e}")
+                else:
+                    raise e
+
+    if exception_count > 0:
+        logger_.warning(f"fmap_{mode} completed with {exception_count} exceptions.")
+
+    logger_.debug(f"fmap_{mode} completed with {len(results)} results in {len(tasks)} tasks.")
 
     return results
 
 
+@timeit(log_args=False)
 def fmap_threadpool[R](
     tasks: Sequence[Callable[[], R]],
     *,
@@ -71,6 +74,7 @@ def fmap_threadpool[R](
     return _fmap("threadpool", tasks, parallel=parallel, ignore_exceptions=ignore_exceptions)
 
 
+@timeit(log_args=False)
 def fmap_processpool[R](
     tasks: Sequence[Callable[[], R]],
     *,
