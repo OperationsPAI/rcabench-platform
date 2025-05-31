@@ -1,7 +1,16 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.spec.convert import DatasetLoader, DatapackLoader, Label, convert_datapack, convert_dataset
+from rcabench_platform.v1.spec.convert import (
+    DatasetLoader,
+    DatapackLoader,
+    Label,
+    convert_datapack,
+    convert_dataset,
+    postprocess_collect_schema,
+)
+
+from rcabench_platform.v1.utils.serde import save_json
 
 from pathlib import Path
 from typing import Any
@@ -74,6 +83,10 @@ class RcaevalDatapackLoader(DatapackLoader):
             "traces.parquet": convert_traces(self._src_folder / "traces.csv"),
             "simple_metrics.parquet": convert_metrics(self._src_folder / "simple_metrics.csv"),
         }
+
+    def postprocess(self, folder: Path, files: set[str]):
+        schema = postprocess_collect_schema(folder, files)
+        save_json(schema, path=folder / "schema.json")
 
 
 class RcaevalDatasetLoader(DatasetLoader):

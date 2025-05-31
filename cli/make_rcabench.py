@@ -2,9 +2,16 @@
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.datasets.rcabench_ import rcabench_get_service_name, FAULT_TYPES
 from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.spec.convert import DatasetLoader, DatapackLoader, Label, convert_datapack, convert_dataset
+from rcabench_platform.v1.spec.convert import (
+    DatasetLoader,
+    DatapackLoader,
+    Label,
+    convert_datapack,
+    convert_dataset,
+    postprocess_collect_schema,
+)
 from rcabench_platform.v1.spec.data import get_datapack_list
-from rcabench_platform.v1.utils.serde import load_json
+from rcabench_platform.v1.utils.serde import load_json, save_json
 
 from pathlib import Path
 from typing import Any
@@ -321,6 +328,10 @@ class RcabenchDatapackLoader(DatapackLoader):
                 ans[name] = func(self._src_folder / name)
 
         return ans
+
+    def postprocess(self, folder: Path, files: set[str]) -> None:
+        schema = postprocess_collect_schema(folder, files)
+        save_json(schema, path=folder / "schema.json")
 
 
 @timeit()

@@ -33,6 +33,9 @@ class DatapackLoader(ABC):
     @abstractmethod
     def data(self) -> dict[str, Any]: ...
 
+    @abstractmethod
+    def postprocess(self, folder: Path, files: set[str]): ...
+
 
 class DatasetLoader(ABC):
     @abstractmethod
@@ -43,6 +46,16 @@ class DatasetLoader(ABC):
 
     @abstractmethod
     def __getitem__(self, index: int) -> DatapackLoader: ...
+
+
+def postprocess_collect_schema(folder: Path, files: set[str]) -> dict[str, Any]:
+    ans = {}
+    for file in files:
+        if file.endswith(".parquet"):
+            lf = pl.scan_parquet(folder / file)
+            schema = lf.collect_schema()
+            ans[file] = {k: str(v) for k, v in schema.items()}
+    return ans
 
 
 @timeit(log_args={"skip", "parallel"})
@@ -103,7 +116,8 @@ def convert_datapack(loader: DatapackLoader, dst_folder: Path, *, skip: bool = T
                     size = (tempdir / k).stat().st_size
                     logger.debug(f"saved data [{i}/{len(keys)}] {loader.name()}/{k} size={human_byte_size(size)}")
 
-                move_files(keys, tempdir, dst_folder)
+                loader.postprocess(tempdir, set(keys))
+                move_files(tempdir, dst_folder)
 
     datapack = loader.name()
     labels = loader.labels()
@@ -111,9 +125,9 @@ def convert_datapack(loader: DatapackLoader, dst_folder: Path, *, skip: bool = T
 
 
 @timeit(log_args={"src", "dst"})
-def move_files(keys: list[str], src: Path, dst: Path) -> None:
-    for key in keys:
-        shutil.move(src / key, dst / key)
+def move_files(src: Path, dst: Path) -> None:
+    for file in src.iterdir():
+        shutil.move(file, dst / file.name)
 
 
 def human_byte_size(size_bytes: int) -> str:
