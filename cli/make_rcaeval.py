@@ -134,7 +134,7 @@ class RcaevalDatasetLoader(DatasetLoader):
 
 @app.command()
 @timeit()
-def run(skip: bool = True):
+def run(skip: bool = True, parallel: int | None = 4):
     src_root = Path("data") / "RCAEval"
 
     rcaeval_datasets = ["RE2-TT", "RE2-OB"]  # TODO: support all datasets
@@ -144,7 +144,7 @@ def run(skip: bool = True):
             src_folder=src_root / dataset,
             dataset="rcaeval_" + dataset.lower().replace("-", "_"),
         )
-        convert_dataset(loader, skip=skip, parallel=16)
+        convert_dataset(loader, skip=skip, parallel=parallel)
 
 
 @app.command()
