@@ -187,6 +187,7 @@ def validate_metrics(value: Any):
             "time": pl.Datetime,
             "metric": pl.String,
             "value": pl.Float64,
+            "service_name": pl.String,
         }
 
         validate_by_model(df, required, extra_prefix="attr.")

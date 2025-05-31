@@ -41,6 +41,8 @@ def convert_metrics(src: Path) -> pl.LazyFrame:
 
     lf = lf.rename({"MetricName": "metric", "Value": "value"})
 
+    lf = lf.with_columns(pl.lit(None, dtype=pl.String).alias("service_name"))
+
     resource_attributes = pl.Struct(
         [
             pl.Field("k8s.node.name", pl.String),

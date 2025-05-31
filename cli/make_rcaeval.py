@@ -46,7 +46,7 @@ def convert_metrics(src: Path):
     )
 
     lf = lf.with_columns(
-        pl.col("_split").list.get(0).alias("attr.service_name"),
+        pl.col("_split").list.get(0).alias("service_name"),
         pl.col("_split").list.get(1).alias("metric"),
     )
 
