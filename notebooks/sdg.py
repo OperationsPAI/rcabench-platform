@@ -39,6 +39,7 @@ def _(mo):
 @app.cell
 def _(mo):
     all_datasets = [
+        "rcabench",
         "rcaeval_re2_tt",
         "rcaeval_re2_ob",
     ]

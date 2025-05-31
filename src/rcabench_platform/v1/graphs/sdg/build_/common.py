@@ -1,3 +1,5 @@
+from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+
 import polars as pl
 
 
@@ -10,11 +12,16 @@ def is_constant_metric(df: pl.DataFrame) -> bool:
     return (max_value - min_value) < 1e-8
 
 
-def replace_enum_values(lf: pl.LazyFrame, col_name: str, values: list[str]) -> pl.LazyFrame:
-    lf = lf.with_columns(
+def replace_enum_values(col_name: str, values: list[str], *, start: int) -> pl.Expr:
+    return (
         pl.col(col_name)
         .cast(pl.Enum(values))
-        .replace_strict({value: i for i, value in enumerate(values, start=1)})
+        .replace_strict({value: i for i, value in enumerate(values, start=start)})
         .cast(pl.Float64)
     )
-    return lf
+
+
+def add_node_opt(sdg: SDG, kind: PlaceKind, self_name: str | None) -> PlaceNode | None:
+    if self_name is None:
+        return None
+    return sdg.add_node(PlaceNode(kind=kind, self_name=self_name), strict=False)
