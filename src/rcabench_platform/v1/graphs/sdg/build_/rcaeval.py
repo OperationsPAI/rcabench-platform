@@ -210,7 +210,7 @@ def load_metrics_parquet(input_folder: Path, inject_time: datetime.datetime) -> 
 
 
 def apply_metrics(sdg: SDG, metrics: pl.DataFrame) -> None:
-    df_map = metrics.partition_by("metric", "attr.service_name", as_dict=True)
+    df_map = metrics.partition_by("metric", "service_name", as_dict=True)
     del metrics
 
     for (metric, service_name), df in df_map.items():
