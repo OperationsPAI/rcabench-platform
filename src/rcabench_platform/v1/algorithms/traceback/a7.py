@@ -467,11 +467,13 @@ class TraceBackA7(Algorithm):
     @timeit()
     def __call__(self, args: AlgorithmArgs) -> list[AlgorithmAnswer]:
         if debug():
-            injection_config_path = args.input_folder / "injection_config.json"
-            if injection_config_path.exists():
-                with open(injection_config_path) as f:
-                    injection_config = json.load(f)
-                logger.debug(f"found injection config:\n{pformat(injection_config)}")
+            injection_path = args.input_folder / "injection.json"
+            if injection_path.exists():
+                with open(injection_path) as f:
+                    injection = json.load(f)
+                    injection["display_config"] = json.loads(injection["display_config"])
+                    injection["engine_config"] = json.loads(injection["engine_config"])
+                logger.debug(f"found injection:\n{pformat(injection)}")
 
         sdg = build_sdg(args.dataset, args.datapack, args.input_folder)
 
