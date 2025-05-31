@@ -26,8 +26,21 @@ def calc_statistics(sdg: SDG):
         if edge.kind == DepKind.calls:
             calc_stat_for_calls_edge(sdg, edge)
 
+    node_stat_names = set()
+    for node in sdg.iter_nodes():
+        collect_node_stat_names(node, node_stat_names)
+    sdg.data["node_stat_names"] = sorted(node_stat_names)
+
 
 STAT_PREFIX = ["stat.normal", "stat.anomal"]
+
+
+def collect_node_stat_names(node: PlaceNode, names: set[str]) -> None:
+    prefix = STAT_PREFIX[0]
+    for k in node.data.keys():
+        if k.startswith(prefix):
+            stat_name = k[len(prefix) + 1 :]  # +1 for the dot
+            names.add(stat_name)
 
 
 def calc_stat_for_service_node(node: PlaceNode):
