@@ -413,7 +413,7 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
             strict=False,
         )
 
-        function_indicator_cols = [
+        fn_indicator_cols = [
             "duration",
             "attr.status_code",
             "attr.http.response.status_code",
@@ -421,11 +421,9 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
             "attr.http.response.content_length",
         ]
 
-        for col_name in function_indicator_cols:
-            if df[col_name].is_null().all():
-                continue
-
-            indicator_df = (
+        fn_lf_list = []
+        for col_name in fn_indicator_cols:
+            indicator_lf = (
                 df.lazy()
                 .filter(pl.col(col_name).is_not_null())
                 .select(
@@ -436,9 +434,12 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
                     "span_id",
                     "parent_span_id",
                 )
-                .collect()
             )
+            fn_lf_list.append(indicator_lf)
 
+        fn_indicator_df_list = pl.collect_all(fn_lf_list)
+
+        for col_name, indicator_df in zip(fn_indicator_cols, fn_indicator_df_list):
             if len(indicator_df) == 0:
                 continue
 
