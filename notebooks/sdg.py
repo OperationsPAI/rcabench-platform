@@ -13,6 +13,7 @@ def _():
     import polars as pl
 
     import json
+
     return json, mo, pl
 
 
@@ -62,9 +63,7 @@ def _(META_ROOT, dataset_dropdown, dataset_index_path, mo, pl):
     _attributes_df_path = META_ROOT / dataset / "attributes.parquet"
     if _attributes_df_path.exists():
         attributes_df = pl.read_parquet(_attributes_df_path)
-        _df = attributes_df.select(
-            "datapack", "inject_time", "injection.fault_type"
-        )
+        _df = attributes_df.select("datapack", "inject_time", "injection.fault_type")
     else:
         attributes_df = _index_df
         _df = attributes_df.select("datapack")
@@ -122,8 +121,8 @@ def _(mo):
 @app.cell
 def _(attributes_df, datapack, json, mo, pl):
     mo.stop(not isinstance(datapack, str))
-    _info = attributes_df.row(by_predicate=pl.col("datapack")==datapack, named=True)
-    _info["injection.display_config"]=json.loads(_info["injection.display_config"])
+    _info = attributes_df.row(by_predicate=pl.col("datapack") == datapack, named=True)
+    _info["injection.display_config"] = json.loads(_info["injection.display_config"])
     del _info["injection.engine_config"]
     mo.output.append(_info)
     return
