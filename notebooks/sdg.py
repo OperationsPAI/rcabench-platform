@@ -12,12 +12,13 @@ def _():
 
     import polars as pl
 
-    return mo, pl
+    import json
+    return json, mo, pl
 
 
 @app.cell
 def _():
-    from rcabench_platform.v1.spec.data import dataset_index_path, DATA_ROOT
+    from rcabench_platform.v1.spec.data import dataset_index_path, DATA_ROOT, META_ROOT
 
     from rcabench_platform.v1.graphs.sdg.defintion import (
         SDG,
@@ -27,7 +28,7 @@ def _():
         DepEdge,
     )
 
-    return DATA_ROOT, dataset_index_path
+    return DATA_ROOT, META_ROOT, dataset_index_path
 
 
 @app.cell
@@ -54,15 +55,23 @@ def _(mo):
 
 
 @app.cell
-def _(dataset_dropdown, dataset_index_path, mo, pl):
+def _(META_ROOT, dataset_dropdown, dataset_index_path, mo, pl):
     dataset = dataset_dropdown.value
     _index_df = pl.read_parquet(dataset_index_path(dataset))
 
-    _df = _index_df.select("datapack")
+    _attributes_df_path = META_ROOT / dataset / "attributes.parquet"
+    if _attributes_df_path.exists():
+        attributes_df = pl.read_parquet(_attributes_df_path)
+        _df = attributes_df.select(
+            "datapack", "inject_time", "injection.fault_type"
+        )
+    else:
+        attributes_df = _index_df
+        _df = attributes_df.select("datapack")
 
     datapack_table = mo.ui.table(_df, selection="single")
     mo.output.append(datapack_table)
-    return datapack_table, dataset
+    return attributes_df, datapack_table, dataset
 
 
 @app.cell
@@ -82,7 +91,7 @@ def _(DATA_ROOT, datapack_table, dataset, mo):
     mo.output.append("Done!")
 
     mo.output.append({"|V|": sdg.num_nodes(), "|E|": sdg.num_edges()})
-    return (sdg,)
+    return datapack, sdg
 
 
 @app.cell
@@ -111,11 +120,13 @@ def _(mo):
 
 
 @app.cell
-def _(mo, sdg):
-    inject_time = sdg.data["inject_time"]
-    mo.output.append(mo.md("### inject time"))
-    mo.output.append(inject_time)
-    return (inject_time,)
+def _(attributes_df, datapack, json, mo, pl):
+    mo.stop(not isinstance(datapack, str))
+    _info = attributes_df.row(by_predicate=pl.col("datapack")==datapack, named=True)
+    _info["injection.display_config"]=json.loads(_info["injection.display_config"])
+    del _info["injection.engine_config"]
+    mo.output.append(_info)
+    return
 
 
 @app.cell
@@ -381,7 +392,7 @@ def _(
 
 
 @app.cell
-def _(inject_time, mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
+def _(mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
     import plotly.express as px
 
     def plot_indicator(node, indicator):
@@ -439,7 +450,7 @@ def _(inject_time, mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
     else:
         common_indicators = []
 
-    mo.output.append(mo.md(f"inject_time: `{inject_time}`"))
+    mo.output.append(mo.md(f"inject_time: `{sdg.data['inject_time']}`"))
 
     if _node1 and _node2:
         mo.output.append(mo.md("### Indicators (common)"))

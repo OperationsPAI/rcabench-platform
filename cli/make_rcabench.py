@@ -10,15 +10,19 @@ from rcabench_platform.v1.spec.convert import (
     convert_dataset,
     postprocess_collect_schema,
 )
-from rcabench_platform.v1.spec.data import get_datapack_list
-from rcabench_platform.v1.utils.serde import load_json, save_json
+from rcabench_platform.v1.spec.data import META_ROOT, get_datapack_list
+from rcabench_platform.v1.utils.fmap import fmap_threadpool
+from rcabench_platform.v1.utils.serde import load_json, save_json, save_parquet
 
 from pathlib import Path
 from typing import Any
+import functools
+import datetime
 import json
 
 import polars as pl
 from tqdm.auto import tqdm
+import dateutil.tz
 
 
 def local_to_utc(col: pl.Expr) -> pl.Expr:
@@ -413,18 +417,50 @@ def local_test_1():
     )
 
 
+def _convert_time(ts: int, tz: datetime.tzinfo | None) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).replace(tzinfo=tz).astimezone(datetime.UTC)
+
+
+def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Path) -> dict[str, Any]:
+    attrs: dict[str, Any] = {"dataset": dataset, "datapack": datapack}
+
+    env = load_json(path=input_folder / "env.json")
+    injection = load_json(path=input_folder / "injection.json")
+
+    tz = dateutil.tz.gettz(env["TIMEZONE"])
+    normal_start = _convert_time(int(env["NORMAL_START"]), tz)
+    normal_end = _convert_time(int(env["NORMAL_END"]), tz)
+    abnormal_start = _convert_time(int(env["ABNORMAL_START"]), tz)
+    abnormal_end = _convert_time(int(env["ABNORMAL_END"]), tz)
+
+    attrs["inject_time"] = abnormal_start
+
+    attrs["injection.fault_type"] = FAULT_TYPES[injection["fault_type"]]
+    attrs["injection.display_config"] = injection["display_config"]
+    attrs["injection.engine_config"] = injection["engine_config"]
+
+    attrs["env.normal_start"] = normal_start
+    attrs["env.normal_end"] = normal_end
+    attrs["env.abnormal_start"] = abnormal_start
+    attrs["env.abnormal_end"] = abnormal_end
+
+    return attrs
+
+
 @app.command()
-@timeit()
-def scan_engine_config():
-    datapacks = get_datapack_list("rcabench")
+def scan_datapack_attributes():
+    dataset = "rcabench"
+    datapacks = get_datapack_list(dataset)
 
-    injection_set = set()
-    for datapack, folder in tqdm(datapacks):
-        injection = load_json(path=folder / "injection.json")
-        engine_config = json.dumps(injection["engine_config"], sort_keys=True)
-        injection_set.add(engine_config)
+    tasks = []
+    for datapack, input_folder in datapacks:
+        tasks.append(functools.partial(_task_scan_datapack_attributes, dataset, datapack, input_folder))
 
-    logger.info(f"Found {len(injection_set)} unique engine_config in {len(datapacks)} datapacks.")
+    results = fmap_threadpool(tasks, parallel=32)
+
+    df = pl.DataFrame(results).sort("inject_time", descending=True)
+
+    save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
 
 
 if __name__ == "__main__":
