@@ -82,7 +82,48 @@ def calc_stat_for_service_node(node: PlaceNode):
 
 def calc_stat_for_pod_node(node: PlaceNode):
     assert node.kind == PlaceKind.pod
-    pass  # TODO
+
+    indicator_names = [
+        "k8s.pod.cpu.usage",
+        "k8s.pod.memory.usage",
+        "jvm.gc.duration:PS Scavenge:hist.sum",
+    ]
+
+    for name in indicator_names:
+        indicator = node.indicators.get(name)
+        if indicator is None:
+            continue
+
+        assert indicator.df.schema["value"] == pl.Float64
+        assert indicator.df["value"].is_not_null().all()
+
+        lf = indicator.df.lazy()
+        normal_lf = lf.filter(pl.col("anomal") == 0)
+        anomal_lf = lf.filter(pl.col("anomal") == 1)
+
+        df_list = pl.collect_all([normal_lf, anomal_lf])
+
+        value_list = [df["value"].to_numpy() for df in df_list]
+
+        calc_regular_stat(node, indicator, value_list)
+
+        if indicator.name == "k8s.pod.cpu.usage":
+            stat_name = "cpu_usage"
+            mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
+
+        elif indicator.name == "k8s.pod.memory.usage":
+            stat_name = "memory_usage"
+            mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
+
+        elif indicator.name == "jvm.gc.duration:PS Scavenge:hist.sum":
+            stat_name = "jvm_gc_duration"
+            mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
 
 
 def calc_stat_for_function_node(node: PlaceNode):
@@ -90,7 +131,10 @@ def calc_stat_for_function_node(node: PlaceNode):
 
     indicator_names = [
         "duration",
-        "status_code",
+        "attr.status_code",
+        "attr.http.response.status_code",
+        "attr.http.request.content_length",
+        "attr.http.response.content_length",
     ]
 
     for name in indicator_names:
@@ -127,7 +171,7 @@ def calc_stat_for_function_node(node: PlaceNode):
             node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = traces_id_set[0]
             node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = traces_id_set[1]
 
-        elif indicator.name == "status_code":
+        elif indicator.name == "attr.status_code":
             stat_name = "error_rate"
             error_rate = [calc_error_rate(value_list[i]) for i in range(2)]
             node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = error_rate[0]
