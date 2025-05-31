@@ -16,11 +16,11 @@ def find_service_names(dataset: str, input_folder: Path) -> list[str]:
 
 @timeit()
 def rcaeval_load_service_names(input_folder: Path) -> list[str]:
-    metrics = pl.scan_parquet(input_folder / "simple_metrics.parquet").select(pl.col("attr.service_name")).unique()
+    metrics = pl.scan_parquet(input_folder / "simple_metrics.parquet").select(pl.col("service_name")).unique()
     traces = pl.scan_parquet(input_folder / "traces.parquet").select(pl.col("service_name")).unique()
     metrics, traces = pl.collect_all([metrics, traces])
 
-    metric_service_names = set(metrics["attr.service_name"].to_list())
+    metric_service_names = set(metrics["service_name"].to_list())
     trace_service_names = set(traces["service_name"].to_list())
 
     service_names = metric_service_names | trace_service_names
