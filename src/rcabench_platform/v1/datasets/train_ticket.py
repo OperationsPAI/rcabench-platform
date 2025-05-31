@@ -1,3 +1,10 @@
+from ..spec.data import TEMP_SDG
+from ..logging import timeit
+from ..utils.serde import save_parquet
+from ..utils.env import debug
+
+from collections import defaultdict
+
 import polars as pl
 
 PATTERN_REPLACEMENTS = [
@@ -47,7 +54,61 @@ PATTERN_REPLACEMENTS = [
 PATTERN_REPLACEMENTS_POLARS = [(pat, rep.replace(r"\1", "${1}")) for pat, rep in PATTERN_REPLACEMENTS]
 
 
-def normalize_op_name_by_polars(op_name: pl.Expr) -> pl.Expr:
+def _normalize_op_name(op_name: pl.Expr) -> pl.Expr:
     for pattern, replacement in PATTERN_REPLACEMENTS_POLARS:
         op_name = op_name.str.replace(pattern, replacement)
     return op_name
+
+
+def tt_add_op_name(traces: pl.LazyFrame) -> pl.LazyFrame:
+    lf = traces
+
+    op_name = pl.concat_str(pl.col("service_name"), pl.col("span_name"), separator=" ")
+    lf = lf.with_columns(_normalize_op_name(op_name).alias("op_name"))
+    lf = lf.drop("span_name")
+
+    return lf
+
+
+@timeit(log_args=False)
+def tt_fix_client_spans(traces: pl.DataFrame):
+    id2op: dict[str, str] = {}
+    id2parent: dict[str, str] = {}
+    parent_child_map: defaultdict[str, set[str]] = defaultdict(set)
+
+    selected = traces.select("span_id", "parent_span_id", "op_name")
+    for span_id, parent_span_id, op_name in selected.iter_rows():
+        assert isinstance(span_id, str) and span_id
+        id2op[span_id] = op_name
+        if parent_span_id:
+            assert isinstance(parent_span_id, str)
+            id2parent[span_id] = parent_span_id
+            parent_child_map[parent_span_id].add(span_id)
+
+    fix_client_spans: dict[str, str] = {}
+    for span_id, op_name in id2op.items():
+        if op_name.endswith("GET") or op_name.endswith("POST"):
+            children = parent_child_map[span_id]
+            if len(children) != 1:
+                continue
+            child = children.pop()
+            child_op_name = id2op[child]
+            real_op_name = op_name + " " + child_op_name.split(" ")[2]
+            fix_client_spans[span_id] = real_op_name
+
+    id2op.update(fix_client_spans)
+    del parent_child_map
+
+    if len(fix_client_spans) > 0:
+        client_spans_df = pl.DataFrame(
+            [{"span_id": span_id, "op_name": op_name} for span_id, op_name in fix_client_spans.items()]
+        )
+        del fix_client_spans
+
+        if debug():
+            save_parquet(client_spans_df, path=TEMP_SDG / "client_spans.parquet")
+
+        traces = traces.join(client_spans_df, on="span_id", how="left")
+        traces = traces.with_columns(pl.coalesce("op_name_right", "op_name").alias("op_name"))
+
+    return traces, id2op, id2parent
