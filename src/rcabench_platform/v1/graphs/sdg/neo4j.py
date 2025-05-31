@@ -37,15 +37,14 @@ def export_sdg_to_neo4j(sdg: SDG, *, clear: bool = True, driver: neo4j.Driver | 
             if (created_by := node.data.get("created_by")) is not None:
                 props["created_by"] = created_by
 
-            # Create the node with a unique identifier from the graph
-            # FIXME: https://github.com/neo4j/neo4j/issues/2000
-            cypher = f"""
-            MERGE (n:{node_kind} {{id: $id}})
+            cypher = """
+            MERGE (n:$($node_kind) {id: $id})
             SET n += $props
             """
 
             session.run(
                 cypher,  # type:ignore
+                node_kind=node_kind,
                 id=str(node.id),
                 props=props,
             )
@@ -60,16 +59,16 @@ def export_sdg_to_neo4j(sdg: SDG, *, clear: bool = True, driver: neo4j.Driver | 
                 "kind": edge_kind,
             }
 
-            # FIXME: https://github.com/neo4j/neo4j/issues/2000
-            cypher = f"""
-            MATCH (src {{id: $src_id}}), (dst {{id: $dst_id}})
-            MERGE (src)-[r:{edge_kind}]->(dst)
+            cypher = """
+            MATCH (src {id: $src_id}), (dst {id: $dst_id})
+            MERGE (src)-[r:$($edge_kind)]->(dst)
             SET r += $props
             """
             session.run(
                 cypher,  # type:ignore
                 src_id=str(edge.src_id),
                 dst_id=str(edge.dst_id),
+                edge_kind=edge_kind,
                 props=props,
             )
 
