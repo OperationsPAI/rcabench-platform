@@ -529,6 +529,16 @@ def make_filtered():
 
     df = lf.collect()
 
+    tasks = []
+    for row in df.select("datapack", "injection.fault_type", "injection.display_config").iter_rows(named=True):
+        tasks.append(functools.partial(_check_datapack, row))
+    results = fmap_threadpool(tasks, parallel=32)
+    kickout_df = pl.DataFrame([r for r in results if r is not None])
+    save_parquet(kickout_df, path=META_ROOT / "rcabench" / "kickout.parquet")
+
+    kickout_datapacks = kickout_df["datapack"].to_list()
+    df = df.filter(pl.col("datapack").is_in(kickout_datapacks).not_())
+
     dataset = "rcabench_filtered"
 
     dataset_folder = DATA_ROOT / dataset
@@ -560,6 +570,150 @@ def make_filtered():
     save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
     save_parquet(index_df, path=META_ROOT / dataset / "index.parquet")
     save_parquet(label_df, path=META_ROOT / dataset / "label.parquet")
+
+
+def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
+    datapack = row["datapack"]
+    assert isinstance(datapack, str) and datapack
+
+    datapack_folder = DATA_ROOT / "rcabench" / datapack
+
+    injection_fault_type = row["injection.fault_type"]
+    assert isinstance(injection_fault_type, str)
+
+    injection_config = json.loads(row["injection.display_config"])
+    assert isinstance(injection_config, dict)
+
+    injection_point = injection_config.get("injection_point")
+    if not injection_point:
+        return None
+    assert isinstance(injection_point, dict)
+
+    if injection_fault_type.startswith("Network"):
+        direction = injection_point.get("direction")
+        if direction is None:
+            direction = injection_config.get("direction")
+        assert direction in ["from", "to", "both"], injection_config
+
+        source_service = injection_point.get("source_service")
+        target_service = injection_point.get("target_service")
+        if not source_service or not target_service:
+            return None
+        assert isinstance(source_service, str)
+        assert isinstance(target_service, str)
+
+        has_direct_calls = False
+
+        if direction in ("from", "both"):
+            has_direct_calls |= scan_direct_calls_from_traces(
+                datapack_folder,
+                source_service,
+                target_service,
+            )
+
+        if direction in ("to", "both"):
+            has_direct_calls |= scan_direct_calls_from_traces(
+                datapack_folder,
+                target_service,
+                source_service,
+            )
+
+        if not has_direct_calls:
+            logger.debug(
+                f"datapack `{datapack}`: no direct calls between `{source_service}` and `{target_service}`, direction `{direction}`"
+            )
+            return {
+                "datapack": datapack,
+                "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
+            }
+
+    elif injection_fault_type.startswith("HTTP"):
+        app_name = injection_point.get("app_name")
+        server_address = injection_point.get("server_address")
+        assert isinstance(app_name, str) and app_name
+        assert isinstance(server_address, str) and server_address
+
+        has_direct_calls = scan_direct_calls_from_traces(
+            datapack_folder,
+            source_service=app_name,
+            target_service=server_address,
+        )
+
+        if not has_direct_calls:
+            logger.debug(f"datapack `{datapack}`: no direct calls between `{app_name}` and `{server_address}`")
+            return {
+                "datapack": datapack,
+                "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
+            }
+
+    single_point_failures = (
+        "PodFailure",
+        "CPUStress",
+        "MemoryStress",
+        "JVMCPUStress",
+        "JVMMemoryStress",
+    )
+
+    if injection_fault_type in single_point_failures:
+        target_service = injection_point.get("app_label")
+        if target_service is None:
+            target_service = injection_point.get("app_name")
+        assert isinstance(target_service, str) and target_service
+
+        has_direct_calls = scan_direct_calls_from_traces(
+            datapack_folder,
+            None,
+            target_service,
+        )
+
+        if not has_direct_calls:
+            logger.debug(f"datapack `{datapack}`: no direct calls to `{target_service}`")
+            return {
+                "datapack": datapack,
+                "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
+            }
+
+
+@timeit()
+def scan_direct_calls_from_traces(
+    datapack_folder: Path,
+    source_service: str | None,
+    target_service: str,
+) -> bool:
+    assert datapack_folder.exists()
+
+    normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
+    traces = pl.concat([normal_traces, anomal_traces])
+
+    lf = traces.select(
+        "span_id",
+        "parent_span_id",
+        "service_name",
+    )
+
+    lf = lf.join(
+        lf.select("span_id", pl.col("service_name").alias("parent_service_name")),
+        left_on="parent_span_id",
+        right_on="span_id",
+        how="left",
+    )
+
+    if source_service:
+        lf = lf.filter(
+            pl.col("parent_service_name") == source_service,
+            pl.col("service_name") == target_service,
+        )
+    else:
+        lf = lf.filter(
+            pl.col("service_name") == target_service,
+        )
+
+    df = lf.collect()
+
+    logger.debug(f"source=`{source_service}`, target=`{target_service}`, len(df)={len(df)}")
+
+    return len(df) > 0
 
 
 @app.command()
