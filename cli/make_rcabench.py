@@ -490,6 +490,7 @@ def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Pa
 
 
 @app.command()
+@timeit()
 def make_filtered():
     lf = pl.scan_parquet(META_ROOT / "rcabench" / "attributes.parquet")
 
@@ -559,6 +560,35 @@ def make_filtered():
     save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
     save_parquet(index_df, path=META_ROOT / dataset / "index.parquet")
     save_parquet(label_df, path=META_ROOT / dataset / "label.parquet")
+
+
+@app.command()
+@timeit()
+def scan_conclusion_csv(include_legacy: bool = False):
+    root = Path("data") / "rcabench_dataset"
+    folders = [f.name for f in root.iterdir() if f.is_dir()]
+
+    conclusion_df_list = []
+    for datapack in tqdm(folders):
+        conclusion_csv_path = root / datapack / "conclusion.csv"
+        if not conclusion_csv_path.exists():
+            continue
+
+        if not include_legacy:
+            if not (root / datapack / "injection.json").exists():
+                continue
+
+        conclusion_df = pl.read_csv(conclusion_csv_path)
+        if conclusion_df.is_empty():
+            continue
+
+        columns = conclusion_df.columns
+        conclusion_df = conclusion_df.select(pl.lit(datapack).alias("datapack"), *columns)
+
+        conclusion_df_list.append(conclusion_df)
+
+    df = pl.concat(conclusion_df_list)
+    save_parquet(df, path=META_ROOT / "rcabench" / "conclusion.parquet")
 
 
 if __name__ == "__main__":
