@@ -1,5 +1,6 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v1.cli.main import app, logger
+from rcabench_platform.v1.clients.rcabench_ import get_mariadb_connection
 from rcabench_platform.v1.datasets.rcabench_ import rcabench_get_service_name, FAULT_TYPES
 from rcabench_platform.v1.logging import timeit
 from rcabench_platform.v1.spec.convert import (
@@ -10,11 +11,12 @@ from rcabench_platform.v1.spec.convert import (
     convert_dataset,
     postprocess_collect_schema,
 )
-from rcabench_platform.v1.spec.data import DATA_ROOT, META_ROOT, get_datapack_list
+from rcabench_platform.v1.spec.data import DATA_ROOT, META_ROOT, TEMP, get_datapack_list
 from rcabench_platform.v1.utils.dict_ import flatten_dict
 from rcabench_platform.v1.utils.fmap import fmap_threadpool
 from rcabench_platform.v1.utils.serde import load_json, save_json, save_parquet
 
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 import functools
@@ -743,6 +745,72 @@ def scan_conclusion_csv(include_legacy: bool = False):
 
     df = pl.concat(conclusion_df_list)
     save_parquet(df, path=META_ROOT / "rcabench" / "conclusion.parquet")
+
+
+@app.command()
+@timeit()
+def make_with_issues(require_filtered: bool = False):
+    with get_mariadb_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT DISTINCT injection_name \
+            FROM fault_injection_with_issues \
+            ORDER BY injection_name ASC;"
+        )
+
+        rows = cursor.fetchall()
+        df = pl.DataFrame(rows)
+
+    save_parquet(df, path=META_ROOT / "rcabench" / "with_issues.db.parquet")
+
+    if require_filtered:
+        filtered_df = (
+            pl.read_parquet(META_ROOT / "rcabench_filtered" / "index.parquet")
+            .select("datapack")
+            .rename({"datapack": "injection_name"})
+        )
+        df = df.join(filtered_df, on="injection_name", how="inner")
+
+    datapacks = df["injection_name"].to_list()
+
+    dataset = "rcabench_with_issues"
+
+    dataset_folder = DATA_ROOT / dataset
+    dataset_folder.mkdir(parents=True, exist_ok=True)
+
+    for datapack in tqdm(datapacks):
+        assert isinstance(datapack, str) and datapack
+
+        src_folder = Path("..") / "rcabench" / datapack
+        dst_folder = dataset_folder / datapack
+
+        dst_folder.unlink(missing_ok=True)
+        dst_folder.symlink_to(src_folder, target_is_directory=True)
+
+    index_df = df.select(pl.lit(dataset).alias("dataset"), pl.col("injection_name").alias("datapack"))
+
+    label_df = (
+        pl.read_parquet(META_ROOT / "rcabench" / "label.parquet")
+        .join(index_df, on="datapack", how="inner")
+        .with_columns(pl.lit(dataset).alias("dataset"))
+    )
+
+    save_parquet(index_df, path=META_ROOT / dataset / "index.parquet")
+    save_parquet(label_df, path=META_ROOT / dataset / "label.parquet")
+
+    query_with_issues_ratio()
+
+
+@app.command()
+@timeit()
+def query_with_issues_ratio():
+    with_issues = pl.read_parquet(META_ROOT / "rcabench_with_issues" / "index.parquet").select("datapack")
+    filtered = pl.read_parquet(META_ROOT / "rcabench_filtered" / "index.parquet").select("datapack")
+
+    joint_df = with_issues.join(filtered, on="datapack", how="inner")
+
+    ratio = Fraction(len(joint_df), len(with_issues))
+    logger.info(f"with_issues ratio: {len(joint_df)}/{len(with_issues)} {float(ratio):.2%}")
 
 
 if __name__ == "__main__":
