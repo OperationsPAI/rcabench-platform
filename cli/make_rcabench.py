@@ -10,7 +10,8 @@ from rcabench_platform.v1.spec.convert import (
     convert_dataset,
     postprocess_collect_schema,
 )
-from rcabench_platform.v1.spec.data import META_ROOT, get_datapack_list
+from rcabench_platform.v1.spec.data import DATA_ROOT, META_ROOT, get_datapack_list
+from rcabench_platform.v1.utils.dict_ import flatten_dict
 from rcabench_platform.v1.utils.fmap import fmap_threadpool
 from rcabench_platform.v1.utils.serde import load_json, save_json, save_parquet
 
@@ -401,6 +402,8 @@ def run(skip: bool = True, parallel: int | None = 4):
         ignore_exceptions=True,
     )
 
+    scan_datapack_attributes()
+
 
 @app.command()
 @timeit()
@@ -415,6 +418,22 @@ def local_test_1():
         dst_folder=Path("temp") / "rcabench" / datapack,
         skip=False,
     )
+
+
+@app.command()
+def scan_datapack_attributes():
+    dataset = "rcabench"
+    datapacks = get_datapack_list(dataset)
+
+    tasks = []
+    for datapack, input_folder in datapacks:
+        tasks.append(functools.partial(_task_scan_datapack_attributes, dataset, datapack, input_folder))
+
+    results = fmap_threadpool(tasks, parallel=32)
+
+    df = pl.DataFrame(results).sort("inject_time", descending=True)
+
+    save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
 
 
 def _convert_time(ts: int, tz: datetime.tzinfo | None) -> datetime.datetime:
@@ -435,32 +454,111 @@ def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Pa
 
     attrs["inject_time"] = abnormal_start
 
+    display_config = flatten_dict(json.loads(injection["display_config"]))
     attrs["injection.fault_type"] = FAULT_TYPES[injection["fault_type"]]
     attrs["injection.display_config"] = injection["display_config"]
-    attrs["injection.engine_config"] = injection["engine_config"]
+    attrs["injection.duration"] = display_config["duration"]
+
+    configs = [
+        "injection_point.class_name",
+        "rate",
+        "mem_worker",
+        "memory_size",
+    ]
+    for config in configs:
+        attrs[f"injection.{config}"] = display_config.get(config)
 
     attrs["env.normal_start"] = normal_start
     attrs["env.normal_end"] = normal_end
     attrs["env.abnormal_start"] = abnormal_start
     attrs["env.abnormal_end"] = abnormal_end
 
+    total_size = 0
+    for file in input_folder.iterdir():
+        if not file.is_file():
+            continue
+        total_size += file.stat().st_size
+    attrs["files.total_size:MiB"] = round(total_size / (1024 * 1024), 6)
+
+    conclusion_csv_path = Path("data") / "rcabench_dataset" / datapack / "conclusion.csv"
+    if conclusion_csv_path.exists():
+        conclusion_df = pl.read_csv(conclusion_csv_path)
+        attrs["detector.conclusion.rows"] = len(conclusion_df)
+        attrs["detector.issues.rows"] = len(conclusion_df.filter(pl.col("Issues") != "{}"))
+
     return attrs
 
 
 @app.command()
-def scan_datapack_attributes():
-    dataset = "rcabench"
-    datapacks = get_datapack_list(dataset)
+def make_filtered():
+    lf = pl.scan_parquet(META_ROOT / "rcabench" / "attributes.parquet")
 
-    tasks = []
-    for datapack, input_folder in datapacks:
-        tasks.append(functools.partial(_task_scan_datapack_attributes, dataset, datapack, input_folder))
+    col = pl.col("files.total_size:MiB")
+    lf = lf.filter(
+        (col >= 10) & (col <= 500),
+    )
 
-    results = fmap_threadpool(tasks, parallel=32)
+    lf = lf.filter(
+        pl.col("detector.conclusion.rows").is_not_null(),
+        pl.col("detector.issues.rows") > 0,
+    )
 
-    df = pl.DataFrame(results).sort("inject_time", descending=True)
+    col = pl.col("injection.injection_point.class_name")
+    lf = lf.filter(
+        col.is_null() | (col.str.ends_with("Test") | col.str.ends_with("Config")).not_(),
+    )
+
+    col = pl.col("injection.rate")
+    lf = lf.filter(
+        col.is_null() | (col / 8000 < 20),
+    )
+
+    lf = lf.filter(
+        pl.col("injection.mem_worker").is_null()
+        | (pl.col("injection.mem_worker") * pl.col("injection.memory_size") >= 500)
+    )
+
+    col = pl.col("inject_time")
+    lf = lf.filter(
+        (col < pl.datetime(2025, 5, 27, 8, time_zone="UTC")) | (col > pl.datetime(2025, 5, 28, 0, time_zone="UTC")),
+    )
+    lf = lf.filter(
+        (col < pl.datetime(2025, 5, 30, 4, time_zone="UTC")) | (col > pl.datetime(2025, 5, 30, 16, time_zone="UTC"))
+    )
+
+    df = lf.collect()
+
+    dataset = "rcabench_filtered"
+
+    dataset_folder = DATA_ROOT / dataset
+    dataset_folder.mkdir(parents=True, exist_ok=True)
+
+    datapacks = df["datapack"].to_list()
+    for datapack in tqdm(datapacks):
+        assert isinstance(datapack, str) and datapack
+
+        src_folder = Path("..") / "rcabench" / datapack
+        dst_folder = dataset_folder / datapack
+
+        dst_folder.unlink(missing_ok=True)
+        dst_folder.symlink_to(src_folder, target_is_directory=True)
+
+    index_df = df.select("dataset", "datapack")
+
+    label_df = pl.read_parquet(META_ROOT / "rcabench" / "label.parquet").join(
+        df.select("datapack"),
+        on="datapack",
+        how="inner",
+    )
+
+    col = pl.lit(dataset).alias("dataset")
+    df = df.with_columns(col)
+    index_df = index_df.with_columns(col)
+    label_df = label_df.with_columns(col)
 
     save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
+    save_parquet(index_df, path=META_ROOT / dataset / "index.parquet")
+    save_parquet(label_df, path=META_ROOT / dataset / "label.parquet")
 
 
 if __name__ == "__main__":

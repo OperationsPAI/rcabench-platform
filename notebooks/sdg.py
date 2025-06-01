@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.13.11"
+__generated_with = "0.13.15"
 app = marimo.App(width="full", app_title="SDG Visualization")
 
 
@@ -19,7 +19,11 @@ def _():
 
 @app.cell
 def _():
-    from rcabench_platform.v1.spec.data import dataset_index_path, DATA_ROOT, META_ROOT
+    from rcabench_platform.v1.spec.data import (
+        dataset_index_path,
+        DATA_ROOT,
+        META_ROOT,
+    )
 
     from rcabench_platform.v1.graphs.sdg.defintion import (
         SDG,
@@ -41,6 +45,7 @@ def _(mo):
 @app.cell
 def _(mo):
     all_datasets = [
+        "rcabench_filtered",
         "rcabench",
         "rcaeval_re2_tt",
         "rcaeval_re2_ob",
@@ -63,7 +68,12 @@ def _(META_ROOT, dataset_dropdown, dataset_index_path, mo, pl):
     _attributes_df_path = META_ROOT / dataset / "attributes.parquet"
     if _attributes_df_path.exists():
         attributes_df = pl.read_parquet(_attributes_df_path)
-        _df = attributes_df.select("datapack", "inject_time", "injection.fault_type")
+        _df = attributes_df.select(
+            "datapack",
+            "inject_time",
+            "injection.fault_type",
+            "files.total_size:MiB",
+        )
     else:
         attributes_df = _index_df
         _df = attributes_df.select("datapack")
