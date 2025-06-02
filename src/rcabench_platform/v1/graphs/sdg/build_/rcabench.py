@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 import datetime
 import math
+import json
 
 import polars as pl
 import dateutil.tz
@@ -627,7 +628,7 @@ def apply_detector_conclusion(sdg: SDG, input_folder: Path) -> None:
     if not conclusion_path.exists():
         return
 
-    df = pl.read_parquet(conclusion_path, columns=["SpanName"])
+    df = pl.read_parquet(conclusion_path, columns=["SpanName", "Issues"])
     if len(df) == 0:
         return
 
@@ -640,13 +641,18 @@ def apply_detector_conclusion(sdg: SDG, input_folder: Path) -> None:
             dst_node = sdg.get_node_by_id(edge.dst_id)
             ts_ui_dashboard_functions.append(dst_node)
 
+    span_names = {}
+    for span_name, issues in df.select("SpanName", "Issues").iter_rows():
+        assert isinstance(span_name, str) and span_name
+        assert isinstance(issues, str) and issues
+        span_names[span_name] = json.loads(issues)
+
     sli_nodes: list[dict[str, Any]] = []
-    span_names = df["SpanName"].to_list()
-    for span_name in span_names:
+    for span_name, issues in span_names.items():
         assert isinstance(span_name, str) and span_name
         for node in ts_ui_dashboard_functions:
             if span_name in node.self_name:
-                sli_nodes.append({"node.id": node.id, "node.self_name": node.self_name})
+                sli_nodes.append({"node.id": node.id, "node.self_name": node.self_name, "issues": issues})
                 break
 
     sdg.data["detector.sli.nodes"] = sli_nodes
