@@ -1,5 +1,10 @@
 from .defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+from .statistics import STAT_PREFIX
+
+from typing import Any, Literal
 from collections.abc import Callable
+from collections.abc import Iterable
+from itertools import chain
 
 
 class MCPWrapper:
@@ -13,20 +18,50 @@ class MCPWrapper:
         return list(set(dir(self.__class__)) | set(dir(self._sdg)))
 
     def mcp_get_node_stat(self, node_id: int):
-        raise NotImplementedError("This method is not implemented in MCPWrapper")
+        node = self._sdg.get_node_by_id(node_id)
+
+        ans = {}
+        for k, v in node.data.items():
+            for prefix in STAT_PREFIX:
+                if k.startswith(prefix):
+                    ans[k] = v
+                    break
+
+        return ans
 
     def mcp_get_edge_stat(self, edge_id: int):
-        """取决于这里的信息多吗；如果有用的话需要实现"""
-        return NotImplementedError("This method is not implemented in MCPWrapper")
+        edge = self._sdg.get_edge_by_id(edge_id)
 
-    def mcp_get_node_edges(self, node_id: int):
-        """
-        get all the edges of the node; 是为了允许沿着 node 做邻近节点的搜索
-        如果 edge 信息有用，则 edgeid 也需要返回；否则只需要返回邻近的 node id
-        """
-        raise NotImplementedError("This method is not implemented in MCPWrapper")
+        ans = {}
+        for k, v in edge.data.items():
+            for prefix in STAT_PREFIX:
+                if k.startswith(prefix):
+                    ans[k] = v
+                    break
 
-    def mcp_get_paths(self, src_id: int, dst_id: int):
+        return ans
+
+    def mcp_get_node_edges(self, node_id: int, direction: Literal["in", "out", "both"] = "both"):
+        iterables: list[Iterable[DepEdge]] = []
+        if direction == "in" or direction == "both":
+            iterables.append(self._sdg.in_edges(node_id))
+        if direction == "out" or direction == "both":
+            iterables.append(self._sdg.out_edges(node_id))
+
+        ans: list[dict[str, Any]] = []
+        for edge in chain(*iterables):
+            ans.append(
+                {
+                    "id": edge.id,
+                    "src_id": edge.src_id,
+                    "dst_id": edge.dst_id,
+                    "kind": edge.kind,
+                }
+            )
+
+        return ans
+
+    def mcp_get_paths(self, src_id: int, dst_id: int, directed: bool):
         """返回 node id 路径的列表应该就可以"""
         raise NotImplementedError("This method is not implemented in MCPWrapper")
 
