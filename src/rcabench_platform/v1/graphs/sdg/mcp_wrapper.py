@@ -62,8 +62,7 @@ class MCPWrapper:
         return ans
 
     def mcp_get_paths(self, src_id: int, dst_id: int, directed: bool):
-        """返回 node id 路径的列表应该就可以"""
-        raise NotImplementedError("This method is not implemented in MCPWrapper")
+        return self._sdg.all_simple_paths(src_id, dst_id, directed=directed)
 
     def mcp_get_suspicious_nodes(self, fn: Callable[[float, float], bool]):
         """
