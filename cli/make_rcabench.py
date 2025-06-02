@@ -287,6 +287,27 @@ def convert_logs(src: Path) -> pl.LazyFrame:
     return lf
 
 
+def convert_conclusion(src: Path) -> pl.LazyFrame:
+    lf = pl.scan_csv(
+        src,
+        schema={
+            "SpanName": pl.String,
+            "Issues": pl.String,
+            "AbnormalAvgDuration": pl.Float64,
+            "NormalAvgDuration": pl.Float64,
+            "AbnormalSuccRate": pl.Float64,
+            "NormalSuccRate": pl.Float64,
+            "AbnormalP90": pl.Float64,
+            "NormalP90": pl.Float64,
+            "AbnormalP95": pl.Float64,
+            "NormalP95": pl.Float64,
+            "AbnormalP99": pl.Float64,
+            "NormalP99": pl.Float64,
+        },
+    )
+    return lf
+
+
 class RcabenchDatapackLoader(DatapackLoader):
     def __init__(self, src_folder: Path, datapack: str) -> None:
         self._src_folder = src_folder
@@ -321,6 +342,7 @@ class RcabenchDatapackLoader(DatapackLoader):
         ans: dict[str, Any] = {
             "env.json": self._src_folder / "env.json",
             "injection.json": self._src_folder / "injection.json",
+            "conclusion.parquet": convert_conclusion(self._src_folder / "conclusion.csv"),
         }
 
         converters = {
@@ -837,6 +859,26 @@ def query_fault_types(dataset: str):
     save_parquet(fault_types_count, path=META_ROOT / dataset / "fault_types.count.parquet")
 
     print_dataframe(fault_types_count)
+
+
+@app.command()
+def patch_conclusion_files():
+    src = Path("data") / "rcabench_dataset"
+
+    datapacks = get_datapack_list("rcabench")
+
+    for datapack_name, datapack_path in tqdm(datapacks):
+        if not datapack_path.is_dir():
+            continue
+
+        src_path = src / datapack_name / "conclusion.csv"
+        dst_path = datapack_path / "conclusion.parquet"
+
+        if not src_path.exists():
+            continue
+
+        df = convert_conclusion(src_path).collect()
+        save_parquet(df, path=dst_path)
 
 
 if __name__ == "__main__":
