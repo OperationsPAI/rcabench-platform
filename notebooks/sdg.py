@@ -133,8 +133,25 @@ def _(attributes_df, datapack, json, mo, pl):
     mo.stop(not isinstance(datapack, str))
     _info = attributes_df.row(by_predicate=pl.col("datapack") == datapack, named=True)
     _info["injection.display_config"] = json.loads(_info["injection.display_config"])
-    del _info["injection.engine_config"]
+    mo.output.append(mo.md("### Attributes"))
     mo.output.append(_info)
+    return
+
+
+@app.cell
+def _(mo, sdg):
+    mo.output.append(mo.md("### SDG data"))
+    mo.output.append(sdg.data)
+    return
+
+
+@app.cell
+def _(DATA_ROOT, datapack, dataset, mo, pl):
+    _conclusion_df_path = DATA_ROOT / dataset / datapack / "conclusion.parquet"
+    mo.stop(not _conclusion_df_path.exists())
+    _conclusion_df = pl.read_parquet(_conclusion_df_path)
+    mo.output.append(mo.md("### Detector conclusions"))
+    mo.output.append(_conclusion_df)
     return
 
 
