@@ -56,6 +56,8 @@ The `main` branch is the default branch for this repository. `main` is protected
 + The basic checks passed successfully.
 + **The changes will not break other developers' workflow.**
 
+We requires a linear commit history. Please use `git rebase` to keep your branch up to date with `main`. When merging your branch into `main`, use `git merge --ff-only` to ensure a fast-forward merge. This will keep the commit history clean and linear.
+
 ### Workflow
 
 #### Download source code
