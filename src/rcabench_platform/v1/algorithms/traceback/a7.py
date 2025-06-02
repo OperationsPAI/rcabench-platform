@@ -1,3 +1,5 @@
+from ...utils.serde import load_pickle
+from ...utils.fs import has_recent_file
 from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode, GraphPath, ExpandedGraphPath
 from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
 from ...graphs.sdg.build_ import build_sdg
@@ -464,6 +466,14 @@ class TraceBackA7(Algorithm):
     def needs_cpu_count(self) -> int | None:
         return 8
 
+    def _build_sdg(self, args: AlgorithmArgs) -> SDG:
+        sdg_pkl_path = args.output_folder / "sdg.pkl"
+
+        if has_recent_file(sdg_pkl_path, seconds=600):
+            return load_pickle(path=sdg_pkl_path)
+
+        return build_sdg(args.dataset, args.datapack, args.input_folder)
+
     @timeit()
     def __call__(self, args: AlgorithmArgs) -> list[AlgorithmAnswer]:
         if debug():
@@ -475,7 +485,7 @@ class TraceBackA7(Algorithm):
                     injection["engine_config"] = json.loads(injection["engine_config"])
                 logger.debug(f"found injection:\n{pformat(injection)}")
 
-        sdg = build_sdg(args.dataset, args.datapack, args.input_folder)
+        sdg = self._build_sdg(args)
 
         calc_statistics(sdg)
 
