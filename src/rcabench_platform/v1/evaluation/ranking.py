@@ -184,3 +184,22 @@ def calc_all_perf(df: pl.DataFrame, *, agg_level: AGG_LEVEL) -> pl.DataFrame:
         ans = ans.sort(by=["algorithm", "dataset"])
 
     return ans
+
+
+def calc_all_perf_by_datapack_attr(df: pl.DataFrame, dataset: str, attr_col: str) -> pl.DataFrame:
+    assert df.filter(pl.col("dataset") != dataset).is_empty()
+
+    df = df.drop("dataset").with_columns(pl.col(attr_col).alias("dataset"))
+
+    perf_df = calc_all_perf(df, agg_level="dataset")
+
+    perf_df = perf_df.with_columns(pl.col("dataset").alias(attr_col))
+
+    perf_df = perf_df.select(
+        "algorithm",
+        pl.lit(dataset).alias("dataset"),
+        attr_col,
+        pl.all().exclude("algorithm", "dataset", attr_col),
+    )
+
+    return perf_df

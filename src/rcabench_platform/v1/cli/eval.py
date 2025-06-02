@@ -1,8 +1,16 @@
 from ..algorithms.traceback.a7 import TraceBackA7
 from ..algorithms.random_ import Random
 
-from ..evaluation.ranking import calc_all_perf
-from ..spec.data import DATA_ROOT, OUTPUT, OUTPUT_META, dataset_index_path, find_ground_truths, get_datapack_list
+from ..evaluation.ranking import calc_all_perf, calc_all_perf_by_datapack_attr
+from ..spec.data import (
+    DATA_ROOT,
+    META_ROOT,
+    OUTPUT,
+    OUTPUT_META,
+    dataset_index_path,
+    find_ground_truths,
+    get_datapack_list,
+)
 from ..spec.algorithm import Algorithm, AlgorithmArgs
 from ..logging import logger, timeit
 
@@ -200,7 +208,7 @@ def perf(dataset: str, warn_missing: bool = False):
 
     logger.debug("loading output files")
 
-    df_list = []
+    df_list: list[pl.DataFrame] = []
     for path in tqdm(output_paths):
         if path.exists():
             df = pl.read_parquet(path)
@@ -210,6 +218,19 @@ def perf(dataset: str, warn_missing: bool = False):
 
     output_df = pl.concat(df_list)
     save_parquet(output_df, path=OUTPUT_META / dataset / "output.parquet")
+
+    if dataset.startswith("rcabench"):
+        attributes_df_path = META_ROOT / dataset / "attributes.parquet"
+        if attributes_df_path.exists():
+            attr_col = "injection.fault_type"
+            attr_df = pl.read_parquet(attributes_df_path, columns=["datapack", attr_col])
+
+            perf_df = calc_all_perf_by_datapack_attr(
+                output_df.join(attr_df, on="datapack", how="left"),
+                dataset,
+                attr_col,
+            )
+            save_parquet(perf_df, path=OUTPUT_META / dataset / "fault_types.perf.parquet")
 
     perf_df = calc_all_perf(output_df, agg_level="datapack")
     save_parquet(perf_df, path=OUTPUT_META / dataset / "datapack.perf.parquet")
