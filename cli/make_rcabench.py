@@ -12,6 +12,7 @@ from rcabench_platform.v1.spec.convert import (
     postprocess_collect_schema,
 )
 from rcabench_platform.v1.spec.data import DATA_ROOT, META_ROOT, TEMP, get_datapack_list
+from rcabench_platform.v1.utils.dataframe import print_dataframe
 from rcabench_platform.v1.utils.dict_ import flatten_dict
 from rcabench_platform.v1.utils.fmap import fmap_threadpool
 from rcabench_platform.v1.utils.serde import load_json, save_json, save_parquet
@@ -749,12 +750,13 @@ def scan_conclusion_csv(include_legacy: bool = False):
 
 @app.command()
 @timeit()
-def make_with_issues(require_filtered: bool = False):
+def make_with_issues(db_only: bool = False, require_filtered: bool = False):
     with get_mariadb_connection() as conn:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "SELECT DISTINCT injection_name \
+            "SELECT injection_name, fault_type \
             FROM fault_injection_with_issues \
+            GROUP BY injection_name, fault_type \
             ORDER BY injection_name ASC;"
         )
 
@@ -762,6 +764,9 @@ def make_with_issues(require_filtered: bool = False):
         df = pl.DataFrame(rows)
 
     save_parquet(df, path=META_ROOT / "rcabench" / "with_issues.db.parquet")
+
+    if db_only:
+        return
 
     if require_filtered:
         filtered_df = (
@@ -811,6 +816,27 @@ def query_with_issues_ratio():
 
     ratio = Fraction(len(joint_df), len(with_issues))
     logger.info(f"with_issues ratio: {len(joint_df)}/{len(with_issues)} {float(ratio):.2%}")
+
+
+@app.command()
+@timeit()
+def query_fault_types(dataset: str):
+    if dataset in ("rcabench", "rcabench_filtered"):
+        lf = pl.scan_parquet(META_ROOT / dataset / "attributes.parquet")
+        col = "injection.fault_type"
+        df = lf.select(col).collect()
+    elif dataset == "rcabench_with_issues":
+        lf = pl.scan_parquet(META_ROOT / "rcabench" / "with_issues.db.parquet")
+        col = "fault_type"
+        replacement = {i: v for i, v in enumerate(FAULT_TYPES)}
+        df = lf.select(col).collect().select(pl.col(col).replace_strict(replacement, return_dtype=pl.String))
+    else:
+        raise NotImplementedError
+
+    fault_types_count = df[col].value_counts().sort("count", descending=True)
+    save_parquet(fault_types_count, path=META_ROOT / dataset / "fault_types.count.parquet")
+
+    print_dataframe(fault_types_count)
 
 
 if __name__ == "__main__":
