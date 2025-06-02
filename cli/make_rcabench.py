@@ -505,9 +505,9 @@ def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Pa
         total_size += file.stat().st_size
     attrs["files.total_size:MiB"] = round(total_size / (1024 * 1024), 6)
 
-    conclusion_csv_path = Path("data") / "rcabench_dataset" / datapack / "conclusion.csv"
-    if conclusion_csv_path.exists():
-        conclusion_df = pl.read_csv(conclusion_csv_path)
+    conclusion_path = input_folder / "conclusion.parquet"
+    if conclusion_path.exists():
+        conclusion_df = pl.read_parquet(conclusion_path)
         attrs["detector.conclusion.rows"] = len(conclusion_df)
         attrs["detector.issues.rows"] = len(conclusion_df.filter(pl.col("Issues") != "{}"))
 
@@ -741,32 +741,58 @@ def scan_direct_calls_from_traces(
     return len(df) > 0
 
 
+# @app.command()
+# @timeit()
+# def scan_conclusion_csv(include_legacy: bool = False):
+#     root = Path("data") / "rcabench_dataset"
+#     folders = [f.name for f in root.iterdir() if f.is_dir()]
+
+#     conclusion_df_list = []
+#     for datapack in tqdm(folders):
+#         conclusion_csv_path = root / datapack / "conclusion.csv"
+#         if not conclusion_csv_path.exists():
+#             continue
+
+#         if not include_legacy:
+#             if not (root / datapack / "injection.json").exists():
+#                 continue
+
+#         conclusion_df = pl.read_csv(conclusion_csv_path)
+#         if conclusion_df.is_empty():
+#             continue
+
+#         columns = conclusion_df.columns
+#         conclusion_df = conclusion_df.select(pl.lit(datapack).alias("datapack"), *columns)
+
+#         conclusion_df_list.append(conclusion_df)
+
+#     df = pl.concat(conclusion_df_list)
+#     save_parquet(df, path=META_ROOT / "rcabench" / "conclusion.parquet")
+
+
 @app.command()
 @timeit()
-def scan_conclusion_csv(include_legacy: bool = False):
-    root = Path("data") / "rcabench_dataset"
-    folders = [f.name for f in root.iterdir() if f.is_dir()]
+def merge_conclusion():
+    datapacks = get_datapack_list("rcabench")
 
-    conclusion_df_list = []
-    for datapack in tqdm(folders):
-        conclusion_csv_path = root / datapack / "conclusion.csv"
-        if not conclusion_csv_path.exists():
+    df_list = []
+    for datapack_name, datapack_path in tqdm(datapacks):
+        if not datapack_path.is_dir():
             continue
 
-        if not include_legacy:
-            if not (root / datapack / "injection.json").exists():
-                continue
-
-        conclusion_df = pl.read_csv(conclusion_csv_path)
-        if conclusion_df.is_empty():
+        conclusion_path = datapack_path / "conclusion.parquet"
+        if not conclusion_path.exists():
             continue
 
-        columns = conclusion_df.columns
-        conclusion_df = conclusion_df.select(pl.lit(datapack).alias("datapack"), *columns)
+        df = pl.read_parquet(conclusion_path)
 
-        conclusion_df_list.append(conclusion_df)
+        if df.is_empty():
+            continue
 
-    df = pl.concat(conclusion_df_list)
+        df = df.select(pl.lit(datapack_name).alias("datapack"), pl.all())
+        df_list.append(df)
+
+    df = pl.concat(df_list)
     save_parquet(df, path=META_ROOT / "rcabench" / "conclusion.parquet")
 
 
