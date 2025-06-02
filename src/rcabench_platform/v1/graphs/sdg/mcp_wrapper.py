@@ -19,8 +19,9 @@ class MCPWrapper:
 
     def mcp_get_node_stat(self, node_id: int):
         node = self._sdg.get_node_by_id(node_id)
-
         ans = {}
+        ans["name"] = node.self_name
+        ans["type"] = node.kind
         for k, v in node.data.items():
             for prefix in STAT_PREFIX:
                 if k.startswith(prefix):
@@ -33,6 +34,7 @@ class MCPWrapper:
         edge = self._sdg.get_edge_by_id(edge_id)
 
         ans = {}
+        ans["type"] = edge.kind
         for k, v in edge.data.items():
             for prefix in STAT_PREFIX:
                 if k.startswith(prefix):
@@ -50,11 +52,17 @@ class MCPWrapper:
 
         ans: list[dict[str, Any]] = []
         for edge in chain(*iterables):
+            src = self._sdg.get_node_by_id(edge.src_id)
+            dst = self._sdg.get_node_by_id(edge.dst_id)
             ans.append(
                 {
                     "id": edge.id,
                     "src_id": edge.src_id,
+                    "src_name": src.self_name,
+                    "dst_type": src.kind,
                     "dst_id": edge.dst_id,
+                    "dst_name": dst.self_name,
+                    "dst_type": dst.kind,
                     "kind": edge.kind,
                 }
             )
@@ -77,7 +85,8 @@ class MCPWrapper:
             anomal_value = float(values[1])
             if fn(normal_value, anomal_value):
                 ans.append(node.id)
-        return ans
+        info = [self.mcp_get_node_stat(i) for i in ans]
+        return info
 
     def mcp_get_avail_attributes(self):
         return self._sdg.data["node_stat_names"]
