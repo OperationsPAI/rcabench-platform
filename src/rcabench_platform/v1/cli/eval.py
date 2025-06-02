@@ -187,7 +187,7 @@ def run_all(
 
 @app.command()
 @timeit(log_level="INFO")
-def perf(dataset: str):
+def perf(dataset: str, warn_missing: bool = False):
     index_path = dataset_index_path(dataset)
     index_df = pl.read_parquet(index_path)
 
@@ -205,6 +205,8 @@ def perf(dataset: str):
         if path.exists():
             df = pl.read_parquet(path)
             df_list.append(df)
+        elif warn_missing:
+            logger.warning(f"missing output file: {path}")
 
     output_df = pl.concat(df_list)
     save_parquet(output_df, path=OUTPUT_META / dataset / "output.parquet")
