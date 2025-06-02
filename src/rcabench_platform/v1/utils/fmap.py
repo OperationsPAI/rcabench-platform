@@ -5,6 +5,7 @@ from typing import Literal
 import multiprocessing
 import multiprocessing.pool
 import traceback
+import time
 
 from tqdm.auto import tqdm
 
@@ -41,20 +42,38 @@ def _fmap[R](
 
     with pool:
         asyncs = [pool.apply_async(task) for task in tasks]
-        results: list[R] = []
+        finished = [False] * len(asyncs)
+        index_results: list[tuple[int, R]] = []
         exception_count = 0
 
-        for async_ in tqdm(asyncs, desc=f"fmap_{mode}"):
-            try:
-                result = async_.get()
-                results.append(result)
-            except Exception as e:
-                exception_count += 1
-                if ignore_exceptions:
-                    traceback.print_exc()
-                    logger_.error(f"Exception in task: {e}")
-                else:
-                    raise e
+        with tqdm(total=len(asyncs), desc=f"fmap_{mode}") as pbar:
+            while not all(finished):
+                for i, async_ in enumerate(asyncs):
+                    if finished[i]:
+                        continue
+                    if not async_.ready():
+                        continue
+                    try:
+                        result = async_.get(timeout=0.1)
+                        finished[i] = True
+                        index_results.append((i, result))
+                        pbar.update(1)
+                    except multiprocessing.TimeoutError:
+                        continue
+                    except Exception as e:
+                        exception_count += 1
+                        finished[i] = True
+                        pbar.update(1)
+                        if ignore_exceptions:
+                            traceback.print_exc()
+                            logger_.error(f"Exception in task: {e}")
+                        else:
+                            raise e
+                pbar.update(0)
+                time.sleep(1)
+
+    index_results.sort(key=lambda x: x[0])
+    results = [result for _, result in index_results]
 
     if exception_count > 0:
         logger_.warning(f"fmap_{mode} completed with {exception_count} exceptions.")
