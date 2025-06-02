@@ -68,7 +68,16 @@ class MCPWrapper:
         """
         fn 传入的是函数，左边是正常 node 值，右边是异常 node 值。值均为数字，llm 可以自定义阈值来定义什么是异常
         """
-        raise NotImplementedError("This method is not implemented in MCPWrapper")
+        ans = []
+        for node in self._sdg.iter_nodes():
+            values = [node.data.get(f"{prefix}.{attribute}") for prefix in STAT_PREFIX]
+            if values[0] is None or values[1] is None:
+                continue
+            normal_value = float(values[0])
+            anomal_value = float(values[1])
+            if fn(normal_value, anomal_value):
+                ans.append(node.id)
+        return ans
 
     def mcp_get_avail_attributes(self):
-        raise NotImplementedError("This method is not implemented in MCPWrapper")
+        return self._sdg.data["node_stat_names"]
