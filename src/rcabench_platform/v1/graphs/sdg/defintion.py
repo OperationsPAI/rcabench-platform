@@ -255,6 +255,15 @@ class SDG:
             if v == dst.id:
                 yield d["ref"]
 
+    def all_simple_paths(self, src_id: int, dst_id: int, directed: bool = True) -> list[list[int]]:
+        if directed:
+            g = self._graph
+        else:
+            g = self._graph.to_undirected(as_view=True)
+
+        ans = nx.all_simple_paths(g, source=src_id, target=dst_id, cutoff=self._graph.number_of_nodes())
+        return list(ans)
+
 
 type ExpandedGraphPath = list[PlaceNode | DepEdge]
 
