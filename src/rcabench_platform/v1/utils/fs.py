@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 import shutil
+import time
 
 
 @contextmanager
@@ -19,3 +20,12 @@ def running_mark(folder: Path, *, clear: bool = False):
         raise
     else:
         running.unlink()
+
+
+def has_recent_file(file_path: Path, *, seconds: int) -> bool:
+    if not file_path.exists():
+        return False
+
+    mtime = file_path.stat().st_mtime
+    current_time = time.time()
+    return (current_time - mtime) <= seconds
