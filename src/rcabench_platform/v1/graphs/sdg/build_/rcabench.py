@@ -9,6 +9,7 @@ from ....logging import logger, timeit
 from ....utils.serde import load_json
 
 from pathlib import Path
+from typing import Any
 import datetime
 import math
 
@@ -49,6 +50,8 @@ def build_sdg_from_rcabench(dataset: str, datapack: str, input_folder: Path) -> 
     del traces, logs
 
     apply_services_link(sdg)
+
+    apply_detector_conclusion(sdg, input_folder)
 
     return sdg
 
@@ -617,3 +620,33 @@ def apply_services_link(sdg: SDG) -> None:
                 ),
                 strict=False,
             )
+
+
+def apply_detector_conclusion(sdg: SDG, input_folder: Path) -> None:
+    conclusion_path = input_folder / "conclusion.parquet"
+    if not conclusion_path.exists():
+        return
+
+    df = pl.read_parquet(conclusion_path, columns=["SpanName"])
+    if len(df) == 0:
+        return
+
+    ts_ui_dashboard = sdg.query_node_by_kind(PlaceKind.service, "ts-ui-dashboard")
+    assert ts_ui_dashboard
+
+    ts_ui_dashboard_functions: list[PlaceNode] = []
+    for edge in sdg.out_edges(ts_ui_dashboard.id):
+        if edge.kind == DepKind.includes:
+            dst_node = sdg.get_node_by_id(edge.dst_id)
+            ts_ui_dashboard_functions.append(dst_node)
+
+    sli_nodes: list[dict[str, Any]] = []
+    span_names = df["SpanName"].to_list()
+    for span_name in span_names:
+        assert isinstance(span_name, str) and span_name
+        for node in ts_ui_dashboard_functions:
+            if span_name in node.self_name:
+                sli_nodes.append({"node.id": node.id, "node.self_name": node.self_name})
+                break
+
+    sdg.data["detector.sli.nodes"] = sli_nodes
