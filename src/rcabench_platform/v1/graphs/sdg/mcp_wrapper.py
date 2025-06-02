@@ -64,8 +64,11 @@ class MCPWrapper:
     def mcp_get_paths(self, src_id: int, dst_id: int, directed: bool):
         return self._sdg.all_simple_paths(src_id, dst_id, directed=directed)
 
-    def mcp_get_suspicious_nodes(self, fn: Callable[[float, float], bool]):
+    def mcp_get_suspicious_nodes(self, attribute: str, fn: Callable[[float, float], bool]):
         """
         fn 传入的是函数，左边是正常 node 值，右边是异常 node 值。值均为数字，llm 可以自定义阈值来定义什么是异常
         """
+        raise NotImplementedError("This method is not implemented in MCPWrapper")
+
+    def mcp_get_avail_attributes(self):
         raise NotImplementedError("This method is not implemented in MCPWrapper")
