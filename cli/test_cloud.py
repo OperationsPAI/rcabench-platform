@@ -1,11 +1,12 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v1.cli.main import app, logger
 from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.spec.cloud import Storage, MinioStorage
+from rcabench_platform.v1.spec.cloud import Storage, MinioStorage, HuggingFaceStorage
 
 from typing import Literal
 from pathlib import Path
 
+from huggingface_hub import HfApi
 import minio
 
 
@@ -16,6 +17,10 @@ def get_minio_client() -> minio.Minio:
         secret_key="minioadmin",
         secure=False,
     )
+
+
+def get_hf_client():
+    return HfApi()
 
 
 def get_storage(*, name: str, direction: Literal["upload", "download"]) -> Storage:
@@ -35,6 +40,14 @@ def get_storage(*, name: str, direction: Literal["upload", "download"]) -> Stora
             object_root="cloud",
             concurrent_download=16,
             concurrent_upload=8,
+        )
+    elif name == "huggingface":
+        return HuggingFaceStorage(
+            local_root=local_root,
+            hf_client=get_hf_client(),
+            repo_id="Nugine/rcabench-platform-private-test",
+            concurrent_download=8,
+            concurrent_upload=4,
         )
     else:
         raise ValueError(f"Invalid storage name: {name}")

@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "clickhouse-connect>=0.8.17",
+    "huggingface-hub>=0.32.3",
     "kubernetes>=32.0.1",
     "loguru>=0.7.3",
     "marimo[recommended]>=0.13.15",
