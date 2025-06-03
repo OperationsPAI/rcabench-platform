@@ -1,3 +1,4 @@
+from ..algorithms.rcaeval.nsigma import NSigma
 from ..algorithms.rcaeval.baro import Baro
 from ..algorithms.traceback.a7 import TraceBackA7
 from ..algorithms.random_ import Random
@@ -40,6 +41,7 @@ ALGORITHMS: dict[str, Callable[..., Algorithm]] = {
     "random": Random,
     "traceback-A7": TraceBackA7,
     "baro": Baro,
+    "nsigma": NSigma,
 }
 
 
