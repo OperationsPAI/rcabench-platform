@@ -1,3 +1,5 @@
+# type:ignore
+
 from .time_series import preprocess
 
 from sklearn.preprocessing import RobustScaler, StandardScaler
