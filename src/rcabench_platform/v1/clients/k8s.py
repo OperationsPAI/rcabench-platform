@@ -35,7 +35,7 @@ class KubeInfo:
             if isinstance(v, list):
                 ans[k] = [x.to_dict() for x in v]
             elif isinstance(v, dict):
-                ans[k] = {k: [x.to_dict() for x in l] for k, l in v.items()}
+                ans[k] = {k: [x.to_dict() for x in lst] for k, lst in v.items()}
         return ans
 
 

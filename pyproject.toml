@@ -3,11 +3,11 @@ name = "rcabench-platform"
 version = "0.1.14"
 description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
-authors = [
-    { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" }
+authors = [ #
+    { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" },
 ]
 requires-python = ">=3.12"
-dependencies = [
+dependencies = [ #
     "clickhouse-connect>=0.8.17",
     "huggingface-hub>=0.32.3",
     "kubernetes>=32.0.1",
@@ -38,9 +38,11 @@ line-length = 120
 
 [tool.ruff.lint]
 select = [
+    "E",  # https://docs.astral.sh/ruff/rules/#error-e
+    "F",  # https://docs.astral.sh/ruff/rules/#pyflakes-f
     "UP", # https://docs.astral.sh/ruff/rules/#pyupgrade-up
 ]
-ignore = ["UP038"]
+ignore = ["F401", "UP038"]
 
 [tool.pyright]
 exclude = [ #
@@ -60,7 +62,7 @@ exclude = [ #
 ]
 
 [dependency-groups]
-dev = [
+dev = [ #
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
     "kubernetes-stubs-elephant-fork>=32.0.1",

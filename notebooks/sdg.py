@@ -488,7 +488,7 @@ def _(mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
             mo.output.append(mo.ui.plotly(_fig))
 
     if _node1:
-        mo.output.append(mo.md(f"### Indicators (1)"))
+        mo.output.append(mo.md("### Indicators (1)"))
         for indicator in _node1.indicators.values():
             if indicator.name in common_indicators:
                 continue
@@ -496,7 +496,7 @@ def _(mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
             mo.output.append(mo.ui.plotly(_fig))
 
     if _node2:
-        mo.output.append(mo.md(f"### Indicators (2)"))
+        mo.output.append(mo.md("### Indicators (2)"))
         for indicator in _node2.indicators.values():
             if indicator.name in common_indicators:
                 continue

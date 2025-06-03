@@ -59,7 +59,7 @@ class MCPWrapper:
                     "id": edge.id,
                     "src_id": edge.src_id,
                     "src_name": src.self_name,
-                    "dst_type": src.kind,
+                    "src_type": src.kind,
                     "dst_id": edge.dst_id,
                     "dst_name": dst.self_name,
                     "dst_type": dst.kind,

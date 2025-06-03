@@ -87,7 +87,8 @@ def query_metrics_sum(save_path: Path, namespace: str, start_time: str, end_time
     FROM
         otel_metrics_sum omg
     WHERE
-        (omg.ResourceAttributes['k8s.namespace.name'] = '{namespace}' OR omg.ResourceAttributes['service.namespace'] = '{namespace}')
+        (omg.ResourceAttributes['k8s.namespace.name'] = '{namespace}' 
+            OR omg.ResourceAttributes['service.namespace'] = '{namespace}')
         AND omg.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
 

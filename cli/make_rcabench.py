@@ -257,7 +257,8 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
 
         if not has_direct_calls:
             logger.debug(
-                f"datapack `{datapack}`: no direct calls between `{source_service}` and `{target_service}`, direction `{direction}`"
+                f"datapack `{datapack}`: no direct calls between \
+                    `{source_service}` and `{target_service}`, direction `{direction}`"
             )
             return {
                 "datapack": datapack,
