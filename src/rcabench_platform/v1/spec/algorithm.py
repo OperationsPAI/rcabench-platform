@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,3 +25,15 @@ class Algorithm(ABC):
 
     @abstractmethod
     def __call__(self, args: AlgorithmArgs) -> list[AlgorithmAnswer]: ...
+
+
+class AlgorithmRegistry(dict[str, Callable[[], Algorithm]]):
+    pass
+
+
+_GLOBAL_REGISTRY: AlgorithmRegistry = AlgorithmRegistry()
+
+
+def global_algorithm_registry() -> AlgorithmRegistry:
+    global _GLOBAL_REGISTRY
+    return _GLOBAL_REGISTRY

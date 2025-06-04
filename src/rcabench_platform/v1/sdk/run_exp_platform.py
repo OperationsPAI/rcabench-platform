@@ -2,11 +2,11 @@ from ..spec.data import TEMP
 from ..utils.serde import save_csv
 from ..spec.algorithm import AlgorithmArgs
 from ..cli.main import app
-from ..cli.eval import ALGORITHMS
+from ..spec.algorithm import global_algorithm_registry
 from ..logging import timeit, logger
-
 from ..datasets.convert_rcabench import RcabenchDatapackLoader
 from ..spec.convert import convert_datapack
+from ..cli.eval import build_algorithm
 
 from pathlib import Path
 import json
@@ -22,7 +22,7 @@ def run():
     input_path = Path(os.environ["INPUT_PATH"])
     output_path = Path(os.environ["OUTPUT_PATH"])
 
-    assert algorithm in ALGORITHMS, f"Unknown algorithm: {algorithm}"
+    assert algorithm in global_algorithm_registry(), f"Unknown algorithm: {algorithm}"
     assert input_path.is_dir()
     assert output_path.is_dir()
 
@@ -39,7 +39,7 @@ def run():
         skip=True,
     )
 
-    a = ALGORITHMS[algorithm]()
+    a = build_algorithm(algorithm)
 
     answers = a(
         AlgorithmArgs(
@@ -58,7 +58,7 @@ def run():
 @app.command()
 @timeit()
 def local_test(algorithm: str, datapack: str):
-    assert algorithm in ALGORITHMS
+    assert algorithm in global_algorithm_registry()
 
     input_path = Path("data") / "rcabench_dataset" / datapack
 

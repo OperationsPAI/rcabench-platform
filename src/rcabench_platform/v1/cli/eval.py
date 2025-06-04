@@ -13,7 +13,7 @@ from ..spec.data import (
     find_ground_truths,
     get_datapack_list,
 )
-from ..spec.algorithm import Algorithm, AlgorithmArgs
+from ..spec.algorithm import Algorithm, AlgorithmArgs, global_algorithm_registry
 from ..logging import logger, timeit
 
 from ..utils.dataframe import print_dataframe
@@ -21,7 +21,6 @@ from ..utils.fmap import fmap_processpool
 from ..utils.serde import save_parquet
 from ..utils.fs import running_mark
 
-from collections.abc import Callable
 from dataclasses import asdict
 import multiprocessing
 import functools
@@ -37,16 +36,19 @@ import typer
 
 app = typer.Typer()
 
-ALGORITHMS: dict[str, Callable[..., Algorithm]] = {
-    "random": Random,
-    "traceback-A7": TraceBackA7,
-    "baro": Baro,
-    "nsigma": NSigma,
-}
+
+global_algorithm_registry().update(
+    {
+        "random": Random,
+        "nsigma": NSigma,
+        "baro": Baro,
+        "traceback-A7": TraceBackA7,
+    }
+)
 
 
 def build_algorithm(alg: str) -> Algorithm:
-    return ALGORITHMS[alg]()
+    return global_algorithm_registry()[alg]()
 
 
 @app.command()
@@ -151,7 +153,7 @@ def run_all(
     clear: bool = False,
 ):
     algorithms = []
-    for alg_name in ALGORITHMS.keys():
+    for alg_name in global_algorithm_registry().keys():
         if re.match(alg_pattern, alg_name):
             algorithms.append(alg_name)
 
@@ -204,7 +206,7 @@ def perf(dataset: str, warn_missing: bool = False):
     index_df = pl.read_parquet(index_path)
 
     datapacks: list[str] = index_df["datapack"].unique().to_list()
-    algorithms = sorted(ALGORITHMS.keys())
+    algorithms = sorted(global_algorithm_registry().keys())
 
     items = [(datapack, alg) for datapack in datapacks for alg in algorithms]
 
