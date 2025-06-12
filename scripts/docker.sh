@@ -25,6 +25,7 @@ function run() {
         -v ${PWD}/temp:/app/temp \
         -v ${PWD}/logs:/app/logs \
         -v ${PWD}/output:/app/output \
+        -v /mnt/jfs:/mnt/jfs \
         -it ${IMAGE_FULL} \
         /bin/bash
 }

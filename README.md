@@ -103,15 +103,107 @@ Link the datasets to the project directory:
 ```bash
 mkdir -p data
 cd data
-ln -s /mnt/jfs/rcabench_platform_datasets ./
+ln -s /mnt/jfs/rcabench-platform-v2 ./
+```
+
+#### Docker image
+
+`rcabench-platform`:
+
+```bash
+./scripts/docker.sh build
+./scripts/docker.sh run
+./scripts/docker.sh push
+```
+
+`clickhouse_dataset`:
+
+```bash
+cd docker/clickhouse_dataset
+./cli.sh build
+./cli.sh push
 ```
 
 ### Commands
 
-Test if the environment is set up correctly by running the following command:
+#### Self test
+
+Test if the environment is set up correctly:
 
 ```bash
 ./main.py self test
+```
+
+#### Prepare inputs
+
+```bash
+./cli/prepare_inputs.py --help
+```
+
+#### Make rcaeval
+
+```bash
+./cli/make_rcaeval.py --help
+```
+
+#### Make rcabench
+
+```bash
+./cli/make_rcabench.py --help
+```
+
+Example calls:
+
+```bash
+mkdir -p /dev/shm/make
+TMP=/dev/shm/make LOGURU_COLORIZE=0 POLARS_MAX_THREADS=16 ./cli/make_rcabench.py run --parallel=8 >temp/a.log 2>&1
+```
+
+The example call runs 8 parallel processes with 16 polars threads each, using memory storage as the temporary directory. It is tested on a VM with 128 cores and 192 GiB of RAM.
+
+```bash
+./cli/make_rcabench.py make-filtered
+./cli/make_rcabench.py make-with-issues
+```
+
+```bash
+./cli/make_rcabench.py merge-conclusion
+```
+
+```bash
+./cli/make_rcabench.py query-fault-types rcabench
+./cli/make_rcabench.py query-fault-types rcabench_filtered
+./cli/make_rcabench.py query-fault-types rcabench_with_issues
+```
+
+#### Evaluation
+
+```bash
+./main.py eval --help
+```
+
+```bash
+./main.py eval show-algorithms
+./main.py eval show-datasets
+```
+
+Example calls:
+
+```bash
+./main.py eval single traceback-A7 rcabench_filtered ts3-ts-route-plan-service-request-delay-59s2q4
+```
+
+```bash
+LOGURU_LEVEL=INFO ./main.py eval batch -d rcaeval_re2_tt -a random -a baro -a nsigma -a traceback-A7 --use-cpus=112 --clear >temp/a.log 2>&1
+```
+
+```bash
+LOGURU_LEVEL=INFO ./main.py eval batch -d rcabench_filtered -a random -a baro -a nsigma -a traceback-A7 --use-cpus=112 --clear >temp/a.log 2>&1
+```
+
+```bash
+./main.py eval perf-report rcaeval_re2_tt
+./main.py eval perf-report rcabench_filtered
 ```
 
 ### Notebooks

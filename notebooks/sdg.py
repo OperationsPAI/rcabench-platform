@@ -19,13 +19,13 @@ def _():
 
 @app.cell
 def _():
-    from rcabench_platform.v1.spec.data import (
-        dataset_index_path,
-        DATA_ROOT,
-        META_ROOT,
+    from rcabench_platform.v2.datasets.spec import (
+        read_dataset_index,
+        get_dataset_meta_file,
+        get_datapack_folder,
     )
 
-    from rcabench_platform.v1.graphs.sdg.defintion import (
+    from rcabench_platform.v2.graphs.sdg.defintion import (
         SDG,
         PlaceKind,
         PlaceNode,
@@ -33,7 +33,7 @@ def _():
         DepEdge,
     )
 
-    return DATA_ROOT, META_ROOT, dataset_index_path
+    return get_datapack_folder, get_dataset_meta_file, read_dataset_index
 
 
 @app.cell
@@ -61,11 +61,11 @@ def _(mo):
 
 
 @app.cell
-def _(META_ROOT, dataset_dropdown, dataset_index_path, mo, pl):
+def _(dataset_dropdown, get_dataset_meta_file, mo, pl, read_dataset_index):
     dataset = dataset_dropdown.value
-    _index_df = pl.read_parquet(dataset_index_path(dataset))
+    _index_df = read_dataset_index(dataset)
 
-    _attributes_df_path = META_ROOT / dataset / "attributes.parquet"
+    _attributes_df_path = get_dataset_meta_file(dataset, "attributes.parquet")
     if _attributes_df_path.exists():
         attributes_df = pl.read_parquet(_attributes_df_path)
         _df = attributes_df.select(
@@ -84,9 +84,9 @@ def _(META_ROOT, dataset_dropdown, dataset_index_path, mo, pl):
 
 
 @app.cell
-def _(DATA_ROOT, datapack_table, dataset, mo):
-    from rcabench_platform.v1.graphs.sdg.build_ import build_sdg
-    from rcabench_platform.v1.graphs.sdg.statistics import calc_statistics
+def _(datapack_table, dataset, get_datapack_folder, mo):
+    from rcabench_platform.v2.graphs.sdg.build_ import build_sdg
+    from rcabench_platform.v2.graphs.sdg.statistics import calc_statistics
 
     datapack = datapack_table.value[0, "datapack"]
     mo.stop(
@@ -95,7 +95,7 @@ def _(DATA_ROOT, datapack_table, dataset, mo):
     )
 
     mo.output.append("Building SDG ...")
-    sdg = build_sdg(dataset, datapack, DATA_ROOT / dataset / datapack)
+    sdg = build_sdg(dataset, datapack, get_datapack_folder(dataset, datapack))
     calc_statistics(sdg)
     mo.output.append("Done!")
 
@@ -112,7 +112,7 @@ def _(mo):
 
 @app.cell
 def _(mo, neo4j_button, sdg):
-    from rcabench_platform.v1.graphs.sdg.neo4j import export_sdg_to_neo4j
+    from rcabench_platform.v2.graphs.sdg.neo4j import export_sdg_to_neo4j
 
     if neo4j_button.value:
         mo.output.append("Exporting SDG to Neo4j ...")
@@ -146,8 +146,8 @@ def _(mo, sdg):
 
 
 @app.cell
-def _(DATA_ROOT, datapack, dataset, mo, pl):
-    _conclusion_df_path = DATA_ROOT / dataset / datapack / "conclusion.parquet"
+def _(datapack, dataset, get_datapack_folder, mo, pl):
+    _conclusion_df_path = get_datapack_folder(dataset, datapack) / "conclusion.parquet"
     mo.stop(not _conclusion_df_path.exists())
     _conclusion_df = pl.read_parquet(_conclusion_df_path)
     mo.output.append(mo.md("### Detector conclusions"))
@@ -163,7 +163,7 @@ def _(mo):
 
 @app.cell
 def _(mo, sdg):
-    from rcabench_platform.v1.graphs.sdg.dump import dump_place_indicators
+    from rcabench_platform.v2.graphs.sdg.dump import dump_place_indicators
 
     _df = dump_place_indicators(sdg)
 
@@ -201,7 +201,7 @@ def _(all_node_names, mo):
 
 @app.cell
 def _(mo, query_indicators_of_node, sdg):
-    from rcabench_platform.v1.graphs.sdg.dump import dump_node_data
+    from rcabench_platform.v2.graphs.sdg.dump import dump_node_data
 
     _node = sdg.query_node_by_uniq_name(query_indicators_of_node.value)
     mo.stop(_node is None)
@@ -304,7 +304,7 @@ def _(mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
 
 @app.cell
 def _(mo, query_by_place_node_1, query_by_place_node_2, sdg):
-    from rcabench_platform.v1.graphs.sdg.dump import dump_edge_data
+    from rcabench_platform.v2.graphs.sdg.dump import dump_edge_data
 
     _node1 = sdg.query_node_by_uniq_name(query_by_place_node_1.value)
     _node2 = sdg.query_node_by_uniq_name(query_by_place_node_2.value)
@@ -334,7 +334,7 @@ def _(
     query_span_tree,
     sdg,
 ):
-    from rcabench_platform.v1.graphs.sdg.dump import dump_span_tree
+    from rcabench_platform.v2.graphs.sdg.dump import dump_span_tree
 
     _traces = []
 

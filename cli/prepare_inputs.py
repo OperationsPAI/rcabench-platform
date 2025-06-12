@@ -1,13 +1,10 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v1.cli.main import app, logger
-
-from rcabench_platform.v1.clients.clickhouse_ import ClickHouseClient, get_clickhouse_client
-from rcabench_platform.v1.clients.k8s import download_kube_info
-from rcabench_platform.v1.clients.rcabench_ import CustomRCABenchSDK
-
-from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.utils.fmap import fmap_processpool, fmap_threadpool
-from rcabench_platform.v1.utils.serde import save_json
+from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.clients.clickhouse import ClickHouseClient, get_clickhouse_client
+from rcabench_platform.v2.clients.k8s import download_kube_info
+from rcabench_platform.v2.clients.rcabench_ import CustomRCABenchSDK
+from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
+from rcabench_platform.v2.utils.serde import save_json
 
 from pathlib import Path
 from typing import Any
@@ -256,7 +253,7 @@ def run():
 
     assert normal_start < normal_end <= abnormal_start < abnormal_end
 
-    # TODO: discontinuous time ranges?
+    # support discontinuous time ranges?
     assert normal_end == abnormal_start, "The time ranges must be continuous for now"
 
     ch_normal_start = convert_to_clickhouse_time(normal_start, timezone)
@@ -332,7 +329,7 @@ def copy_files(src: Path, dst: Path):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "/mnt/jfs/temp/ts5-ts-order-service-return-bbzg49",
+        "OUTPUT_PATH": "temp/ts5-ts-order-service-return-bbzg49",
         "NAMESPACE": "ts5",
         "TIMEZONE": "Asia/Shanghai",
         "NORMAL_START": "1747815230",

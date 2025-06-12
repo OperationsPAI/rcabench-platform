@@ -4,7 +4,7 @@ FROM ubuntu:24.04
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt update && apt-get install -y \
-    gcc curl wget git just
+    gcc curl wget git zip unzip just
 
 ENV UV_LINK_MODE=copy
 

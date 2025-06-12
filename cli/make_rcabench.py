@@ -1,15 +1,23 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v1.cli.main import app, logger
-from rcabench_platform.v1.clients.rcabench_ import get_mariadb_connection
-from rcabench_platform.v1.datasets.rcabench_ import FAULT_TYPES
-from rcabench_platform.v1.datasets.convert_rcabench import RcabenchDatapackLoader, RcabenchDatasetLoader
-from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.spec.convert import convert_datapack, convert_dataset
-from rcabench_platform.v1.spec.data import DATA_ROOT, META_ROOT, TEMP, get_datapack_list
-from rcabench_platform.v1.utils.dataframe import print_dataframe
-from rcabench_platform.v1.utils.dict_ import flatten_dict
-from rcabench_platform.v1.utils.fmap import fmap_threadpool
-from rcabench_platform.v1.utils.serde import load_json, save_json, save_parquet
+from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.clients.rcabench_ import get_mariadb_connection
+from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
+from rcabench_platform.v2.sources.rcabench import RcabenchDatapackLoader, RcabenchDatasetLoader
+from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset
+from rcabench_platform.v2.utils.dataframe import print_dataframe
+from rcabench_platform.v2.utils.dict_ import flatten_dict
+from rcabench_platform.v2.utils.fmap import fmap_threadpool
+from rcabench_platform.v2.utils.serde import load_json, save_parquet
+from rcabench_platform.v2.datasets.spec import (
+    get_datapack_folder,
+    get_dataset_folder,
+    get_dataset_labels_path,
+    get_dataset_meta_file,
+    get_datapack_list,
+    get_dataset_meta_folder,
+    read_dataset_index,
+    read_dataset_labels,
+)
 
 from fractions import Fraction
 from pathlib import Path
@@ -18,21 +26,21 @@ import functools
 import datetime
 import json
 
-import polars as pl
 from tqdm.auto import tqdm
+import polars as pl
 import dateutil.tz
 
 
 @app.command()
 @timeit()
-def run(skip: bool = True, parallel: int | None = 4, scan: bool = True):
+def run(skip_finished: bool = True, parallel: int = 4, scan: bool = True):
     src_root = Path("data") / "rcabench_dataset"
 
     loader = RcabenchDatasetLoader(src_root, dataset="rcabench")
 
     convert_dataset(
         loader,
-        skip=skip,
+        skip_finished=skip_finished,
         parallel=parallel,
         ignore_exceptions=True,
     )
@@ -52,7 +60,7 @@ def local_test_1():
     convert_datapack(
         loader,
         dst_folder=Path("temp") / "rcabench" / datapack,
-        skip=False,
+        skip_finished=False,
     )
 
 
@@ -63,14 +71,15 @@ def scan_datapack_attributes():
     datapacks = get_datapack_list(dataset)
 
     tasks = []
-    for datapack, input_folder in datapacks:
+    for datapack in datapacks:
+        input_folder = get_datapack_folder(dataset, datapack)
         tasks.append(functools.partial(_task_scan_datapack_attributes, dataset, datapack, input_folder))
 
     results = fmap_threadpool(tasks, parallel=32)
 
     df = pl.DataFrame(results).sort("inject_time", descending=True)
 
-    save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
+    save_parquet(df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
 
 
 def _convert_time(ts: int, tz: datetime.tzinfo | None) -> datetime.datetime:
@@ -129,7 +138,7 @@ def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Pa
 @app.command()
 @timeit()
 def make_filtered():
-    lf = pl.scan_parquet(META_ROOT / "rcabench" / "attributes.parquet")
+    lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "attributes.parquet"))
 
     col = pl.col("files.total_size:MiB")
     lf = lf.filter(
@@ -171,14 +180,13 @@ def make_filtered():
         tasks.append(functools.partial(_check_datapack, row))
     results = fmap_threadpool(tasks, parallel=32)
     kickout_df = pl.DataFrame([r for r in results if r is not None])
-    save_parquet(kickout_df, path=META_ROOT / "rcabench" / "kickout.parquet")
+    save_parquet(kickout_df, path=get_dataset_meta_file("rcabench", "kickout.parquet"))
 
     kickout_datapacks = kickout_df["datapack"].to_list()
     df = df.filter(pl.col("datapack").is_in(kickout_datapacks).not_())
 
     dataset = "rcabench_filtered"
-
-    dataset_folder = DATA_ROOT / dataset
+    dataset_folder = get_dataset_folder(dataset)
     dataset_folder.mkdir(parents=True, exist_ok=True)
 
     datapacks = df["datapack"].to_list()
@@ -193,7 +201,7 @@ def make_filtered():
 
     index_df = df.select("dataset", "datapack")
 
-    label_df = pl.read_parquet(META_ROOT / "rcabench" / "label.parquet").join(
+    labels_df = pl.read_parquet(get_dataset_labels_path("rcabench")).join(
         df.select("datapack"),
         on="datapack",
         how="inner",
@@ -202,18 +210,19 @@ def make_filtered():
     col = pl.lit(dataset).alias("dataset")
     df = df.with_columns(col)
     index_df = index_df.with_columns(col)
-    label_df = label_df.with_columns(col)
+    labels_df = labels_df.with_columns(col)
 
-    save_parquet(df, path=META_ROOT / dataset / "attributes.parquet")
-    save_parquet(index_df, path=META_ROOT / dataset / "index.parquet")
-    save_parquet(label_df, path=META_ROOT / dataset / "label.parquet")
+    meta_folder = get_dataset_meta_folder(dataset)
+    save_parquet(df, path=meta_folder / "attributes.parquet")
+    save_parquet(index_df, path=meta_folder / "index.parquet")
+    save_parquet(labels_df, path=meta_folder / "labels.parquet")
 
 
 def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
     datapack = row["datapack"]
     assert isinstance(datapack, str) and datapack
 
-    datapack_folder = DATA_ROOT / "rcabench" / datapack
+    datapack_folder = get_datapack_folder("rcabench", datapack)
 
     injection_fault_type = row["injection.fault_type"]
     assert isinstance(injection_fault_type, str)
@@ -354,46 +363,19 @@ def scan_direct_calls_from_traces(
     return len(df) > 0
 
 
-# @app.command()
-# @timeit()
-# def scan_conclusion_csv(include_legacy: bool = False):
-#     root = Path("data") / "rcabench_dataset"
-#     folders = [f.name for f in root.iterdir() if f.is_dir()]
-
-#     conclusion_df_list = []
-#     for datapack in tqdm(folders):
-#         conclusion_csv_path = root / datapack / "conclusion.csv"
-#         if not conclusion_csv_path.exists():
-#             continue
-
-#         if not include_legacy:
-#             if not (root / datapack / "injection.json").exists():
-#                 continue
-
-#         conclusion_df = pl.read_csv(conclusion_csv_path)
-#         if conclusion_df.is_empty():
-#             continue
-
-#         columns = conclusion_df.columns
-#         conclusion_df = conclusion_df.select(pl.lit(datapack).alias("datapack"), *columns)
-
-#         conclusion_df_list.append(conclusion_df)
-
-#     df = pl.concat(conclusion_df_list)
-#     save_parquet(df, path=META_ROOT / "rcabench" / "conclusion.parquet")
-
-
 @app.command()
 @timeit()
 def merge_conclusion():
-    datapacks = get_datapack_list("rcabench")
+    dataset = "rcabench"
+    datapacks = get_datapack_list(dataset)
 
     df_list = []
-    for datapack_name, datapack_path in tqdm(datapacks):
-        if not datapack_path.is_dir():
+    for datapack in tqdm(datapacks):
+        datapack_folder = get_datapack_folder(dataset, datapack)
+        if not datapack_folder.is_dir():
             continue
 
-        conclusion_path = datapack_path / "conclusion.parquet"
+        conclusion_path = datapack_folder / "conclusion.parquet"
         if not conclusion_path.exists():
             continue
 
@@ -402,11 +384,11 @@ def merge_conclusion():
         if df.is_empty():
             continue
 
-        df = df.select(pl.lit(datapack_name).alias("datapack"), pl.all())
+        df = df.select(pl.lit(datapack).alias("datapack"), pl.all())
         df_list.append(df)
 
     df = pl.concat(df_list)
-    save_parquet(df, path=META_ROOT / "rcabench" / "conclusion.parquet")
+    save_parquet(df, path=get_dataset_meta_file(dataset, "conclusion.parquet"))
 
 
 @app.command()
@@ -424,24 +406,19 @@ def make_with_issues(db_only: bool = False, require_filtered: bool = False):
         rows = cursor.fetchall()
         df = pl.DataFrame(rows)
 
-    save_parquet(df, path=META_ROOT / "rcabench" / "with_issues.db.parquet")
+    save_parquet(df, path=get_dataset_meta_file("rcabench", "with_issues.db.parquet"))
 
     if db_only:
         return
 
     if require_filtered:
-        filtered_df = (
-            pl.read_parquet(META_ROOT / "rcabench_filtered" / "index.parquet")
-            .select("datapack")
-            .rename({"datapack": "injection_name"})
-        )
+        filtered_df = read_dataset_index("rcabench_filtered").select("datapack").rename({"datapack": "injection_name"})
         df = df.join(filtered_df, on="injection_name", how="inner")
 
     datapacks = df["injection_name"].to_list()
 
     dataset = "rcabench_with_issues"
-
-    dataset_folder = DATA_ROOT / dataset
+    dataset_folder = get_dataset_folder(dataset)
     dataset_folder.mkdir(parents=True, exist_ok=True)
 
     for datapack in tqdm(datapacks):
@@ -455,14 +432,15 @@ def make_with_issues(db_only: bool = False, require_filtered: bool = False):
 
     index_df = df.select(pl.lit(dataset).alias("dataset"), pl.col("injection_name").alias("datapack"))
 
-    label_df = (
-        pl.read_parquet(META_ROOT / "rcabench" / "label.parquet")
+    labels_df = (
+        read_dataset_labels("rcabench")
         .join(index_df, on="datapack", how="inner")
         .with_columns(pl.lit(dataset).alias("dataset"))
     )
 
-    save_parquet(index_df, path=META_ROOT / dataset / "index.parquet")
-    save_parquet(label_df, path=META_ROOT / dataset / "label.parquet")
+    meta_folder = get_dataset_meta_folder(dataset)
+    save_parquet(index_df, path=meta_folder / "index.parquet")
+    save_parquet(labels_df, path=meta_folder / "labels.parquet")
 
     query_with_issues_ratio()
 
@@ -470,8 +448,8 @@ def make_with_issues(db_only: bool = False, require_filtered: bool = False):
 @app.command()
 @timeit()
 def query_with_issues_ratio():
-    with_issues = pl.read_parquet(META_ROOT / "rcabench_with_issues" / "index.parquet").select("datapack")
-    filtered = pl.read_parquet(META_ROOT / "rcabench_filtered" / "index.parquet").select("datapack")
+    with_issues = read_dataset_index("rcabench_with_issues").select("datapack")
+    filtered = read_dataset_index("rcabench_filtered").select("datapack")
 
     joint_df = with_issues.join(filtered, on="datapack", how="inner")
 
@@ -483,11 +461,11 @@ def query_with_issues_ratio():
 @timeit()
 def query_fault_types(dataset: str):
     if dataset in ("rcabench", "rcabench_filtered"):
-        lf = pl.scan_parquet(META_ROOT / dataset / "attributes.parquet")
+        lf = pl.scan_parquet(get_dataset_meta_file(dataset, "attributes.parquet"))
         col = "injection.fault_type"
         df = lf.select(col).collect()
     elif dataset == "rcabench_with_issues":
-        lf = pl.scan_parquet(META_ROOT / "rcabench" / "with_issues.db.parquet")
+        lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "with_issues.db.parquet"))
         col = "fault_type"
         replacement = {i: v for i, v in enumerate(FAULT_TYPES)}
         df = lf.select(col).collect().select(pl.col(col).replace_strict(replacement, return_dtype=pl.String))
@@ -495,29 +473,9 @@ def query_fault_types(dataset: str):
         raise NotImplementedError
 
     fault_types_count = df[col].value_counts().sort("count", descending=True)
-    save_parquet(fault_types_count, path=META_ROOT / dataset / "fault_types.count.parquet")
+    save_parquet(fault_types_count, path=get_dataset_meta_file(dataset, "fault_types.count.parquet"))
 
     print_dataframe(fault_types_count)
-
-
-# @app.command()
-# def patch_conclusion_files():
-#     src = Path("data") / "rcabench_dataset"
-
-#     datapacks = get_datapack_list("rcabench")
-
-#     for datapack_name, datapack_path in tqdm(datapacks):
-#         if not datapack_path.is_dir():
-#             continue
-
-#         src_path = src / datapack_name / "conclusion.csv"
-#         dst_path = datapack_path / "conclusion.parquet"
-
-#         if not src_path.exists():
-#             continue
-
-#         df = convert_conclusion(src_path).collect()
-#         save_parquet(df, path=dst_path)
 
 
 if __name__ == "__main__":

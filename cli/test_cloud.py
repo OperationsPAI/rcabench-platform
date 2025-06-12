@@ -1,7 +1,9 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v1.cli.main import app, logger
-from rcabench_platform.v1.logging import timeit
-from rcabench_platform.v1.spec.cloud import Storage, MinioStorage, HuggingFaceStorage
+from rcabench_platform.v2.cli.main import app, logger
+from rcabench_platform.v2.logging import timeit
+from rcabench_platform.v2.cloud.spec import Storage
+from rcabench_platform.v2.cloud.minio_ import MinioStorage
+from rcabench_platform.v2.cloud.hf import HuggingFaceStorage
 
 from typing import Literal
 from pathlib import Path
@@ -25,7 +27,7 @@ def get_hf_client():
 
 def get_storage(*, name: str, direction: Literal["upload", "download"]) -> Storage:
     if direction == "upload":
-        local_root = Path("data/rcabench_platform_datasets")
+        local_root = Path("data/rcabench-platform-v2")
     elif direction == "download":
         local_root = Path("temp/cloud")
         local_root.mkdir(parents=True, exist_ok=True)
