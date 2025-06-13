@@ -47,7 +47,7 @@ def run_single(algorithm: str, dataset: str, datapack: str, *, clear: bool):
             runtime = t1 - t0
         except Exception as e:
             traceback.print_exc()
-            logger.error(f"Error in {alg} for {dataset}/{datapack}: {type(e)} {repr(e)}")
+            logger.error(f"Error in {algorithm} for {dataset}/{datapack}: {repr(e)}")
             answers = []
             exc = e
             runtime = None
