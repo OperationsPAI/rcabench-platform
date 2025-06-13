@@ -320,6 +320,13 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
                 "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
             }
 
+    if scan_duplicated_spans(datapack_folder):
+        logger.debug(f"datapack `{datapack}`: has duplicated spans")
+        return {
+            "datapack": datapack,
+            "reason": scan_duplicated_spans.__name__,
+        }
+
 
 @timeit()
 def scan_direct_calls_from_traces(
@@ -361,6 +368,22 @@ def scan_direct_calls_from_traces(
     logger.debug(f"source=`{source_service}`, target=`{target_service}`, len(df)={len(df)}")
 
     return len(df) > 0
+
+
+@timeit()
+def scan_duplicated_spans(datapack_folder: Path) -> bool:
+    for file in ("normal_traces.parquet", "abnormal_traces.parquet"):
+        lf = pl.scan_parquet(datapack_folder / file)
+        lf = lf.select("span_id", "span_name", "parent_span_id")
+        df = lf.collect()
+
+        total_count = df.n_unique()
+        id_count = df.select("span_id").n_unique()
+
+        if len(df) != total_count or total_count != id_count:
+            return True
+
+    return False
 
 
 @app.command()
