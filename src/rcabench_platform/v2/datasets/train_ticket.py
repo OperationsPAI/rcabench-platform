@@ -1,5 +1,5 @@
 from ..config import get_config
-from ..logging import timeit
+from ..logging import timeit, logger
 from ..utils.serde import save_parquet
 from ..utils.env import debug
 
@@ -79,6 +79,11 @@ def tt_fix_client_spans(traces: pl.DataFrame):
     selected = traces.select("span_id", "parent_span_id", "op_name")
     for span_id, parent_span_id, op_name in selected.iter_rows():
         assert isinstance(span_id, str) and span_id
+        prev_op_name = id2op.get(span_id)
+        if prev_op_name is not None:
+            assert prev_op_name == op_name, (
+                f"Duplicated span_id {span_id} with different op_name: `{prev_op_name}` vs `{op_name}`"
+            )
         id2op[span_id] = op_name
         if parent_span_id:
             assert isinstance(parent_span_id, str)
