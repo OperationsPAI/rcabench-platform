@@ -391,6 +391,7 @@ def load_logs(input_folder: Path) -> pl.LazyFrame:
     lf = merge_two_time_ranges(normal_logs, anomal_logs)
 
     level_values = ["", "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "SEVERE"]
+    lf = lf.with_columns(pl.col("level").str.replace("WARNING", "WARN", literal=True))
     lf = lf.with_columns(replace_enum_values("level", level_values, start=0).alias("level_number"))
 
     return lf
