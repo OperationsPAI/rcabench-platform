@@ -2,6 +2,11 @@
 
 An experiment framework for Root Cause Analysis (RCA), supporting fast development of RCA algorithms and their evaluation on various datasets.
 
+## Specifications
+
++ [Datasets Specification](./docs/spec/datasets.md)
++ [RCA Algorithms Specification](./docs/spec/algorithms.md)
+
 ## Development Guide
 
 ### Requirements
