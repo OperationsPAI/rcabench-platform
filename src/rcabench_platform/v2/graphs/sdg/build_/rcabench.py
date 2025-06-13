@@ -575,7 +575,7 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
             continue
 
         function_node = sdg.query_node_by_kind(PlaceKind.function, op_name)
-        assert function_node
+        assert function_node, op_name
 
         function_node.add_indicator(
             Indicator(

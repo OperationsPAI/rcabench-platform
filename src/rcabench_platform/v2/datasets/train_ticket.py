@@ -90,19 +90,26 @@ def tt_fix_client_spans(traces: pl.DataFrame):
             id2parent[span_id] = parent_span_id
             parent_child_map[parent_span_id].add(span_id)
 
+    to_delete = set()
     fix_client_spans: dict[str, str] = {}
     for span_id, op_name in id2op.items():
         if op_name.endswith("GET") or op_name.endswith("POST"):
             children = parent_child_map[span_id]
-            if len(children) != 1:
-                continue
-            child = children.pop()
-            child_op_name = id2op[child]
-            real_op_name = op_name + " " + child_op_name.split(" ")[2]
-            fix_client_spans[span_id] = real_op_name
+            if len(children) == 0:
+                to_delete.add(span_id)
+            elif len(children) == 1:
+                child = children.pop()
+                child_op_name = id2op[child]
+                real_op_name = op_name + " " + child_op_name.split(" ")[2]
+                fix_client_spans[span_id] = real_op_name
+            else:
+                pass
 
+    for span_id in to_delete:
+        del id2op[span_id]
     id2op.update(fix_client_spans)
     del parent_child_map
+    del to_delete
 
     if len(fix_client_spans) > 0:
         client_spans_df = pl.DataFrame(
