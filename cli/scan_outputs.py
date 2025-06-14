@@ -18,36 +18,38 @@ def scan_rcaeval_ranks(dataset: str, algorithm: str):
     lf_list: list[pl.LazyFrame] = []
     for datapack in datapacks:
         output_folder = get_output_folder(dataset, datapack, algorithm)
+
+        perf = pl.read_parquet(output_folder / "perf.parquet")
+        ac5 = perf["AC@5.count"].item()
+        if ac5 is None:
+            continue
+        assert isinstance(ac5, (int, float))
+        if not ac5:
+            continue
+
         lf = pl.scan_parquet(output_folder / "ranks.parquet")
         lf = lf.select(pl.lit(dataset).alias("dataset"), pl.lit(datapack).alias("datapack"), pl.all())
         lf_list.append(lf)
 
     ranks = pl.concat(lf_list).collect()
+
+    ranks = ranks.with_columns(pl.col("node_name").str.split("_").list.get(1).alias("metric"))
+
     save_parquet(ranks, path=get_output_meta_folder(dataset) / f"{algorithm}.ranks.parquet")
 
-    stats_data = []
-    for metric in ["latency", "cpu", "mem", "diskio", "workload"]:
-        for rank in range(1, 5 + 1):
-            df = ranks.filter(pl.col("rank") <= rank)
-            total_count = len(df)
+    df_list: list[pl.DataFrame] = []
+    for rank in range(1, 5 + 1):
+        df = ranks.filter(pl.col("rank") <= rank)
+        total = len(df)
+        df = df.select(pl.col("metric").value_counts()).unnest("metric")
+        df = df.with_columns(
+            pl.lit(rank).alias("rank"),
+            pl.col("count").truediv(total).round(6).alias("proportion"),
+        )
+        df_list.append(df)
 
-            df = df.filter(pl.col("node_name").str.contains(metric))
-            metric_count = len(df)
-
-            prop = Fraction(metric_count, total_count)
-
-            stats_data.append(
-                {
-                    "metric": metric,
-                    "rank": rank,
-                    "metric_count": metric_count,
-                    "total_count": total_count,
-                    "proportion": round(float(prop), 6),
-                }
-            )
-
-    stats_df = pl.DataFrame(stats_data)
-    save_parquet(stats_df, path=get_output_meta_folder(dataset) / f"{algorithm}.ranks_stats.parquet")
+    df = pl.concat(df_list).sort(by=["rank", "proportion"], descending=[False, True])
+    save_parquet(df, path=get_output_meta_folder(dataset) / f"{algorithm}.ranks.summary.parquet")
 
 
 if __name__ == "__main__":
