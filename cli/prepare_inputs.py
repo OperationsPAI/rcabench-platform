@@ -54,7 +54,15 @@ def query_metrics(save_path: Path, namespace: str, start_time: str, end_time: st
         MetricName,
         MetricDescription,
         Value,
-        ServiceName,
+        multiIf(
+                om.Attributes['source_workload'] != '', om.Attributes['source_workload'],
+                om.Attributes['destination_workload'] != '', om.Attributes['destination_workload'],
+                om.ResourceAttributes['k8s.deployment.name'] != '', om
+                .ResourceAttributes['k8s.deployment.name'],
+                om.ResourceAttributes['k8s.statefulset.name'] != '', om
+                .ResourceAttributes['k8s.statefulset.name'],
+                om.ServiceName
+        ) AS ServiceName,
         MetricUnit,
         toJSONString(ResourceAttributes) AS ResourceAttributes,
         toJSONString(Attributes) AS Attributes
@@ -77,15 +85,27 @@ def query_metrics_sum(save_path: Path, namespace: str, start_time: str, end_time
         MetricName,
         MetricDescription,
         Value,
-        ServiceName,
+        multiIf(
+                omg.Attributes['source_workload'] != '', omg.Attributes['source_workload'],
+                omg.Attributes['destination_workload'] != '', omg.Attributes['destination_workload'],
+                omg.ResourceAttributes['k8s.deployment.name'] != '', omg
+                .ResourceAttributes['k8s.deployment.name'],
+                omg.ResourceAttributes['k8s.statefulset.name'] != '', omg
+                .ResourceAttributes['k8s.statefulset.name'],
+                omg.ServiceName
+        ) AS ServiceName,
         MetricUnit,
         toJSONString(ResourceAttributes) AS ResourceAttributes,
         toJSONString(Attributes) AS Attributes
     FROM
         otel_metrics_sum omg
     WHERE
-        (omg.ResourceAttributes['k8s.namespace.name'] = '{namespace}' 
-            OR omg.ResourceAttributes['service.namespace'] = '{namespace}')
+        (
+            omg.ResourceAttributes['k8s.namespace.name'] = '{namespace}' 
+            OR omg.ResourceAttributes['service.namespace'] = '{namespace}'
+            OR omg.Attributes['destination_namespace'] = '{namespace}'
+            OR omg.Attributes['source_namespace'] = '{namespace}'
+        )
         AND omg.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
 
@@ -99,7 +119,15 @@ def query_metrics_histogram(save_path: Path, namespace: str, start_time: str, en
     SELECT
         TimeUnix,
         MetricName,
-        ServiceName,
+        multiIf(
+            omh.Attributes['source_workload'] != '', omh.Attributes['source_workload'],
+            omh.Attributes['destination_workload'] != '', omh.Attributes['destination_workload'],
+            omh.ResourceAttributes['k8s.deployment.name'] != '', omh
+            .ResourceAttributes['k8s.deployment.name'],
+            omh.ResourceAttributes['k8s.statefulset.name'] != '', omh
+            .ResourceAttributes['k8s.statefulset.name'],
+            omh.ServiceName
+        ) AS ServiceName,
         MetricUnit,
         toJSONString(ResourceAttributes) AS ResourceAttributes,
         toJSONString(Attributes) AS Attributes,
@@ -113,7 +141,12 @@ def query_metrics_histogram(save_path: Path, namespace: str, start_time: str, en
     FROM
         otel_metrics_histogram omh
     WHERE
-        omh.ResourceAttributes['service.namespace'] = '{namespace}'
+        (
+            omh.ResourceAttributes['k8s.namespace.name'] = '{namespace}' 
+            OR omh.ResourceAttributes['service.namespace'] = '{namespace}'
+            OR omh.Attributes['destination_namespace'] = '{namespace}'
+            OR omh.Attributes['source_namespace'] = '{namespace}'
+        )
         AND omh.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
 
@@ -332,10 +365,10 @@ def local_test():
         "OUTPUT_PATH": "temp/ts5-ts-order-service-return-bbzg49",
         "NAMESPACE": "ts5",
         "TIMEZONE": "Asia/Shanghai",
-        "NORMAL_START": "1747815230",
-        "NORMAL_END": "1747815470",
-        "ABNORMAL_START": "1747815470",
-        "ABNORMAL_END": "1747815708",
+        "NORMAL_START": "1749900095",
+        "NORMAL_END": "1749901095",
+        "ABNORMAL_START": "1749901095",
+        "ABNORMAL_END": "1749902195",
     }
 
     for key, value in env_params.items():
