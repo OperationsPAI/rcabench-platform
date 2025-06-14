@@ -59,17 +59,17 @@ def load_inject_time(dataset: str, input_folder: Path) -> int:
 @timeit()
 def load_simple_metrics(dataset: str, input_folder: Path) -> pd.DataFrame:
     if dataset.startswith("rcaeval"):
-        lf = pl.scan_parquet(input_folder / "simple_metrics.parquet")
+        metrics = pl.scan_parquet(input_folder / "simple_metrics.parquet")
 
-        df = convert_simple_metrics(lf)
+        df = convert_simple_metrics(metrics)
         return df.to_pandas()
 
     if dataset.startswith("rcabench"):
-        normal_lf = pl.scan_parquet(input_folder / "normal_metrics.parquet")
-        abnormal_lf = pl.scan_parquet(input_folder / "abnormal_metrics.parquet")
-        lf = pl.concat([normal_lf, abnormal_lf])
+        normal_metrics = pl.scan_parquet(input_folder / "normal_metrics.parquet")
+        abnormal_metrics = pl.scan_parquet(input_folder / "abnormal_metrics.parquet")
+        metrics = pl.concat([normal_metrics, abnormal_metrics])
 
-        lf = lf.with_columns(
+        metrics = metrics.with_columns(
             pl.coalesce(
                 [
                     "attr.k8s.container.name",
@@ -79,6 +79,25 @@ def load_simple_metrics(dataset: str, input_folder: Path) -> pd.DataFrame:
             ).alias("service_name")
         )
 
+        metrics = metrics.select(
+            pl.col("time"),
+            pl.col("service_name"),
+            pl.col("metric"),
+            pl.col("value"),
+        )
+
+        normal_metrics_histogram = pl.scan_parquet(input_folder / "normal_metrics_histogram.parquet")
+        abnormal_metrics_histogram = pl.scan_parquet(input_folder / "abnormal_metrics_histogram.parquet")
+        metrics_histogram = pl.concat([normal_metrics_histogram, abnormal_metrics_histogram])
+
+        metrics_histogram = metrics_histogram.select(
+            pl.col("time"),
+            pl.col("service_name"),
+            pl.col("metric"),
+            pl.col("sum").alias("value"),  # `sum` as `value` (?)
+        )
+
+        lf = pl.concat([metrics, metrics_histogram])
         df = convert_simple_metrics(lf)
 
         return df.to_pandas()
