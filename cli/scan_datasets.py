@@ -92,5 +92,37 @@ def plot_rows_count(show: bool = True):
         plt.show()
 
 
+@app.command()
+@timeit()
+def scan_metric_names(dataset: str):
+    datapacks = get_datapack_list(dataset)
+
+    tasks = [functools.partial(_scan_metric_names, dataset, datapack) for datapack in datapacks]
+    results = fmap_threadpool(tasks, parallel=32)
+
+    metric_names = set()
+    for result in results:
+        metric_names.update(result)
+
+    df = pl.DataFrame({"dataset": dataset, "metric": sorted(metric_names)})
+    save_parquet(df, path=get_dataset_meta_file(dataset, "metric_names.parquet"))
+
+
+def _scan_metric_names(dataset: str, datapack: str) -> set[str]:
+    datapack_folder = get_datapack_folder(dataset, datapack)
+
+    if dataset.startswith("rcaeval"):
+        metrics = pl.scan_parquet(datapack_folder / "simple_metrics.parquet")
+    elif dataset.startswith("rcabench"):
+        normal_metrics = pl.scan_parquet(datapack_folder / "normal_metrics.parquet")
+        abnormal_metrics = pl.scan_parquet(datapack_folder / "abnormal_metrics.parquet")
+        metrics = pl.concat([normal_metrics, abnormal_metrics])
+    else:
+        raise NotImplementedError
+
+    metric_names = metrics.select(pl.col("metric").unique().sort()).collect().to_series().to_list()
+    return set(metric_names)
+
+
 if __name__ == "__main__":
     app()
