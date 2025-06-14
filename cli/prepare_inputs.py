@@ -105,7 +105,7 @@ def query_metrics_sum(save_path: Path, namespace: str, start_time: str, end_time
             OR omg.ResourceAttributes['service.namespace'] = '{namespace}'
             OR omg.Attributes['destination_namespace'] = '{namespace}'
             OR omg.Attributes['source_namespace'] = '{namespace}'
-            OR omg.MetricName like 'hubble_%'
+            OR omg.MetricName LIKE 'hubble_%'
         )
         AND omg.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
@@ -147,7 +147,7 @@ def query_metrics_histogram(save_path: Path, namespace: str, start_time: str, en
             OR omh.ResourceAttributes['service.namespace'] = '{namespace}'
             OR omh.Attributes['destination_namespace'] = '{namespace}'
             OR omh.Attributes['source_namespace'] = '{namespace}'
-            OR omh.MetricName like 'hubble_%'
+            OR omh.MetricName LIKE 'hubble_%'
         )
         AND omh.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
