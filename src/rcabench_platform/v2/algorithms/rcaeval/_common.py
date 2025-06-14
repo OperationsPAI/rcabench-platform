@@ -4,6 +4,9 @@ from ...logging import timeit
 from ...graphs.sdg.build_.rcaeval import load_inject_time as rcaeval_load_inject_time
 from ...graphs.sdg.build_.rcabench import load_inject_time as rcabench_load_inject_time
 
+from ...utils.env import debug
+from ...utils.serde import save_parquet
+
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -30,6 +33,13 @@ class SimpleMetricsAdapter:
         for rank, node_name in enumerate(ranks, start=1):
             service, _ = node_name.split("_", maxsplit=1)
             answers.append(AlgorithmAnswer(level="service", name=service, rank=rank))
+
+        if debug():
+            rows = []
+            for rank, node_name in enumerate(ranks, start=1):
+                rows.append({"rank": rank, "node_name": node_name})
+            df = pd.DataFrame(rows)
+            save_parquet(df, path=args.output_folder / "ranks.parquet")
 
         return answers
 
