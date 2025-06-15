@@ -501,5 +501,33 @@ def query_fault_types(dataset: str):
     print_dataframe(fault_types_count)
 
 
+@app.command()
+@timeit()
+def reset_after_time(timestamp: str):
+    dt = datetime.datetime.fromisoformat(timestamp).replace(tzinfo=datetime.UTC)
+    logger.info(f"Resetting datapacks after {dt}")
+
+    to_reset = []
+
+    dataset = "rcabench"
+    for datapack in tqdm(get_datapack_list(dataset)):
+        src_folder = Path("data") / "rcabench_dataset" / datapack
+        mtime = src_folder.stat().st_mtime
+        mtime_dt = datetime.datetime.fromtimestamp(mtime, tz=datetime.UTC)
+
+        if mtime_dt >= dt:
+            to_reset.append((datapack, mtime_dt))
+
+    to_reset.sort(key=lambda x: x[1])
+
+    logger.info(f"Total datapacks to reset: {len(to_reset)}")
+
+    for datapack, _ in tqdm(to_reset):
+        datapack_folder = get_datapack_folder(dataset, datapack)
+        finished = datapack_folder / ".finished"
+        assert finished.exists()
+        finished.unlink()
+
+
 if __name__ == "__main__":
     app()
