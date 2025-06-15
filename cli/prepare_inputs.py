@@ -105,7 +105,8 @@ def query_metrics_sum(save_path: Path, namespace: str, start_time: str, end_time
             OR omg.ResourceAttributes['service.namespace'] = '{namespace}'
             OR omg.Attributes['destination_namespace'] = '{namespace}'
             OR omg.Attributes['source_namespace'] = '{namespace}'
-            OR omg.MetricName LIKE 'hubble_%'
+            OR (omg.Attributes['destination'] LIKE '{namespace}/%')
+            OR (omg.Attributes['source'] LIKE '{namespace}/%')
         )
         AND omg.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
@@ -147,7 +148,8 @@ def query_metrics_histogram(save_path: Path, namespace: str, start_time: str, en
             OR omh.ResourceAttributes['service.namespace'] = '{namespace}'
             OR omh.Attributes['destination_namespace'] = '{namespace}'
             OR omh.Attributes['source_namespace'] = '{namespace}'
-            OR omh.MetricName LIKE 'hubble_%'
+            OR (omh.Attributes['destination'] LIKE '{namespace}/%')
+            OR (omh.Attributes['source'] LIKE '{namespace}/%')
         )
         AND omh.TimeUnix BETWEEN '{start_time}' AND '{end_time}'
     """
@@ -364,13 +366,13 @@ def copy_files(src: Path, dst: Path):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "temp/ts5-ts-order-service-return-bbzg49",
-        "NAMESPACE": "ts5",
+        "OUTPUT_PATH": "temp/ts3-ts-basic-service-response-delay-xqzvpm",
+        "NAMESPACE": "ts3",
         "TIMEZONE": "Asia/Shanghai",
-        "NORMAL_START": "1749900095",
-        "NORMAL_END": "1749901095",
-        "ABNORMAL_START": "1749901095",
-        "ABNORMAL_END": "1749902195",
+        "NORMAL_START": "1749934793",
+        "NORMAL_END": "1749935033",
+        "ABNORMAL_START": "1749935033",
+        "ABNORMAL_END": "1749935272",
     }
 
     for key, value in env_params.items():
