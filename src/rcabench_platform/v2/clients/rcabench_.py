@@ -1,3 +1,4 @@
+from ..config import get_config
 from ..logging import logger
 
 from typing import Any, Literal
@@ -8,21 +9,13 @@ import rcabench.rcabench
 import mysql.connector.abstracts
 import mysql.connector
 
-BASE_URL = "http://10.10.10.220:32080"
-
 
 def get_rcabench_sdk() -> rcabench.rcabench.RCABenchSDK:
-    return rcabench.rcabench.RCABenchSDK(base_url=BASE_URL)
+    return rcabench.rcabench.RCABenchSDK(base_url=get_config().base_url)
 
 
 def get_mariadb_connection() -> mysql.connector.abstracts.MySQLConnectionAbstract:
-    conn = mysql.connector.connect(
-        host="10.10.10.220",
-        user="root",
-        password="yourpassword",
-        database="rcabench",
-        port=32336,
-    )
+    conn = mysql.connector.connect(**get_config().database.__dict__)
 
     assert isinstance(conn, mysql.connector.abstracts.MySQLConnectionAbstract)
     assert conn.is_connected()
@@ -30,7 +23,10 @@ def get_mariadb_connection() -> mysql.connector.abstracts.MySQLConnectionAbstrac
 
 
 class CustomRCABenchSDK:
-    def __init__(self, base_url: str = BASE_URL) -> None:
+    def __init__(self, base_url: str | None = None) -> None:
+        if base_url is None:
+            base_url = get_config().base_url
+
         self.api_url = base_url.rstrip("/") + "/api/v1"
         self.client = requests.Session()
 
