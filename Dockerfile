@@ -29,7 +29,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ADD . /app
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv lock && \
-    uv sync --locked
+    uv sync
 
 CMD ["/bin/bash"]
