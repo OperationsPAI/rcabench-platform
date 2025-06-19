@@ -1,24 +1,73 @@
 from dataclasses import dataclass
 from pathlib import Path
 from contextlib import contextmanager
+import os
+
+
+@dataclass(kw_only=True)
+class Database:
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
 
 
 @dataclass(kw_only=True)
 class Config:
+    base_url: str
     data: Path
     output: Path
     temp: Path
+    database: Database
 
 
-_CONFIG = Config(
+_DEV_CONFIG = Config(
+    base_url="https://10.10.10.161:8082",
     data=Path("data/rcabench-platform-v2"),
     output=Path("output/rcabench-platform-v2"),
     temp=Path("temp"),
+    database=Database(
+        host="10.10.10.161",
+        port=3306,
+        user="root",
+        password="yourpassword",
+        database="rcabench",
+    ),
 )
+
+_PROD_CONFIG = Config(
+    base_url="http://10.10.10.220:32080",
+    data=Path("data/rcabench-platform-v2"),
+    output=Path("output/rcabench-platform-v2"),
+    temp=Path("temp"),
+    database=Database(
+        host="10.10.10.220",
+        port=32336,
+        user="root",
+        password="yourpassword",
+        database="rcabench",
+    ),
+)
+
+CONFIG_CLASSES = {
+    "dev": _DEV_CONFIG,
+    "prod": _PROD_CONFIG,
+}
+
+
+def _get_config() -> Config:
+    env = os.getenv("ENV_MODE", "prod").lower()
+    return CONFIG_CLASSES.get(env, _PROD_CONFIG)
+
+
+_CONFIG = None
 
 
 def get_config() -> Config:
     global _CONFIG
+    if _CONFIG is None:
+        _CONFIG = _get_config()
     return _CONFIG
 
 
