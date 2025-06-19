@@ -3,6 +3,7 @@ from ..logging import logger
 
 from typing import Any, Literal
 from pprint import pprint
+from dataclasses import asdict
 
 import requests
 import rcabench.rcabench
@@ -15,7 +16,7 @@ def get_rcabench_sdk() -> rcabench.rcabench.RCABenchSDK:
 
 
 def get_mariadb_connection() -> mysql.connector.abstracts.MySQLConnectionAbstract:
-    conn = mysql.connector.connect(**get_config().database.__dict__)
+    conn = mysql.connector.connect(**asdict(get_config().database))
 
     assert isinstance(conn, mysql.connector.abstracts.MySQLConnectionAbstract)
     assert conn.is_connected()
