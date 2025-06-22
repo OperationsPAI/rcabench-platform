@@ -21,7 +21,7 @@ Windows is not officially supported. While some functionality may work in Window
 
 |                     Toolchain                      | Version |
 | :------------------------------------------------: | :-----: |
-|          [uv](https://docs.astral.sh/uv)           | ^0.7.5  |
+|          [uv](https://docs.astral.sh/uv)           | ^0.7.13 |
 |       [just](https://github.com/casey/just)        | ^1.21.0 |
 |  [Docker Engine](https://docs.docker.com/engine/)  |    *    |
 | [Docker Compose](https://docs.docker.com/compose/) |    *    |
