@@ -2,10 +2,11 @@
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.clickhouse import ClickHouseClient, get_clickhouse_client
 from rcabench_platform.v2.clients.k8s import download_kube_info
-from rcabench_platform.v2.clients.rcabench_ import CustomRCABenchSDK
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
-
+from rcabench.openapi.api_client import ApiClient, Configuration
+from rcabench.openapi.api import InjectionApi
+from rcabench.openapi.models.dto_fault_injection_injection_resp import DtoFaultInjectionInjectionResp
 from pathlib import Path
 from typing import Any
 import subprocess
@@ -236,17 +237,14 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
 
 @timeit()
-def query_injection(name: str) -> dict[str, Any] | None:
-    sdk = CustomRCABenchSDK()
+def query_injection(rcabench_url: str, name: str) -> DtoFaultInjectionInjectionResp | None:
+    configuration: Configuration = Configuration(host=rcabench_url)
 
-    try:
-        resp = sdk.query_injection(name=name)
-    except Exception:
-        traceback.print_exc()
-        logger.error(f"Failed to query injection: {name}")
-        return None
+    with ApiClient(configuration=configuration) as client:
+        api = InjectionApi(api_client=client)
+        res = api.api_v1_injections_detail_get(dataset_name=name)
 
-    return resp
+    return res.data
 
 
 @timeit()
@@ -263,7 +261,7 @@ def query_kube_info(namespace: str) -> dict[str, Any] | None:
 
 @app.command()
 @timeit()
-def run():
+def run(rcabench_url: str = "http://10.10.10.220:32080"):
     ping_clickhouse()
 
     # Prepare the output directory
@@ -343,9 +341,9 @@ def run():
         }
         save_json(env_params, path=tempdir / "env.json")
 
-        injection = query_injection(output_path.name)
+        injection = query_injection(rcabench_url, output_path.name)
         if injection:
-            save_json(injection, path=tempdir / "injection.json")
+            save_json(injection.model_dump(), path=tempdir / "injection.json")
 
         kube_info = query_kube_info(namespace)
         if kube_info:
@@ -372,13 +370,13 @@ def copy_files(src: Path, dst: Path):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "temp/ts3-ts-basic-service-response-delay-xqzvpm",
-        "NAMESPACE": "ts3",
+        "OUTPUT_PATH": "temp/ts4-ts-travel-plan-service-dns-4x9x7h",
+        "NAMESPACE": "ts4",
         "TIMEZONE": "Asia/Shanghai",
-        "NORMAL_START": "1750140187",
-        "NORMAL_END": "1750140687",
-        "ABNORMAL_START": "1750140687",
-        "ABNORMAL_END": "1750140987",
+        "NORMAL_START": "1750588215",
+        "NORMAL_END": "1750588315",
+        "ABNORMAL_START": "1750588315",
+        "ABNORMAL_END": "1750588415",
     }
 
     for key, value in env_params.items():
