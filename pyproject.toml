@@ -75,6 +75,7 @@ dev = [ #
     "vegafusion>=2.0.2",
     "vl-convert-python>=1.8.0",
 ]
+
 [tool.uv.sources.pysync]
 git = "https://github.com/kedvall/pysync"
 rev = "4384b546c40e5cd773ff9e8fde7337045618e9d6"
