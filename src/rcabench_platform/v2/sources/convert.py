@@ -14,6 +14,7 @@ import functools
 import tempfile
 import shutil
 import sys
+import re
 
 import polars as pl
 
@@ -49,6 +50,7 @@ def convert_dataset(
     ignore_exceptions: bool = False,
 ) -> None:
     dataset = loader.name()
+    validate_dataset_name(dataset)
 
     tasks = [functools.partial(_convert_datapack, loader, i, skip_finished) for i in range(len(loader))]
 
@@ -86,6 +88,12 @@ def convert_datapack(
     *,
     skip_finished: bool = True,
 ) -> tuple[str, list[Label]]:
+    datapack = loader.name()
+    validate_datapack_name(datapack)
+
+    labels = loader.labels()
+    validate_datapack_labels(labels)
+
     needs_skip = False
     if skip_finished:
         finished = dst_folder / ".finished"
@@ -111,8 +119,6 @@ def convert_datapack(
 
         (dst_folder / ".finished").touch()
 
-    datapack = loader.name()
-    labels = loader.labels()
     return datapack, labels
 
 
@@ -155,6 +161,29 @@ def save_data_file(dst_folder: Path, name: str, value: Any) -> None:
 
     else:
         raise NotImplementedError(f"Unsupported file type: {ext}")
+
+
+def validate_dataset_name(name: str) -> None:
+    if not name:
+        raise ValueError("Dataset name cannot be empty")
+    if not re.match(r"^[A-Za-z0-9_-]+$", name):
+        raise ValueError(f"Invalid dataset name: {name}")
+
+
+def validate_datapack_name(name: str) -> None:
+    if not name:
+        raise ValueError("Datapack name cannot be empty")
+    if not re.match(r"^[A-Za-z0-9_-]+$", name):
+        raise ValueError(f"Invalid datapack name: {name}")
+
+
+def validate_datapack_labels(labels: list[Label]) -> None:
+    if not labels:
+        raise ValueError("Labels cannot be empty")
+
+    for label in labels:
+        if not label.name or not label.level:
+            raise ValueError(f"Label must have a name and level: {label}")
 
 
 def validate_traces(value: Any):
