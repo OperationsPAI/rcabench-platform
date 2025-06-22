@@ -34,6 +34,9 @@ def _fmap[R](
 ) -> list[R]:
     assert isinstance(tasks, list)
 
+    if len(tasks) == 0:
+        return []
+
     if parallel is None or parallel > 1:
         num_workers = parallel or multiprocessing.cpu_count()
         num_workers = min(num_workers, len(tasks))
