@@ -107,6 +107,7 @@ METRIC_PREFIX_PLACE_KIND: dict[str, PlaceKind] = {
     "k8s.replicaset.": PlaceKind.replica_set,
     "k8s.deployment.": PlaceKind.deployment,
     "k8s.statefulset.": PlaceKind.stateful_set,
+    "hubble_": PlaceKind.service,
 }
 
 
@@ -142,6 +143,7 @@ PLACE_METRICS_PARTITION: dict[PlaceKind, str] = {
     PlaceKind.deployment: "attr.k8s.deployment.name",
     PlaceKind.replica_set: "attr.k8s.replicaset.name",
     PlaceKind.machine: "attr.k8s.node.name",
+    PlaceKind.service: "service_name",
 }
 
 
@@ -158,8 +160,7 @@ def apply_place_metrics(sdg: SDG, df: pl.DataFrame, place_kind: PlaceKind, metri
 
         apply_k8s_places(sdg, df)
 
-        place_node = sdg.query_node_by_kind(place_kind, place_name)
-        assert place_node
+        place_node = sdg.add_node(PlaceNode(kind=place_kind, self_name=place_name), strict=False)
 
         place_node.add_indicator(
             Indicator(
@@ -304,6 +305,49 @@ def load_metrics_histogram(input_folder: Path) -> pl.LazyFrame:
 
 @timeit(log_args=False)
 def apply_metrics_histogram(sdg: SDG, df: pl.DataFrame) -> None:
+    df = df.with_columns(pl.col("metric").str.starts_with("hubble").alias("_is_hubble"))
+
+    df_map = df.partition_by("_is_hubble", as_dict=True)
+    del df
+
+    for (is_hubble,), df in df_map.items():
+        if is_hubble is True:
+            apply_hubble_metrics_histogram(sdg, df)
+        elif is_hubble is False:
+            apply_k8s_metrics_histogram(sdg, df)
+        else:
+            raise ValueError(f"Unexpected value for `_is_hubble`: {is_hubble}")
+
+
+def apply_hubble_metrics_histogram(sdg: SDG, df: pl.DataFrame) -> None:
+    # TODO: partition by (destination, source)
+
+    df_map = df.partition_by("metric", "service_name", as_dict=True)
+    del df
+
+    for (metric, service_name), df in df_map.items():
+        assert isinstance(metric, str) and metric
+        assert isinstance(service_name, str) and service_name
+
+        service_node = sdg.add_node(PlaceNode(kind=PlaceKind.service, self_name=service_name), strict=False)
+
+        service_node.add_indicator(
+            Indicator(
+                name=metric + ":hist.sum",
+                df=df.select(
+                    "time",
+                    "anomal",
+                    pl.col("sum").alias("value"),
+                    "count",
+                    "sum",
+                    "min",
+                    "max",
+                ),
+            )
+        )
+
+
+def apply_k8s_metrics_histogram(sdg: SDG, df: pl.DataFrame) -> None:
     assert df["attr.k8s.pod.name"].is_not_null().all()
     assert df["attr.k8s.service.name"].is_not_null().all()
     assert df["attr.k8s.namespace.name"].is_not_null().all()
