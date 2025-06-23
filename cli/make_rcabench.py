@@ -3,7 +3,7 @@ from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.rcabench_ import RcabenchSdkHelper
 from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
 from rcabench_platform.v2.sources.rcabench import RcabenchDatapackLoader, RcabenchDatasetLoader
-from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset
+from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset, link_subset
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.dict_ import flatten_dict
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
@@ -11,12 +11,10 @@ from rcabench_platform.v2.utils.serde import load_json, save_parquet
 from rcabench_platform.v2.datasets.spec import (
     get_datapack_folder,
     get_dataset_folder,
-    get_dataset_labels_path,
     get_dataset_meta_file,
     get_datapack_list,
     get_dataset_meta_folder,
     read_dataset_index,
-    read_dataset_labels,
 )
 
 from fractions import Fraction
@@ -25,6 +23,7 @@ from pathlib import Path
 from typing import Any
 import functools
 import datetime
+import shutil
 import json
 
 from tqdm.auto import tqdm
@@ -187,36 +186,17 @@ def make_filtered():
     df = df.filter(pl.col("datapack").is_in(kickout_datapacks).not_())
 
     dataset = "rcabench_filtered"
+
     dataset_folder = get_dataset_folder(dataset)
-    dataset_folder.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(dataset_folder, ignore_errors=True)
 
     datapacks = df["datapack"].to_list()
-    for datapack in tqdm(datapacks):
-        assert isinstance(datapack, str) and datapack
+    link_subset(src_dataset="rcabench", dst_dataset=dataset, datapacks=datapacks)
 
-        src_folder = Path("..") / "rcabench" / datapack
-        dst_folder = dataset_folder / datapack
-
-        dst_folder.unlink(missing_ok=True)
-        dst_folder.symlink_to(src_folder, target_is_directory=True)
-
-    index_df = df.select("dataset", "datapack")
-
-    labels_df = pl.read_parquet(get_dataset_labels_path("rcabench")).join(
-        df.select("datapack"),
-        on="datapack",
-        how="inner",
-    )
-
-    col = pl.lit(dataset).alias("dataset")
-    df = df.with_columns(col)
-    index_df = index_df.with_columns(col)
-    labels_df = labels_df.with_columns(col)
+    df = df.with_columns(pl.lit(dataset).alias("dataset"))
 
     meta_folder = get_dataset_meta_folder(dataset)
     save_parquet(df, path=meta_folder / "attributes.parquet")
-    save_parquet(index_df, path=meta_folder / "index.parquet")
-    save_parquet(labels_df, path=meta_folder / "labels.parquet")
 
 
 def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -438,6 +418,9 @@ def make_with_issues(db_only: bool = False, require_filtered: bool = False):
     if db_only:
         return
 
+    full_df = read_dataset_index("rcabench").select("datapack").rename({"datapack": "injection_name"})
+    df = df.join(full_df, on="injection_name", how="inner")
+
     if require_filtered:
         filtered_df = read_dataset_index("rcabench_filtered").select("datapack").rename({"datapack": "injection_name"})
         df = df.join(filtered_df, on="injection_name", how="inner")
@@ -445,29 +428,11 @@ def make_with_issues(db_only: bool = False, require_filtered: bool = False):
     datapacks = df["injection_name"].to_list()
 
     dataset = "rcabench_with_issues"
+
     dataset_folder = get_dataset_folder(dataset)
-    dataset_folder.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(dataset_folder, ignore_errors=True)
 
-    for datapack in tqdm(datapacks):
-        assert isinstance(datapack, str) and datapack
-
-        src_folder = Path("..") / "rcabench" / datapack
-        dst_folder = dataset_folder / datapack
-
-        dst_folder.unlink(missing_ok=True)
-        dst_folder.symlink_to(src_folder, target_is_directory=True)
-
-    index_df = df.select(pl.lit(dataset).alias("dataset"), pl.col("injection_name").alias("datapack"))
-
-    labels_df = (
-        read_dataset_labels("rcabench")
-        .join(index_df, on="datapack", how="inner")
-        .with_columns(pl.lit(dataset).alias("dataset"))
-    )
-
-    meta_folder = get_dataset_meta_folder(dataset)
-    save_parquet(index_df, path=meta_folder / "index.parquet")
-    save_parquet(labels_df, path=meta_folder / "labels.parquet")
+    link_subset(src_dataset="rcabench", dst_dataset=dataset, datapacks=datapacks)
 
     query_with_issues_ratio()
 

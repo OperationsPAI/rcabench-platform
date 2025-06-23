@@ -1,5 +1,12 @@
 from ..utils.display import human_byte_size
-from ..datasets.spec import Label, get_datapack_folder, get_dataset_index_path, get_dataset_labels_path
+from ..datasets.spec import (
+    Label,
+    get_datapack_folder,
+    get_dataset_index_path,
+    get_dataset_labels_path,
+    get_dataset_folder,
+    read_dataset_labels,
+)
 
 from ..logging import timeit, logger
 from ..utils.fs import running_mark
@@ -17,6 +24,7 @@ import sys
 import re
 
 import polars as pl
+from tqdm.auto import tqdm
 
 
 class DatapackLoader(ABC):
@@ -258,3 +266,33 @@ def validate_by_model(df: pl.LazyFrame | pl.DataFrame, model: dict[str, pl.DataT
         if name not in model:
             if not name.startswith(extra_prefix):
                 raise ValueError(f"Unexpected column: {name} {dtype}")
+
+
+def link_subset(src_dataset: str, dst_dataset: str, datapacks: list[str]):
+    src_dataset_folder = get_dataset_folder(src_dataset)
+    dst_dataset_folder = get_dataset_folder(dst_dataset)
+
+    assert src_dataset_folder.exists(), f"Source dataset folder {src_dataset_folder} does not exist"
+    dst_dataset_folder.mkdir(parents=True, exist_ok=True)
+
+    for datapack in tqdm(datapacks, desc=link_subset.__name__):
+        src_path = get_datapack_folder(src_dataset, datapack)
+        dst_path = get_datapack_folder(dst_dataset, datapack)
+
+        assert src_path.exists(), f"Source datapack {src_path} does not exist"
+        dst_path.unlink(missing_ok=True)
+
+        dst_path.symlink_to(Path("..") / src_dataset / datapack, target_is_directory=True)
+
+        assert dst_path.resolve() == src_path.resolve()
+
+    index_df = pl.DataFrame({"dataset": dst_dataset, "datapack": datapacks})
+
+    labels_df = (
+        read_dataset_labels(src_dataset)
+        .join(index_df.select("datapack"), on="datapack", how="inner")
+        .with_columns(pl.lit(dst_dataset).alias("dataset"))
+    )
+
+    save_parquet(index_df, path=get_dataset_index_path(dst_dataset))
+    save_parquet(labels_df, path=get_dataset_labels_path(dst_dataset))
