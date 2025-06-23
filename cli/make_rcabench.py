@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.clients.rcabench_ import get_mariadb_connection
+from rcabench_platform.v2.clients.rcabench_ import RcabenchSdkHelper
 from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
 from rcabench_platform.v2.sources.rcabench import RcabenchDatapackLoader, RcabenchDatasetLoader
 from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset
@@ -20,6 +20,7 @@ from rcabench_platform.v2.datasets.spec import (
 )
 
 from fractions import Fraction
+from pprint import pprint
 from pathlib import Path
 from typing import Any
 import functools
@@ -417,17 +418,20 @@ def merge_conclusion():
 @app.command()
 @timeit()
 def make_with_issues(db_only: bool = False, require_filtered: bool = False):
-    with get_mariadb_connection() as conn:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT injection_name, fault_type \
-            FROM fault_injection_with_issues \
-            GROUP BY injection_name, fault_type \
-            ORDER BY injection_name ASC;"
-        )
+    sdk = RcabenchSdkHelper()
+    with_issues_resp = sdk.get_analysis_with_issues()
 
-        rows = cursor.fetchall()
-        df = pl.DataFrame(rows)
+    rows = []
+    for item in with_issues_resp:
+        assert item.injection_name
+        assert item.engine_config and item.engine_config.value
+        row = {
+            "injection_name": item.injection_name,
+            "fault_type": FAULT_TYPES[item.engine_config.value],
+        }
+        rows.append(row)
+
+    df = pl.DataFrame(rows)
 
     save_parquet(df, path=get_dataset_meta_file("rcabench", "with_issues.db.parquet"))
 
@@ -490,8 +494,7 @@ def query_fault_types(dataset: str):
     elif dataset == "rcabench_with_issues":
         lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "with_issues.db.parquet"))
         col = "fault_type"
-        replacement = {i: v for i, v in enumerate(FAULT_TYPES)}
-        df = lf.select(col).collect().select(pl.col(col).replace_strict(replacement, return_dtype=pl.String))
+        df = lf.select(col).collect()
     else:
         raise NotImplementedError
 

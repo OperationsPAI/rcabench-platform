@@ -5,49 +5,26 @@ import os
 
 
 @dataclass(kw_only=True)
-class Database:
-    host: str
-    port: int
-    user: str
-    password: str
-    database: str
-
-
-@dataclass(kw_only=True)
 class Config:
-    base_url: str
     data: Path
     output: Path
     temp: Path
-    database: Database
+
+    base_url: str
 
 
 _DEV_CONFIG = Config(
-    base_url="https://10.10.10.161:8082",
     data=Path("data/rcabench-platform-v2"),
     output=Path("output/rcabench-platform-v2"),
     temp=Path("temp"),
-    database=Database(
-        host="10.10.10.161",
-        port=3306,
-        user="root",
-        password="yourpassword",
-        database="rcabench",
-    ),
+    base_url="https://10.10.10.161:8082",
 )
 
 _PROD_CONFIG = Config(
-    base_url="http://10.10.10.220:32080",
     data=Path("data/rcabench-platform-v2"),
     output=Path("output/rcabench-platform-v2"),
     temp=Path("temp"),
-    database=Database(
-        host="10.10.10.220",
-        port=32336,
-        user="root",
-        password="yourpassword",
-        database="rcabench",
-    ),
+    base_url="http://10.10.10.220:32080",
 )
 
 CONFIG_CLASSES = {

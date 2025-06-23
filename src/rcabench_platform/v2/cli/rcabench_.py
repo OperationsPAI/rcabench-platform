@@ -1,34 +1,15 @@
 from ..config import get_config
 from ..utils.serde import save_json
 from ..clients.k8s import download_kube_info
-from ..clients.rcabench_ import CustomRCABenchSDK, get_rcabench_sdk
+from ..clients.rcabench_ import RcabenchSdkHelper
 from ..logging import logger, timeit
 
 from pprint import pprint
 from pathlib import Path
 
 import typer
-import rcabench.model.injection
 
 app = typer.Typer()
-
-
-@app.command()
-@timeit()
-def query_dataset(name: str):
-    sdk = CustomRCABenchSDK()
-
-    output = sdk.query_dataset(name=name)
-    pprint(output)
-
-
-@app.command()
-@timeit()
-def query_injection(name: str):
-    sdk = CustomRCABenchSDK()
-
-    output = sdk.query_injection(name=name)
-    pprint(output)
 
 
 @app.command()
@@ -45,9 +26,23 @@ def kube_info(save_path: Path | None = None):
 
 @app.command()
 @timeit()
-def list_injections(page_num: int = 1, page_size: int = 10):
-    sdk = get_rcabench_sdk()
+def query_dataset(name: str):
+    sdk = RcabenchSdkHelper()
+    resp = sdk.query_dataset(name=name)
+    pprint(resp.model_dump())
 
-    output = sdk.injection.list(page_num=page_num, page_size=page_size)
-    assert isinstance(output, rcabench.model.injection.ListResult)
+
+@app.command()
+@timeit()
+def query_injection(name: str):
+    sdk = RcabenchSdkHelper()
+    resp = sdk.get_injection_details(dataset_name=name)
+    pprint(resp.model_dump())
+
+
+@app.command()
+@timeit()
+def list_injections(page_num: int = 1, page_size: int = 10):
+    sdk = RcabenchSdkHelper()
+    output = sdk.list_injections(page_num=page_num, page_size=page_size)
     pprint(output.model_dump())

@@ -2,11 +2,10 @@
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.clickhouse import ClickHouseClient, get_clickhouse_client
 from rcabench_platform.v2.clients.k8s import download_kube_info
+from rcabench_platform.v2.clients.rcabench_ import RcabenchSdkHelper
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
-from rcabench.openapi.api_client import ApiClient, Configuration
-from rcabench.openapi.api import InjectionApi
-from rcabench.openapi.models.dto_fault_injection_injection_resp import DtoFaultInjectionInjectionResp
+
 from pathlib import Path
 from typing import Any
 import subprocess
@@ -237,14 +236,9 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
 
 @timeit()
-def query_injection(rcabench_url: str, name: str) -> DtoFaultInjectionInjectionResp | None:
-    configuration: Configuration = Configuration(host=rcabench_url)
-
-    with ApiClient(configuration=configuration) as client:
-        api = InjectionApi(api_client=client)
-        res = api.api_v1_injections_detail_get(dataset_name=name)
-
-    return res.data
+def query_injection(rcabench_url: str, name: str):
+    sdk = RcabenchSdkHelper()
+    return sdk.get_injection_details(dataset_name=name)
 
 
 @timeit()
@@ -370,13 +364,13 @@ def copy_files(src: Path, dst: Path):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "temp/ts4-ts-travel-plan-service-dns-4x9x7h",
-        "NAMESPACE": "ts4",
+        "OUTPUT_PATH": "temp/ts1-ts-order-service-mysql-pwqdhw",
+        "NAMESPACE": "ts1",
         "TIMEZONE": "Asia/Shanghai",
-        "NORMAL_START": "1750588215",
-        "NORMAL_END": "1750588315",
-        "ABNORMAL_START": "1750588315",
-        "ABNORMAL_END": "1750588415",
+        "NORMAL_START": "1750653226",
+        "NORMAL_END": "1750653466",
+        "ABNORMAL_START": "1750653466",
+        "ABNORMAL_END": "1750653704",
     }
 
     for key, value in env_params.items():
