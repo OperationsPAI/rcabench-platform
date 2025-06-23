@@ -112,11 +112,22 @@ def _scan_metric_names(dataset: str, datapack: str) -> set[str]:
     datapack_folder = get_datapack_folder(dataset, datapack)
 
     if dataset.startswith("rcaeval"):
-        metrics = pl.scan_parquet(datapack_folder / "simple_metrics.parquet")
+        metrics = pl.scan_parquet(datapack_folder / "simple_metrics.parquet").select("metric")
     elif dataset.startswith("rcabench"):
         normal_metrics = pl.scan_parquet(datapack_folder / "normal_metrics.parquet")
         abnormal_metrics = pl.scan_parquet(datapack_folder / "abnormal_metrics.parquet")
-        metrics = pl.concat([normal_metrics, abnormal_metrics])
+
+        normal_metrics_hisogram = pl.scan_parquet(datapack_folder / "normal_metrics_histogram.parquet")
+        abnormal_metrics_hisogram = pl.scan_parquet(datapack_folder / "abnormal_metrics_histogram.parquet")
+
+        metrics = pl.concat(
+            [
+                normal_metrics.select("metric"),
+                abnormal_metrics.select("metric"),
+                normal_metrics_hisogram.select("metric"),
+                abnormal_metrics_hisogram.select("metric"),
+            ]
+        )
     else:
         raise NotImplementedError
 
