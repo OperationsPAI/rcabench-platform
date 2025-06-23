@@ -12,13 +12,13 @@ Currently, we have the following data sources:
 
 As the [development guide](../CONTRIBUTING.md#link-datasets) describes, the data sources and converted datasets are stored in the shared file system, e.g., `/mnt/jfs`.
 
-| data source        | converted dataset                                | subset mode           | generator                                       |
-| ------------------ | ------------------------------------------------ | --------------------- | ----------------------------------------------- |
-| `rcabench_dataset` | `rcabench-platform-v2/data/rcabench`             | full                  | [cli/make_rcabench.py](../cli/make_rcabench.py) |
-|                    | `rcabench-platform-v2/data/rcabench_filtered`    | symlink to `rcabench` | [cli/make_rcabench.py](../cli/make_rcabench.py) |
-|                    | `rcabench-platform-v2/data/rcabench_with_issues` | symlink to `rcabench` | [cli/make_rcabench.py](../cli/make_rcabench.py) |
-| `RCAEval/RE2-TT`   | `rcabench-platform-v2/data/rcaeval_re2_tt`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)   |
-| `RCAEval/RE2-OB`   | `rcabench-platform-v2/data/rcaeval_re2_OB`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)   |
+| data source        | converted dataset                                | subset mode           | generator                                                               |
+| ------------------ | ------------------------------------------------ | --------------------- | ----------------------------------------------------------------------- |
+| `rcabench_dataset` | `rcabench-platform-v2/data/rcabench`             | full                  | [cli/make_rcabench.py](../cli/make_rcabench.py)                         |
+|                    | `rcabench-platform-v2/data/rcabench_filtered`    | symlink to `rcabench` | [cli/make_rcabench_filtered.py](../cli/make_rcabench_filtered.py)       |
+|                    | `rcabench-platform-v2/data/rcabench_with_issues` | symlink to `rcabench` | [cli/make_rcabench_with_issues.py](../cli/make_rcabench_with_issues.py) |
+| `RCAEval/RE2-TT`   | `rcabench-platform-v2/data/rcaeval_re2_tt`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)                           |
+| `RCAEval/RE2-OB`   | `rcabench-platform-v2/data/rcaeval_re2_OB`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)                           |
 
 The `subset mode` indicates how the dataset is generated:
 + `full`: the dataset is converted from the original data source.
@@ -52,16 +52,34 @@ TMP=/dev/shm/make LOGURU_COLORIZE=0 POLARS_MAX_THREADS=16 ./cli/make_rcabench.py
 
 The example call runs 8 parallel processes with 16 polars threads each, using memory storage as the temporary directory. It is tested on a VM with 128 cores and 192 GiB of RAM.
 
-Generate the `rcabench_filtered` dataset:
+#### rcabench_filtered
+
+Usages:
 
 ```bash
-./cli/make_rcabench.py make-filtered
+./cli/make_rcabench_filtered.py --help
 ```
 
-Generate the `rcabench_with_issues` dataset:
+Run the generator:
 
 ```bash
-./cli/make_rcabench.py make-with-issues
+./cli/make_rcabench_filtered.py run --help
+./cli/make_rcabench_filtered.py run
+```
+
+#### rcabench_with_issues
+
+Usages:
+
+```bash
+./cli/make_rcabench_with_issues.py --help
+```
+
+Run the generator:
+
+```bash
+./cli/make_rcabench_with_issues.py run --help
+./cli/make_rcabench_with_issues.py run
 ```
 
 #### rcaeval
