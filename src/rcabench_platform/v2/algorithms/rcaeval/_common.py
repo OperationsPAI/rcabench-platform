@@ -75,6 +75,7 @@ def load_simple_metrics(dataset: str, input_folder: Path) -> pd.DataFrame:
                     "attr.k8s.container.name",
                     "attr.k8s.deployment.name",
                     "attr.k8s.statefulset.name",
+                    "service_name",
                 ]
             ).alias("service_name")
         )
