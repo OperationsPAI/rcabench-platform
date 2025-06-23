@@ -525,6 +525,8 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
                         ),
                         strict=False,
                     )
+                    if parent_node.id == function_node.id:
+                        logger.warning(f"self loop for function `{op_name}` span_id=`{span_id}`")
 
             if service_name is None:
                 logger.warning(f"op_name `{op_name}` missing service_name")

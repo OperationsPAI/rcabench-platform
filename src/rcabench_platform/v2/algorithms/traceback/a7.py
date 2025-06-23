@@ -300,6 +300,10 @@ def search_recursively_by_function_anomaly(sdg: SDG, start_node: PlaceNode, anom
                 v = sdg.get_node_by_id(out_edge.dst_id)
                 assert v.kind == PlaceKind.function
 
+                if v.id == u.id:
+                    logger.debug(f"  skip self-loop: `{u.uniq_name}`")
+                    continue
+
                 anomalies = detect_node_anomalies(v)
 
                 if any(anomaly.kind == a.kind for a in anomalies):
