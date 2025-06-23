@@ -52,7 +52,7 @@ def run(skip_finished: bool = True, parallel: int = 4, scan: bool = True):
 @app.command()
 @timeit()
 def local_test_1():
-    datapack = "ts0-ts-preserve-service-response-delay-jqrgnc"
+    datapack = "ts3-ts-basic-service-request-replace-path-4nnqvb"
     loader = RcabenchDatapackLoader(
         src_folder=Path("data") / "rcabench_dataset" / datapack,
         datapack=datapack,

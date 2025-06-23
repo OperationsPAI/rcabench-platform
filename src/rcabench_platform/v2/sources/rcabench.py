@@ -26,18 +26,35 @@ def unnest_json_col(lf: pl.LazyFrame, col_name: str, dtype: pl.Struct) -> pl.Laz
 
 
 def convert_metrics(src: Path) -> pl.LazyFrame:
-    lf = pl.scan_parquet(src).select(
+    lf = pl.scan_parquet(src)
+    original_columns: list[str] = lf.collect_schema().names()
+
+    selected_columns = [
         "TimeUnix",
         "MetricName",
         "Value",
         "ResourceAttributes",
-    )
+    ]
+    additional_columns = [
+        "ServiceName",
+        "Attributes",
+    ]
+    for col in additional_columns:
+        if col in original_columns:
+            selected_columns.append(col)
+
+    lf = lf.select(selected_columns)
 
     lf = replace_time_col(lf, "TimeUnix")
 
     lf = lf.rename({"MetricName": "metric", "Value": "value"})
 
-    lf = lf.with_columns(pl.lit(None, dtype=pl.String).alias("service_name"))
+    if "ServiceName" in original_columns:
+        lf = lf.rename({"ServiceName": "service_name"})
+    else:
+        lf = lf.with_columns(pl.lit(None, dtype=pl.String).alias("service_name"))
+
+    attr_cols = []
 
     resource_attributes = pl.Struct(
         [
@@ -51,8 +68,18 @@ def convert_metrics(src: Path) -> pl.LazyFrame:
         ]
     )
     lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
+    attr_cols += [field.name for field in resource_attributes.fields]
 
-    attr_cols = [field.name for field in resource_attributes.fields]
+    if "Attributes" in original_columns:
+        attributes = pl.Struct(
+            [
+                pl.Field("destination_workload", pl.String),
+                pl.Field("source_workload", pl.String),
+            ]
+        )
+        lf = unnest_json_col(lf, "Attributes", attributes)
+        attr_cols += [field.name for field in attributes.fields]
+
     lf = lf.rename({col: "attr." + col for col in attr_cols})
 
     lf = lf.sort("time")
@@ -116,15 +143,12 @@ def convert_metrics_histogram(src: Path) -> pl.LazyFrame:
         [
             pl.Field("jvm.gc.action", pl.String),
             pl.Field("jvm.gc.name", pl.String),
+            pl.Field("destination", pl.String),
+            pl.Field("source", pl.String),
         ]
     )
     lf = unnest_json_col(lf, "Attributes", attributes)
-    lf = lf.rename(
-        {
-            "jvm.gc.action": "attr.jvm.gc.action",
-            "jvm.gc.name": "attr.jvm.gc.name",
-        }
-    )
+    lf = lf.rename({field.name: "attr." + field.name for field in attributes.fields})
 
     lf = lf.sort("time")
     return lf
