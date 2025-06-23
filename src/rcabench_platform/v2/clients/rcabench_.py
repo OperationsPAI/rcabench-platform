@@ -26,6 +26,11 @@ class RcabenchSdkHelper:
     def __init__(self, api_client: ApiClient | None = None) -> None:
         self.api_client = api_client or get_rcabench_openapi_client()
 
+    @classmethod
+    def from_base_url(cls, base_url: str | None = None) -> "RcabenchSdkHelper":
+        api_client = get_rcabench_openapi_client(base_url=base_url)
+        return cls(api_client=api_client)
+
     def query_dataset(self, *, name: str) -> DtoQueryDatasetResp:
         api = DatasetApi(self.api_client)
         resp = api.api_v1_datasets_query_get(name=name, sort="desc")

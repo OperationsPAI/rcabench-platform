@@ -237,8 +237,13 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
 @timeit()
 def query_injection(rcabench_url: str, name: str):
-    sdk = RcabenchSdkHelper()
-    return sdk.get_injection_details(dataset_name=name)
+    try:
+        sdk = RcabenchSdkHelper.from_base_url(base_url=rcabench_url)
+        return sdk.get_injection_details(dataset_name=name)
+    except Exception:
+        traceback.print_exc()
+        logger.error(f"Failed to query injection details: {name}")
+        return None
 
 
 @timeit()
