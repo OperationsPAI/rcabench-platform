@@ -32,7 +32,8 @@ def _fmap[R](
     parallel: int,
     ignore_exceptions: bool = False,
 ) -> list[R]:
-    assert isinstance(tasks, list)
+    if not isinstance(tasks, list):
+        tasks = list(tasks)
 
     if len(tasks) == 0:
         return []
@@ -45,53 +46,68 @@ def _fmap[R](
 
     logger_ = logger.opt(depth=2)
 
-    if mode == "threadpool":
-        pool = multiprocessing.pool.ThreadPool(
-            processes=num_workers,
-        )
-    elif mode == "processpool":
-        pool = multiprocessing.get_context("spawn").Pool(
-            processes=num_workers,
-            initializer=call_initializers,
-            initargs=(initializers(),),
-        )
+    if num_workers > 1:
+        if mode == "threadpool":
+            pool = multiprocessing.pool.ThreadPool(
+                processes=num_workers,
+            )
+        elif mode == "processpool":
+            pool = multiprocessing.get_context("spawn").Pool(
+                processes=num_workers,
+                initializer=call_initializers,
+                initargs=(initializers(),),
+            )
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+
+        with pool:
+            asyncs = [pool.apply_async(task) for task in tasks]
+            finished = [False] * len(asyncs)
+            index_results: list[tuple[int, R]] = []
+            exception_count = 0
+
+            with tqdm(total=len(asyncs), desc=f"fmap_{mode}") as pbar:
+                while not all(finished):
+                    for i, async_ in enumerate(asyncs):
+                        if finished[i]:
+                            continue
+                        if not async_.ready():
+                            continue
+                        try:
+                            result = async_.get(timeout=0.1)
+                            finished[i] = True
+                            index_results.append((i, result))
+                            pbar.update(1)
+                        except multiprocessing.TimeoutError:
+                            continue
+                        except Exception as e:
+                            exception_count += 1
+                            finished[i] = True
+                            pbar.update(1)
+                            if ignore_exceptions:
+                                traceback.print_exc()
+                                logger_.error("Exception in task {}: {}", i, e)
+                            else:
+                                raise e
+                    pbar.update(0)
+                    time.sleep(1)
+
+        index_results.sort(key=lambda x: x[0])
+        results = [result for _, result in index_results]
     else:
-        raise ValueError(f"Unknown mode: {mode}")
-
-    with pool:
-        asyncs = [pool.apply_async(task) for task in tasks]
-        finished = [False] * len(asyncs)
-        index_results: list[tuple[int, R]] = []
+        results = []
         exception_count = 0
-
-        with tqdm(total=len(asyncs), desc=f"fmap_{mode}") as pbar:
-            while not all(finished):
-                for i, async_ in enumerate(asyncs):
-                    if finished[i]:
-                        continue
-                    if not async_.ready():
-                        continue
-                    try:
-                        result = async_.get(timeout=0.1)
-                        finished[i] = True
-                        index_results.append((i, result))
-                        pbar.update(1)
-                    except multiprocessing.TimeoutError:
-                        continue
-                    except Exception as e:
-                        exception_count += 1
-                        finished[i] = True
-                        pbar.update(1)
-                        if ignore_exceptions:
-                            traceback.print_exc()
-                            logger_.error(f"Exception in task: {e}")
-                        else:
-                            raise e
-                pbar.update(0)
-                time.sleep(1)
-
-    index_results.sort(key=lambda x: x[0])
-    results = [result for _, result in index_results]
+        for i, task in enumerate(tqdm(tasks, desc="fmap")):
+            try:
+                result = task()
+                results.append(result)
+            except Exception as e:
+                exception_count += 1
+                if ignore_exceptions:
+                    traceback.print_exc()
+                    logger_.error("Exception in task {}: {}", i, e)
+                else:
+                    raise e
 
     if exception_count > 0:
         logger_.warning(f"fmap_{mode} completed with {exception_count} exceptions.")
