@@ -73,6 +73,7 @@ dev = [ #
     "ruff>=0.12.0",
     "vegafusion>=2.0.2",
     "vl-convert-python>=1.8.0",
+    "pandas-stubs>=2.2.3.250527",
 ]
 
 [tool.uv.sources.pysync]

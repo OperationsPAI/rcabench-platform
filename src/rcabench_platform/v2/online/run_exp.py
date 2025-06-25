@@ -89,17 +89,5 @@ def run(entrypoint: Path | None = None):
         func(params)
 
 
-@timeit(log_args=False)
-def submit_conclusion_csv(df: pd.DataFrame):
-    output_path = os.environ["OUTPUT_PATH"]
-    assert output_path is not None and isinstance(output_path, str)
-
-    output_path = Path(output_path)
-    assert output_path.is_dir()
-
-    output_path = output_path / "conclusion.csv"
-    df.to_csv(output_path, index=False)
-
-
 if __name__ == "__main__":
     app()
