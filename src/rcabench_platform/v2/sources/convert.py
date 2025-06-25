@@ -1,3 +1,4 @@
+from ..config import get_config
 from ..utils.display import human_byte_size
 from ..datasets.spec import (
     Label,
@@ -14,7 +15,6 @@ from ..utils.serde import save_csv, save_json, save_parquet, save_txt
 from ..utils.fmap import fmap_processpool
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import functools
@@ -49,18 +49,23 @@ class DatasetLoader(ABC):
     def __getitem__(self, index: int) -> DatapackLoader: ...
 
 
-@timeit(log_args={"skip", "parallel"})
+@timeit()
 def convert_dataset(
     loader: DatasetLoader,
+    root: Path | None = None,
     *,
     skip_finished: bool = True,
     parallel: int = 4,
     ignore_exceptions: bool = False,
 ) -> None:
+    if root is None:
+        root = get_config().data
+
     dataset = loader.name()
     validate_dataset_name(dataset)
 
-    tasks = [functools.partial(_convert_datapack, loader, i, skip_finished) for i in range(len(loader))]
+    data_folder = root / "data" / dataset
+    tasks = [functools.partial(_convert_datapack, loader, i, data_folder, skip_finished) for i in range(len(loader))]
 
     results = fmap_processpool(
         tasks,
@@ -79,17 +84,23 @@ def convert_dataset(
     index_df = pl.DataFrame(index_rows).sort(by=pl.all())
     labels_df = pl.DataFrame(labels_rows).sort(by=pl.all())
 
-    save_parquet(index_df, path=get_dataset_index_path(dataset))
-    save_parquet(labels_df, path=get_dataset_labels_path(dataset))
+    meta_folder = root / "meta" / dataset
+    save_parquet(index_df, path=meta_folder / "index.parquet")
+    save_parquet(labels_df, path=meta_folder / "labels.parquet")
 
 
-def _convert_datapack(loader: DatasetLoader, index: int, skip_finished: bool) -> tuple[str, list[Label]]:
+def _convert_datapack(
+    loader: DatasetLoader,
+    index: int,
+    data_folder: Path,
+    skip_finished: bool,
+) -> tuple[str, list[Label]]:
     datapack = loader[index]
-    dst_folder = get_datapack_folder(loader.name(), datapack.name())
+    dst_folder = data_folder / datapack.name()
     return convert_datapack(datapack, dst_folder, skip_finished=skip_finished)
 
 
-@timeit(log_args={"dst_folder", "skip"})
+@timeit()
 def convert_datapack(
     loader: DatapackLoader,
     dst_folder: Path,
@@ -130,7 +141,7 @@ def convert_datapack(
     return datapack, labels
 
 
-@timeit(log_args={"src", "dst"})
+@timeit()
 def move_files(src: Path, dst: Path) -> None:
     for file in src.iterdir():
         shutil.move(file, dst / file.name)
@@ -268,6 +279,7 @@ def validate_by_model(df: pl.LazyFrame | pl.DataFrame, model: dict[str, pl.DataT
                 raise ValueError(f"Unexpected column: {name} {dtype}")
 
 
+@timeit(log_args={"src_dataset", "dst_dataset"})
 def link_subset(src_dataset: str, dst_dataset: str, datapacks: list[str]):
     src_dataset_folder = get_dataset_folder(src_dataset)
     dst_dataset_folder = get_dataset_folder(dst_dataset)
