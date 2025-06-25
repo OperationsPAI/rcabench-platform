@@ -1,11 +1,13 @@
-from ...utils.serde import load_pickle, save_pickle
-from ...utils.fs import has_recent_file
+from ..spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
+
+from ...logging import logger, timeit
+
 from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode, GraphPath, ExpandedGraphPath
 from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
 from ...graphs.sdg.build_ import build_sdg
-from ...logging import logger, timeit
-from ...algorithms.spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
 
+from ...utils.serde import load_pickle, save_pickle
+from ...utils.fs import has_recent_file
 from ...utils.env import debug
 
 from collections import defaultdict, deque
