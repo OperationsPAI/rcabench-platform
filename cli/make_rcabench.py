@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 import functools
 import datetime
+import shutil
 import json
 
 from tqdm.auto import tqdm
@@ -202,6 +203,29 @@ def reset_after_time(timestamp: str):
         finished = datapack_folder / ".finished"
         assert finished.exists()
         finished.unlink()
+
+
+@app.command()
+@timeit()
+def dedup_converted():
+    datapacks = get_datapack_list("rcabench")
+
+    for datapack in tqdm(datapacks):
+        src_folder = get_datapack_folder("rcabench", datapack)
+        dst_folder = Path("data") / "rcabench_dataset" / datapack / "converted"
+
+        if not dst_folder.exists():
+            continue
+
+        for item in dst_folder.iterdir():
+            assert item.is_file()
+            item.unlink()
+
+        for item in src_folder.iterdir():
+            assert item.is_file()
+
+            dst = dst_folder / item.name
+            dst.hardlink_to(item)
 
 
 if __name__ == "__main__":
