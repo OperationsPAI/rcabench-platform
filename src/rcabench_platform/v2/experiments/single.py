@@ -1,4 +1,5 @@
-from ..config import get_config
+from .spec import get_output_folder
+
 from ..datasets.spec import get_datapack_labels, get_datapack_folder
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
 from ..logging import logger, timeit
@@ -12,11 +13,6 @@ import traceback
 import time
 
 import polars as pl
-
-
-def get_output_folder(dataset: str, datapack: str, algorithm: str) -> Path:
-    config = get_config()
-    return config.output / "data" / dataset / datapack / algorithm
 
 
 @timeit(log_level="INFO")

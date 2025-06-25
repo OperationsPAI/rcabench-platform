@@ -1,4 +1,4 @@
-from .single import get_output_folder
+from .spec import get_output_folder, get_output_meta_folder
 
 from ..utils.dataframe import print_dataframe
 from ..evaluation.ranking import calc_all_perf, calc_all_perf_by_datapack_attr
@@ -11,11 +11,6 @@ from ..logging import logger, timeit
 import polars as pl
 from pathlib import Path
 from tqdm.auto import tqdm
-
-
-def get_output_meta_folder(dataset: str) -> Path:
-    config = get_config()
-    return config.output / "meta" / dataset
 
 
 @timeit(log_level="INFO")
