@@ -75,6 +75,8 @@ def convert_metrics(src: Path) -> pl.LazyFrame:
             [
                 pl.Field("destination_workload", pl.String),
                 pl.Field("source_workload", pl.String),
+                pl.Field("destination", pl.String),
+                pl.Field("source", pl.String),
             ]
         )
         lf = unnest_json_col(lf, "Attributes", attributes)
@@ -354,6 +356,7 @@ class RcabenchDatapackLoader(DatapackLoader):
             "_traces": convert_traces,
             "_logs": convert_logs,
             "_metrics": convert_metrics,
+            "_metrics_sum": convert_metrics,
             "_metrics_histogram": convert_metrics_histogram,
         }
 
