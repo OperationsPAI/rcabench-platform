@@ -2,15 +2,12 @@ from .spec import get_output_folder, get_output_meta_folder
 
 from ..utils.dataframe import print_dataframe
 from ..evaluation.ranking import calc_all_perf, calc_all_perf_by_datapack_attr
-from ..config import get_config
 from ..utils.serde import save_parquet
 from ..algorithms.spec import global_algorithm_registry
 from ..datasets.spec import get_dataset_meta_folder, get_datapack_list
 from ..logging import logger, timeit
 
 import polars as pl
-from pathlib import Path
-from tqdm.auto import tqdm
 
 
 @timeit(log_level="INFO")
@@ -22,16 +19,16 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False):
 
     output_paths = [get_output_folder(dataset, datapack, algorithm) / "output.parquet" for datapack, algorithm in items]
 
-    lf_list: list[pl.LazyFrame] = []
+    valid_output_paths = []
     for path in output_paths:
         if path.exists():
-            lf = pl.scan_parquet(path)
-            lf_list.append(lf)
+            valid_output_paths.append(path)
         elif warn_missing:
             logger.warning(f"missing output file: {path}")
 
-    logger.debug(f"loading {len(lf_list)} output files")
-    output_df = pl.concat(lf_list).collect()
+    logger.debug(f"loading {len(valid_output_paths)} output files")
+    output_df = pl.read_parquet(valid_output_paths, rechunk=True)
+
     output_meta_folder = get_output_meta_folder(dataset)
     save_parquet(output_df, path=output_meta_folder / "output.parquet")
 
