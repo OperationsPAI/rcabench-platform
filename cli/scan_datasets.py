@@ -1,6 +1,11 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.datasets.spec import get_datapack_folder, get_datapack_list, get_dataset_meta_file
+from rcabench_platform.v2.datasets.spec import (
+    get_datapack_folder,
+    get_datapack_labels,
+    get_datapack_list,
+    get_dataset_meta_file,
+)
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
 
@@ -10,6 +15,7 @@ import functools
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import polars as pl
+from tqdm.auto import tqdm
 
 
 @app.command()
@@ -128,6 +134,24 @@ def _scan_metric_names(dataset: str, datapack: str) -> set[str]:
 
     metric_names = metrics.select(pl.col("metric").unique().sort()).collect().to_series().to_list()
     return set(metric_names)
+
+
+@app.command()
+@timeit()
+def validate_datapacks(dataset: str):
+    datapacks = get_datapack_list(dataset)
+
+    count = 0
+    for datapack in tqdm(datapacks):
+        try:
+            _ = get_datapack_labels(dataset, datapack)
+        except Exception as e:
+            logger.error(f"Error validating datapack {datapack} in dataset {dataset}: {repr(e)}")
+            count += 1
+            continue
+    if count > 0:
+        # print proportion of failed datapacks
+        logger.error(f"Validation failed for {count} out of {len(datapacks)} datapacks in dataset {dataset}.")
 
 
 if __name__ == "__main__":

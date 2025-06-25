@@ -80,7 +80,7 @@ def get_datapack_labels(dataset: str, datapack: str) -> list[Label]:
         labels_set.add((level, name))
         labels_list.append(Label(level=level, name=name))
 
-    assert len(labels_set) == len(labels_list)
+    assert len(labels_set) == len(labels_list), f"Duplicate labels found in `{dataset}/{datapack}`"
 
     return labels_list
 

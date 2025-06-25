@@ -25,10 +25,11 @@ def run(db_only: bool = False, require_filtered: bool = False):
         row = {
             "injection_name": item.injection_name,
             "fault_type": FAULT_TYPES[item.engine_config.value],
+            "dataset_id": item.dataset_id,
         }
         rows.append(row)
 
-    df = pl.DataFrame(rows)
+    df = pl.DataFrame(rows).unique().sort(by="dataset_id", descending=True)
 
     save_parquet(df, path=get_dataset_meta_file("rcabench", "with_issues.db.parquet"))
 
