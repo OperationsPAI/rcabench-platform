@@ -1,3 +1,5 @@
+from typing import Any
+import json
 import re
 
 DATAPACK_PATTERN = (
@@ -91,3 +93,25 @@ def get_parent_resource_from_pod_name(pod_name: str) -> tuple[str | None, str | 
 
     # 其他情况（如裸 Pod 或未知格式）
     return (None, None, None)
+
+
+HTTP_REPLACE_METHODS: list[str] = [
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+    "PATCH",
+]
+
+
+def rcabench_fix_injection(injection: dict[str, Any]) -> None:
+    display_config: dict[str, Any] = json.loads(injection["display_config"])
+    engine_config: dict[str, Any] = json.loads(injection["engine_config"])
+
+    if (replace_method := display_config.get("replace_method")) is not None:
+        display_config["replace_method"] = HTTP_REPLACE_METHODS[replace_method]
+
+    injection["display_config"] = display_config
+    injection["engine_config"] = engine_config

@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.13.15"
+__generated_with = "0.14.7"
 app = marimo.App(width="full", app_title="SDG Visualization")
 
 
@@ -125,6 +125,22 @@ def _(mo, neo4j_button, sdg):
 @app.cell
 def _(mo):
     mo.md(r"""## Info""")
+    return
+
+
+@app.cell
+def _(datapack, dataset, get_datapack_folder, json, mo):
+    from rcabench_platform.v2.datasets.rcabench import rcabench_fix_injection
+
+    mo.stop(not isinstance(datapack, str))
+    _datapack_folder = get_datapack_folder(dataset, datapack)
+    _injection_path = _datapack_folder / "injection.json"
+    mo.stop(not _injection_path.exists())
+    with open(_injection_path) as f:
+        _injection = json.load(f)
+        rcabench_fix_injection(_injection)
+    mo.output.append("### Injection")
+    mo.output.append(_injection)
     return
 
 
