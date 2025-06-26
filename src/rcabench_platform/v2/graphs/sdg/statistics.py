@@ -15,12 +15,14 @@ import scipy.stats
 @timeit(log_args=False)
 def calc_statistics(sdg: SDG):
     for node in sdg.iter_nodes():
-        if node.kind == PlaceKind.service:
-            calc_stat_for_service_node(node)
-        elif node.kind == PlaceKind.function:
+        if node.kind == PlaceKind.function:
             calc_stat_for_function_node(node)
         elif node.kind == PlaceKind.pod:
             calc_stat_for_pod_node(node)
+
+    for node in sdg.iter_nodes():
+        if node.kind == PlaceKind.service:
+            calc_stat_for_service_node(sdg, node)
 
     for edge in sdg.iter_edges():
         if edge.kind == DepKind.calls:
@@ -43,7 +45,7 @@ def collect_node_stat_names(node: PlaceNode, names: set[str]) -> None:
             names.add(stat_name)
 
 
-def calc_stat_for_service_node(node: PlaceNode):
+def calc_stat_for_service_node(sdg: SDG, node: PlaceNode):
     assert node.kind == PlaceKind.service
 
     indicator_names = [
@@ -91,6 +93,26 @@ def calc_stat_for_service_node(node: PlaceNode):
                 mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
                 node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
                 node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
+
+    functions: list[PlaceNode] = []
+    for edge in sdg.out_edges(node.id):
+        if edge.kind == DepKind.includes:
+            dst = sdg.get_node_by_id(edge.dst_id)
+            assert dst.kind == PlaceKind.function
+            functions.append(dst)
+
+    if functions:
+        error_rates: list[list[float]] = [[], []]
+        for function in functions:
+            values: list[float | None] = [function.data.get(f"{STAT_PREFIX[i]}.error_rate") for i in range(2)]
+            if values[0] is None or values[1] is None:
+                continue
+            error_rates[0].append(values[0])
+            error_rates[1].append(values[1])
+
+        if error_rates[0] and error_rates[1]:
+            node.data[f"{STAT_PREFIX[0]}.function_error_rate.mean"] = np.mean(error_rates[0])
+            node.data[f"{STAT_PREFIX[1]}.function_error_rate.mean"] = np.mean(error_rates[1])
 
 
 def calc_stat_for_pod_node(node: PlaceNode):
