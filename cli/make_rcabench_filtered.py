@@ -1,5 +1,6 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.datasets.rcabench import rcabench_fix_injection_display_config
 from rcabench_platform.v2.sources.convert import link_subset
 from rcabench_platform.v2.utils.serde import save_parquet
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
@@ -95,6 +96,8 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
     injection_config = json.loads(row["injection.display_config"])
     assert isinstance(injection_config, dict)
 
+    rcabench_fix_injection_display_config(injection_config)
+
     injection_point = injection_config.get("injection_point")
     if not injection_point:
         return None
@@ -139,7 +142,18 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
                 "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
             }
 
-    elif injection_fault_type.startswith("HTTP"):
+    if injection_fault_type == "HTTPRequestReplaceMethod":
+        method = injection_point.get("method")
+        replace_method = injection_config.get("replace_method")
+        assert isinstance(method, str) and method
+        assert isinstance(replace_method, str) and replace_method
+        if method == replace_method:
+            return {
+                "datapack": datapack,
+                "reason": f"{injection_fault_type};check replace_method",
+            }
+
+    if injection_fault_type.startswith("HTTP"):
         app_name = injection_point.get("app_name")
         server_address = injection_point.get("server_address")
         assert isinstance(app_name, str) and app_name
