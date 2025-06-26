@@ -35,8 +35,9 @@ def single(
     dataset: str,
     datapack: str,
     clear: bool = False,
+    skip_finished: bool = True,
 ):
-    run_single(algorithm, dataset, datapack, clear=clear)
+    run_single(algorithm, dataset, datapack, clear=clear, skip_finished=skip_finished)
 
 
 @app.command()
@@ -46,9 +47,10 @@ def batch(
     datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
     sample: int | None = None,
     clear: bool = False,
+    skip_finished: bool = True,
     use_cpus: int | None = None,
 ):
-    run_batch(algorithms, datasets, sample=sample, clear=clear, use_cpus=use_cpus)
+    run_batch(algorithms, datasets, sample=sample, clear=clear, skip_finished=skip_finished, use_cpus=use_cpus)
 
 
 @app.command()

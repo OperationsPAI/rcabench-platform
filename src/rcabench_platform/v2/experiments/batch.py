@@ -20,6 +20,7 @@ def run_batch(
     *,
     sample: int | None = None,
     clear: bool = False,
+    skip_finished: bool = True,
     use_cpus: int | None = None,
 ):
     registry = global_algorithm_registry()
@@ -54,7 +55,16 @@ def run_batch(
 
             tasks = []
             for datapack in datapacks:
-                tasks.append(functools.partial(run_single, algorithm, dataset, datapack, clear=clear))
+                tasks.append(
+                    functools.partial(
+                        run_single,
+                        algorithm,
+                        dataset,
+                        datapack,
+                        clear=clear,
+                        skip_finished=skip_finished,
+                    )
+                )
 
             t0 = time.time()
             fmap_processpool(tasks, parallel=parallel)

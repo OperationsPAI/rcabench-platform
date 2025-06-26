@@ -16,7 +16,7 @@ import polars as pl
 
 
 @timeit(log_level="INFO")
-def run_single(algorithm: str, dataset: str, datapack: str, *, clear: bool):
+def run_single(algorithm: str, dataset: str, datapack: str, *, clear: bool = False, skip_finished: bool = True):
     alg = global_algorithm_registry()[algorithm]()
 
     input_folder = get_datapack_folder(dataset, datapack)
@@ -24,7 +24,7 @@ def run_single(algorithm: str, dataset: str, datapack: str, *, clear: bool):
 
     with running_mark(output_folder, clear=clear):
         finished = output_folder / ".finished"
-        if finished.exists():
+        if skip_finished and finished.exists():
             logger.debug(f"skipping {output_folder}")
             return
 
