@@ -107,11 +107,13 @@ HTTP_REPLACE_METHODS: list[str] = [
 
 
 def rcabench_fix_injection(injection: dict[str, Any]) -> None:
-    display_config: dict[str, Any] = json.loads(injection["display_config"])
-    engine_config: dict[str, Any] = json.loads(injection["engine_config"])
+    injection["engine_config"] = json.loads(injection["engine_config"])
 
+    display_config: dict[str, Any] = json.loads(injection["display_config"])
+    rcabench_fix_injection_display_config(display_config)
+    injection["display_config"] = display_config
+
+
+def rcabench_fix_injection_display_config(display_config: dict[str, Any]) -> None:
     if (replace_method := display_config.get("replace_method")) is not None:
         display_config["replace_method"] = HTTP_REPLACE_METHODS[replace_method]
-
-    injection["display_config"] = display_config
-    injection["engine_config"] = engine_config
