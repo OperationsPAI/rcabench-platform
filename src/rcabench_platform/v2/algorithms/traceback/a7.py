@@ -13,27 +13,27 @@ from ...utils.env import debug
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pprint import pformat
-from enum import StrEnum
+from enum import StrEnum, auto
 import numpy as np
 import json
 
 
 class AnomalyKind(StrEnum):
-    error_rate_up = "error_rate_up"
-    latency_up = "latency_up"
-    qpm_down = "qpm_down"
+    error_rate_up = auto()
+    latency_up = auto()
+    qpm_down = auto()
 
-    cpu_up = "cpu_up"
-    cpu_down = "cpu_down"
-    memory_up = "memory_up"
-    memory_down = "memory_down"
-    jvm_gc_up = "jvm_gc_up"
-    jvm_gc_down = "jvm_gc_down"
+    cpu_up = auto()
+    cpu_down = auto()
+    memory_up = auto()
+    memory_down = auto()
+    jvm_gc_up = auto()
+    jvm_gc_down = auto()
 
-    forward_call_prob_up = "forward_call_prob_up"
-    forward_call_prob_down = "forward_call_prob_down"
-    backward_call_prob_up = "backward_call_prob_up"
-    backward_call_prob_down = "backward_call_prob_down"
+    forward_call_prob_up = auto()
+    forward_call_prob_down = auto()
+    backward_call_prob_up = auto()
+    backward_call_prob_down = auto()
 
 
 @dataclass(kw_only=True, slots=True, frozen=True)

@@ -3,7 +3,7 @@ from ...logging import logger
 from dataclasses import dataclass, field
 from collections import defaultdict
 from collections.abc import Iterable
-from enum import StrEnum
+from enum import StrEnum, auto
 from typing import Any, Self
 import itertools
 
@@ -13,72 +13,72 @@ import polars as pl
 
 
 class PlaceKind(StrEnum):
-    machine = "machine"
+    machine = auto()
     """k8s node"""
 
-    namespace = "namespace"
+    namespace = auto()
     """k8s namespace"""
 
-    stateful_set = "stateful_set"
+    stateful_set = auto()
     """k8s stateful set"""
 
-    deployment = "deployment"
+    deployment = auto()
     """k8s deployment"""
 
-    replica_set = "replica_set"
+    replica_set = auto()
     """k8s replica set"""
 
-    service = "service"
+    service = auto()
     """k8s service"""
 
-    pod = "pod"
+    pod = auto()
     """k8s pod"""
 
-    container = "container"
+    container = auto()
     """k8s container"""
 
-    pvc = "pvc"
+    pvc = auto()
     """k8s persistent volume claim"""
 
-    pv = "pv"
+    pv = auto()
     """k8s persistent volume"""
 
-    function = "function"
+    function = auto()
     """function"""
 
 
 class DepKind(StrEnum):
-    owns = "owns"
+    owns = auto()
     """namespace -> (service | stateful_set | deployment)"""
 
-    routes_to = "routes_to"
+    routes_to = auto()
     """service -> pod"""
 
-    scales = "scales"
+    scales = auto()
     """deployment -> replica_set"""
 
-    manages = "manages"
+    manages = auto()
     """(stateful_set | replica_set) -> pod"""
 
-    schedules = "schedules"
+    schedules = auto()
     """machine -> pod"""
 
-    runs = "runs"
+    runs = auto()
     """pod -> container"""
 
-    claims = "claims"
+    claims = auto()
     """pod -> pvc"""
 
-    binds_to = "binds_to"
+    binds_to = auto()
     """pvc -> pv"""
 
-    calls = "calls"
+    calls = auto()
     """function -> function"""
 
-    includes = "includes"
+    includes = auto()
     """service -> function"""
 
-    related_to = "related_to"
+    related_to = auto()
     """service -> (stateful_set | deployment)"""
 
 
