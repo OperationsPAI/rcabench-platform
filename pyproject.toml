@@ -79,3 +79,6 @@ dev = [ #
 [tool.uv.sources.pysync]
 git = "https://github.com/kedvall/pysync"
 rev = "4384b546c40e5cd773ff9e8fde7337045618e9d6"
+
+[tool.marimo.runtime]
+output_max_bytes = 50_000_000
