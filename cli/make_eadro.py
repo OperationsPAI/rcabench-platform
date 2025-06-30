@@ -155,10 +155,45 @@ def load_fault_list(file_path: Path) -> list[dict[str, Any]]:
     fault_list["start"] = pd.to_datetime(fault_list["start"], unit="s", utc=True)
     fault_list["end"] = pd.to_datetime(fault_list["end"], unit="s", utc=True)
 
-    for fault in fault_list["faults"]:
-        fault["start"] = pd.to_datetime(fault["start"], unit="s", utc=True)
-        fault["start"] = fault["start"].isoformat()
-    return fault_list["faults"]
+    converted_faults = []
+    if len(fault_list["faults"]) == 0:
+        start_time = fault_list["start"]
+        end_time = fault_list["end"]
+        interval = pd.Timedelta(seconds=120) if "SN" in file_path.name else pd.Timedelta(seconds=600)
+        current_time = start_time
+        while current_time + interval <= end_time:
+            normal_case = {
+                "injection_name": "",
+                "fault_type": "",
+                "fault_start_time": "",
+                "fault_end_time": "",
+                "normal_start_time": current_time.isoformat(),
+                "normal_end_time": (current_time + interval).isoformat(),
+            }
+            converted_faults.append(normal_case)
+            current_time += interval
+    else:
+        for fault in fault_list["faults"]:
+            start_time = pd.to_datetime(fault["start"], unit="s", utc=True)
+            end_time = start_time + pd.Timedelta(seconds=fault["duration"])
+
+            fault_service = ""
+            if "SN.fault" in file_path.name:
+                fault_service = "-".join(fault["name"].split("-")[1:-1])
+            elif "TT.fault" in file_path.name:
+                fault_service = fault["name"].split("_")[1]
+
+            converted_fault = {
+                "injection_name": fault_service,
+                "fault_type": fault["fault"],
+                "fault_start_time": start_time.isoformat(),
+                "fault_end_time": end_time.isoformat(),
+                "normal_start_time": "",
+                "normal_end_time": "",
+            }
+            converted_faults.append(converted_fault)
+
+    return converted_faults
 
 
 class EadroDatapackLoader(DatapackLoader):
@@ -172,10 +207,7 @@ class EadroDatapackLoader(DatapackLoader):
         self.folder_path = datapack_info["folder_path"]
 
     def name(self) -> str:
-        inject_time = pd.to_datetime(self.fault_info.get("start"))
-        return (
-            f"{'SN' if self.dataset_name.startswith('SN') else 'TT'}-case-{inject_time.strftime('%Y-%m-%dT%H-%M-%S')}"
-        )
+        return f"{'SN' if self.dataset_name.startswith('SN') else 'TT'}-case-{self.start_time.strftime('%Y-%m-%dT%H-%M-%S')}"
 
     def labels(self) -> list[Label]:
         labels = []
@@ -322,31 +354,44 @@ class EadroDatasetLoader(DatasetLoader):
                 if os.path.exists(fault_file_path):
                     fault_list = load_fault_list(Path(fault_file_path))
                     for i, fault in enumerate(fault_list):
-                        fault_start = fault.get("start")
-                        if not fault_start:
-                            continue
-                        inject_time = pd.to_datetime(fault_start)
-                        if not inject_time:
-                            continue
-
-                        if i < len(fault_list) - 1:
-                            fault_start_next = fault_list[i + 1].get("start")
-                            if not fault_start_next:
+                        normal_start = fault.get("normal_start_time")
+                        normal_end = fault.get("normal_end_time")
+                        fault_start = fault.get("fault_start_time")
+                        fault_end = fault.get("fault_end_time")
+                        datapack_info = {}
+                        if fault_start and fault_end:
+                            start_time = pd.to_datetime(fault_start)
+                            if not start_time:
                                 continue
-                            end_time = pd.to_datetime(fault_start_next) - timedelta(seconds=1)
-                        else:
-                            end_time = inject_time + timedelta(seconds=120)
+                            end_time = pd.to_datetime(fault_end)
+                            if not end_time:
+                                continue
 
-                        start_time = inject_time - timedelta(seconds=1)
+                            datapack_info = {
+                                "folder_path": item_path,
+                                "fault_info": fault,
+                                "start_time": start_time,
+                                "end_time": end_time,
+                                "dataset_name": self.dataset_name,
+                                "fault_file": fault_file_path,
+                            }
 
-                        datapack_info = {
-                            "folder_path": item_path,
-                            "fault_info": fault,
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "dataset_name": self.dataset_name,
-                            "fault_file": fault_file_path,
-                        }
+                        elif normal_start and normal_end:
+                            start_time = pd.to_datetime(normal_start)
+                            if not start_time:
+                                continue
+                            end_time = pd.to_datetime(normal_end)
+                            if not end_time:
+                                continue
+
+                            datapack_info = {
+                                "folder_path": item_path,
+                                "fault_info": fault,
+                                "start_time": start_time,
+                                "end_time": end_time,
+                                "dataset_name": self.dataset_name,
+                                "fault_file": fault_file_path,
+                            }
                         datapack_infos.append(datapack_info)
         return datapack_infos
 
