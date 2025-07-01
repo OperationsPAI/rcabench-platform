@@ -397,7 +397,7 @@ class EadroDatasetLoader(DatasetLoader):
         return datapack_infos
 
     def name(self) -> str:
-        return self.dataset_name
+        return "eadro_sn" if self.dataset_name.startswith("SN") else "eadro_tt"
 
     def __len__(self) -> int:
         return len(self.datapack_infos)
