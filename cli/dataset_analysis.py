@@ -10,6 +10,7 @@ import functools
 import polars as pl
 from rcabench_platform.v2.utils.fmap import fmap_threadpool, fmap_processpool
 from dataclasses import dataclass, field
+import os
 
 
 def extract_path(uri: str):
@@ -35,7 +36,7 @@ def get_files(dataset: str) -> dict[str, list[str]]:
             ],
         }
 
-    if dataset.startswith("SN") or dataset.startswith("TT"):
+    if dataset.startswith("eadro"):
         return {
             "trace": ["trace.parquet"],
             "logs": ["log.parquet"],
@@ -46,6 +47,19 @@ def get_files(dataset: str) -> dict[str, list[str]]:
         return {
             "trace": ["traces.parquet"],
             "logs": ["simple_metrics.parquet"],
+        }
+
+    if dataset.startswith("aiops21"):
+        return {
+            "trace": ["traces.parquet"],
+            "logs": ["logs.parquet"],
+            "metrics": ["metrics.parquet"],
+        }
+
+    if dataset.startswith("nezha"):
+        return {
+            "trace": ["trace.parquet"],
+            "logs": ["log.parquet"],
             "metrics": ["metric.parquet"],
         }
 
@@ -119,60 +133,96 @@ def _scan_trace(file: Path) -> Metadata:
     df = pl.scan_parquet(file)
 
     metadata = Metadata()
-    metadata.ServiceNames = set(df.select("service_name").unique().collect().to_series().to_list())
-    metadata.SpanNames = set(df.select("span_name").unique().collect().to_series().to_list())
 
-    metadata.EntryTrace = df.filter(pl.col("parent_span_id") == "").select(pl.len()).collect().item()
-
-    df_collected = df.collect()
-    trace_path_lengths = []
-
-    for trace_id in df_collected.select("trace_id").unique().to_series():
-        trace_spans = df_collected.filter(pl.col("trace_id") == trace_id)
-
-        spans_dict = {}
-        for row in trace_spans.iter_rows(named=True):
-            spans_dict[row["span_id"]] = {"parent_span_id": row["parent_span_id"], "children": []}
-
-        for span_id, span_info in spans_dict.items():
-            parent_id = span_info["parent_span_id"]
-            if parent_id is not None and parent_id in spans_dict:
-                spans_dict[parent_id]["children"].append(span_id)
-
-        root_spans = [
-            span_id
-            for span_id, span_info in spans_dict.items()
-            if span_info["parent_span_id"] == "" or span_info["parent_span_id"] is None
+    aggregated_info = df.select(
+        [
+            pl.col("time").min().alias("min_time"),
+            pl.col("time").max().alias("max_time"),
+            pl.when(pl.col("parent_span_id") == "").then(1).otherwise(0).sum().alias("entry_trace_count"),
         ]
+    ).collect()
 
-        def calculate_max_depth(span_id, current_depth=1):
-            children = spans_dict[span_id]["children"]
-            if not children:
-                return current_depth
-            return max(calculate_max_depth(child, current_depth + 1) for child in children)
+    service_names = df.select(pl.col("service_name").unique()).collect().to_series().to_list()
+    span_names = df.select(pl.col("span_name").unique()).collect().to_series().to_list()
 
-        max_depth = 0
-        for root_span in root_spans:
-            depth = calculate_max_depth(root_span)
-            max_depth = max(max_depth, depth)
+    metadata.ServiceNames = set(service_names)
+    metadata.SpanNames = set([extract_path(s) for s in span_names])
+    metadata.EntryTrace = aggregated_info["entry_trace_count"][0]
 
-        trace_path_lengths.append(max_depth)
-
-    length_dist = {}
-    for length in trace_path_lengths:
-        length_str = str(length)
-        length_dist[length_str] = length_dist.get(length_str, 0) + 1
-    metadata.TraceLengthDistribution = length_dist
-
-    time_data = df.select("time").collect().to_series()
-    if len(time_data) > 0:
-        min_time = time_data.min()
-        max_time = time_data.max()
-        assert min_time is not None and max_time is not None, "时间数据不能为空"
+    min_time = aggregated_info["min_time"][0]
+    max_time = aggregated_info["max_time"][0]
+    if min_time is not None and max_time is not None:
         metadata.TimeSlices = [(min_time, max_time)]
+
+    trace_spans = df.select(["trace_id", "span_id", "parent_span_id"]).collect()
+
+    depth_results = _calculate_trace_depths_vectorized(trace_spans)
+
+    if depth_results:
+        depth_df = pl.DataFrame({"depth": depth_results})
+        depth_counts = depth_df.group_by("depth").agg(pl.len().alias("count")).sort("depth")
+
+        metadata.TraceLengthDistribution = {
+            str(row["depth"]): row["count"] for row in depth_counts.iter_rows(named=True)
+        }
 
     print(metadata.EntryTrace)
     return metadata
+
+
+def _calculate_trace_depths_vectorized(df: pl.DataFrame) -> list[int]:
+    trace_depths = []
+
+    df = df.with_columns(
+        pl.when(pl.col("parent_span_id") == "").then(None).otherwise(pl.col("parent_span_id")).alias("parent_span_id")
+    )
+
+    for trace_group in df.group_by("trace_id", maintain_order=False):
+        trace_data = trace_group[1]
+
+        span_depths = _compute_span_depths(trace_data)
+        max_depth = max(span_depths.values()) if span_depths else 1
+        trace_depths.append(max_depth)
+
+    return trace_depths
+
+
+def _compute_span_depths(trace_df: pl.DataFrame) -> dict[str, int]:
+    spans_data = {
+        row["span_id"]: row["parent_span_id"]
+        for row in trace_df.select(["span_id", "parent_span_id"]).iter_rows(named=True)
+    }
+
+    span_depths = {}
+
+    root_spans = [span_id for span_id, parent_id in spans_data.items() if parent_id is None]
+
+    queue = [(span_id, 1) for span_id in root_spans]  # (span_id, depth)
+    processed = set()
+
+    while queue:
+        current_span, current_depth = queue.pop(0)
+
+        if current_span in processed:
+            continue
+
+        processed.add(current_span)
+        span_depths[current_span] = current_depth
+
+        children = [
+            span_id
+            for span_id, parent_id in spans_data.items()
+            if parent_id == current_span and span_id not in processed
+        ]
+
+        for child in children:
+            queue.append((child, current_depth + 1))
+
+    for span_id in spans_data:
+        if span_id not in span_depths:
+            span_depths[span_id] = 1
+
+    return span_depths
 
 
 def merge_metadata(metadata_list: list[Metadata]) -> Metadata:
@@ -225,14 +275,23 @@ def merge_metadata(metadata_list: list[Metadata]) -> Metadata:
 
 def process_datapack(datapack: Path, files):
     trace_tasks = [functools.partial(_scan_trace, datapack / f) for f in files["trace"]]
-
     log_tasks = [functools.partial(_scan_log, datapack / f) for f in files["logs"]]
-
     metric_tasks = [functools.partial(_scan_metric, datapack / f) for f in files["metrics"]]
-
     total_tasks = trace_tasks + log_tasks + metric_tasks
+    return total_tasks
 
-    return fmap_threadpool(total_tasks, parallel=3)
+
+def patch_service_name(datapack: Path, files):
+    for file_group in files.values():
+        for file in file_group:
+            file_path = datapack / file
+            assert file_path.exists()
+            df = pl.scan_parquet(file_path)
+            assert "service_name" in df.collect_schema().names(), f"File {file_path} does not have service_name column"
+            df = df.with_columns(
+                pl.col("service_name").str.replace(r"^ts[0-5]-", "", literal=False).alias("service_name")
+            )
+            df.collect().write_parquet(file_path)
 
 
 @app.command()
@@ -241,16 +300,36 @@ def distribution(dataset: str):
     folder = Path("data/rcabench-platform-v2/data") / dataset
     datapacks = [f for f in folder.iterdir() if f.is_dir()]
 
+    tasks = []
+
+    for datapack in datapacks:
+        tasks.extend(process_datapack(datapack, files))
+
+    os.environ["POLARS_MAX_THREADS"] = str(15)
+
     results = fmap_processpool(
-        [functools.partial(process_datapack, datapack, files) for datapack in datapacks],
-        parallel=4,
+        tasks,
+        parallel=8,
     )
 
-    results = [item for sublist in results for item in sublist]
     metadata = merge_metadata(results)
 
     with open(f"temp/{dataset}_metadata.json", "w") as f:
         json.dump(metadata.to_dict(), f, indent=4, default=str)
+
+
+@app.command()
+def patch(dataset: str):
+    files = get_files(dataset)
+    folder = Path("data/rcabench-platform-v2/data") / dataset
+    datapacks = [f for f in folder.iterdir() if f.is_dir()]
+
+    tasks = [functools.partial(patch_service_name, datapack, files) for datapack in datapacks]
+
+    fmap_processpool(
+        tasks,
+        parallel=4,
+    )
 
 
 if __name__ == "__main__":
