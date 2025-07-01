@@ -2273,8 +2273,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "clickhouse-connect", specifier = ">=0.8.17" },
-    { name = "huggingface-hub", specifier = ">=0.33.0" },
+    { name = "clickhouse-connect", specifier = ">=0.8.18" },
+    { name = "huggingface-hub", specifier = ">=0.33.1" },
     { name = "kubernetes", specifier = ">=33.1.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "matplotlib", specifier = ">=3.10.3" },
@@ -2284,7 +2284,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.1" },
     { name = "pandas", specifier = ">=2.3.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
-    { name = "rcabench", specifier = ">=1.0.19" },
+    { name = "rcabench", specifier = ">=1.0.21" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "scikit-learn", specifier = ">=1.7.0" },
     { name = "scipy", specifier = ">=1.16.0" },
@@ -2297,7 +2297,7 @@ dev = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "ipywidgets", specifier = ">=8.1.7" },
     { name = "kubernetes-stubs-elephant-fork", specifier = ">=33.1.0" },
-    { name = "marimo", extras = ["recommended"], specifier = ">=0.14.6" },
+    { name = "marimo", extras = ["recommended"], specifier = ">=0.14.7" },
     { name = "pandas-stubs", specifier = ">=2.2.3.250527" },
     { name = "plotly", specifier = ">=6.1.2" },
     { name = "pyqt6", specifier = ">=6.9.1" },
