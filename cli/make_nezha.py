@@ -122,6 +122,7 @@ class NezhaDatapackLoader(DatapackLoader):
                     continue
 
                 df = pl.read_csv(trace_file)
+                df = df.with_columns(pl.col("ParentID").str.replace("root", ""))
 
                 column_mapping = {
                     "trace_id": "TraceID",
