@@ -1,6 +1,6 @@
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.sources.convert import convert_dataset, DatasetLoader, DatapackLoader, Label
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, UTC
 from typing import Any, Optional
 from pathlib import Path
 import polars as pl
@@ -13,7 +13,7 @@ import os
 def to_utc_time(time_str: str) -> datetime:
     """将时间字符串转换为UTC时间"""
     dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-    return dt.replace(tzinfo=datetime.UTC)  # 假设输入为UTC时间
+    return dt.replace(tzinfo=UTC)  # 假设输入为UTC时间
 
 
 def parse_time_utc(time_str: str) -> datetime | None:
