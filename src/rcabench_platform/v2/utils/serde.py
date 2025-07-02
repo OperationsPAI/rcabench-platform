@@ -24,7 +24,7 @@ def json_default(obj):
 def load_json(*, path: str | Path) -> Any:
     logger.opt(colors=True).debug(f"loading json from <green>{path}</green>")
     with open(path) as f:
-        return json.load(f)
+        return json.loads(f.read())
 
 
 def save_json(obj: Any, *, path: str | Path) -> None:
