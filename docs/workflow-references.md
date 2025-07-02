@@ -18,7 +18,7 @@ As the [development guide](../CONTRIBUTING.md#link-datasets) describes, the data
 |                    | `rcabench-platform-v2/data/rcabench_filtered`    | symlink to `rcabench` | [cli/make_rcabench_filtered.py](../cli/make_rcabench_filtered.py)       |
 |                    | `rcabench-platform-v2/data/rcabench_with_issues` | symlink to `rcabench` | [cli/make_rcabench_with_issues.py](../cli/make_rcabench_with_issues.py) |
 | `RCAEval/RE2-TT`   | `rcabench-platform-v2/data/rcaeval_re2_tt`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)                           |
-| `RCAEval/RE2-OB`   | `rcabench-platform-v2/data/rcaeval_re2_OB`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)                           |
+| `RCAEval/RE2-OB`   | `rcabench-platform-v2/data/rcaeval_re2_ob`       | full                  | [cli/make_rcaeval.py](../cli/make_rcaeval.py)                           |
 
 The `subset mode` indicates how the dataset is generated:
 + `full`: the dataset is converted from the original data source.
@@ -177,6 +177,19 @@ Generate the performance report:
 ./main.py eval perf-report rcaeval_re2_tt
 ./main.py eval perf-report rcabench_filtered
 ```
+
+### Debugging Algorithms
+
+Re-run single evaluation in debug mode:
+
+```bash
+# example
+DEBUG=1 ./main.py eval single traceback-A7 rcabench_filtered ts3-ts-route-plan-service-request-delay-59s2q4 --no-skip-finished
+```
+
+This call will run the evaluation in debug mode without clearing the existing output directory.
+
+The algorithms can be accelerated by caching intermediate calculations in the output directory. However, you should enable caching only when debugging the algorithm, as it may cause issues when the algorithm implementation changes.
 
 ## Analysis
 
