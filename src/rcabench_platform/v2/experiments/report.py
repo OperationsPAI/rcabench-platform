@@ -26,6 +26,8 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False):
         elif warn_missing:
             logger.warning(f"missing output file: {path}")
 
+    assert len(valid_output_paths) > 0, f"No output files found for dataset `{dataset}`. "
+
     logger.debug(f"loading {len(valid_output_paths)} output files")
     output_df = pl.read_parquet(valid_output_paths, rechunk=True)
 
