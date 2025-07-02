@@ -2,7 +2,7 @@
 
 import marimo
 
-__generated_with = "0.14.7"
+__generated_with = "0.14.9"
 app = marimo.App(width="full", app_title="SDG Visualization")
 
 
@@ -139,7 +139,7 @@ def _(datapack, dataset, get_datapack_folder, json, mo):
     with open(_injection_path) as f:
         _injection = json.load(f)
         rcabench_fix_injection(_injection)
-    mo.output.append("### Injection")
+    mo.output.append(mo.md("### Injection"))
     mo.output.append(_injection)
     return
 
