@@ -35,6 +35,14 @@ def run():
         pl.col("detector.issues.rows") > 0,
     )
 
+    unsuccessful_fault_types = (
+        "DNSError",
+        "DNSRandom",
+        "JVMMySQLLatency",
+        "JVMMySQLException",
+    )
+    lf = lf.filter(pl.col("injection.fault_type").is_in(unsuccessful_fault_types).not_())
+
     col = pl.col("injection.injection_point.class_name")
     lf = lf.filter(
         col.is_null() | (col.str.ends_with("Test") | col.str.ends_with("Config")).not_(),
