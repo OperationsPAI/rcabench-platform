@@ -1,13 +1,11 @@
+from ._common import build_sdg_with_cache
+
 from ..spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
 
 from ...logging import logger, timeit
 
 from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode, GraphPath, ExpandedGraphPath
 from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
-from ...graphs.sdg.build_ import build_sdg
-
-from ...utils.serde import load_pickle, save_pickle
-from ...utils.fs import has_recent_file
 from ...utils.env import debug
 
 from collections import defaultdict, deque
@@ -360,7 +358,7 @@ def search_by_pod_anomaly(sdg: SDG, start_node: PlaceNode) -> list[GraphPath]:
 
 def search_service_from_pod(sdg: SDG, pod_node: PlaceNode) -> DepEdge | None:
     assert pod_node.kind == PlaceKind.pod
-    services = []
+    services: list[DepEdge] = []
     for in_edge in sdg.in_edges(pod_node.id):
         if in_edge.kind == DepKind.routes_to:
             src = sdg.get_node_by_id(in_edge.src_id)
@@ -472,20 +470,6 @@ class TraceBackA7(Algorithm):
     def needs_cpu_count(self) -> int | None:
         return 8
 
-    def _build_sdg(self, args: AlgorithmArgs) -> SDG:
-        sdg_pkl_path = args.output_folder / "sdg.pkl"
-
-        if debug():
-            if has_recent_file(sdg_pkl_path, seconds=600):
-                return load_pickle(path=sdg_pkl_path)
-
-        sdg = build_sdg(args.dataset, args.datapack, args.input_folder)
-
-        if debug():
-            save_pickle(sdg, path=sdg_pkl_path)
-
-        return sdg
-
     @timeit()
     def __call__(self, args: AlgorithmArgs) -> list[AlgorithmAnswer]:
         if debug():
@@ -497,7 +481,7 @@ class TraceBackA7(Algorithm):
                     injection["engine_config"] = json.loads(injection["engine_config"])
                 logger.debug(f"found injection:\n{pformat(injection)}")
 
-        sdg = self._build_sdg(args)
+        sdg = build_sdg_with_cache(args)
 
         calc_statistics(sdg)
 
