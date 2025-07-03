@@ -92,6 +92,7 @@ def merge_two_time_ranges(normal: pl.LazyFrame, anomal: pl.LazyFrame) -> pl.Lazy
     return merged
 
 
+@timeit()
 def load_metrics(input_folder: Path) -> pl.LazyFrame:
     normal_metrics = pl.scan_parquet(input_folder / "normal_metrics.parquet")
     anomal_metrics = pl.scan_parquet(input_folder / "abnormal_metrics.parquet")
@@ -289,6 +290,7 @@ def apply_k8s_places(sdg: SDG, df: pl.DataFrame) -> None:
             )
 
 
+@timeit()
 def load_metrics_histogram(input_folder: Path) -> pl.LazyFrame:
     normal_histogram = pl.scan_parquet(input_folder / "normal_metrics_histogram.parquet")
     anomal_histogram = pl.scan_parquet(input_folder / "abnormal_metrics_histogram.parquet")
@@ -407,6 +409,7 @@ def apply_pod_service_namespace(sdg: SDG, df: pl.DataFrame, pod_node: PlaceNode)
         )
 
 
+@timeit()
 def load_traces(input_folder: Path) -> pl.LazyFrame:
     normal_traces = pl.scan_parquet(input_folder / "normal_traces.parquet")
     anomal_traces = pl.scan_parquet(input_folder / "abnormal_traces.parquet")
@@ -429,6 +432,7 @@ def load_traces(input_folder: Path) -> pl.LazyFrame:
     return lf
 
 
+@timeit()
 def load_logs(input_folder: Path) -> pl.LazyFrame:
     normal_logs = pl.scan_parquet(input_folder / "normal_logs.parquet")
     anomal_logs = pl.scan_parquet(input_folder / "abnormal_logs.parquet")
