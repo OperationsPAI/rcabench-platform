@@ -332,8 +332,12 @@ class MultiDateDatasetLoader(DatasetLoader):
 @timeit()
 def run(
     source_dir: str = "data/nezha",
-    ob_dates: list[str] = typer.Option(["2022-08-22", "2022-08-23"], help="All dates for ob system, e.g., 2022-08-22 2022-08-23"),
-    tt_dates: list[str] = typer.Option(["2023-01-29", "2023-01-30"], help="All dates for tt system, e.g., 2023-01-29 2023-01-30"),
+    ob_dates: list[str] = typer.Option(
+        ["2022-08-22", "2022-08-23"], help="All dates for ob system, e.g., 2022-08-22 2022-08-23"
+    ),
+    tt_dates: list[str] = typer.Option(
+        ["2023-01-29", "2023-01-30"], help="All dates for tt system, e.g., 2023-01-29 2023-01-30"
+    ),
 ):
     if ob_dates:
         logger.info(f"Starting to process nezha_ob: {ob_dates}")
