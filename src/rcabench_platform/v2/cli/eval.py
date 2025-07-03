@@ -1,4 +1,4 @@
-from ..datasets.spec import get_dataset_list
+from ..datasets.spec import get_dataset_index_path, get_dataset_list
 from ..algorithms.spec import global_algorithm_registry
 from ..logging import logger, timeit
 from ..experiments.single import run_single
@@ -7,6 +7,7 @@ from ..experiments.report import generate_perf_report
 
 from typing import Annotated
 
+import polars as pl
 import typer
 
 app = typer.Typer()
@@ -25,7 +26,9 @@ def show_datasets():
     datasets = get_dataset_list()
     logger.info(f"Available datasets ({len(datasets)}):")
     for dataset in datasets:
-        logger.info(f"    {dataset}")
+        index_lf = pl.scan_parquet(get_dataset_index_path(dataset))
+        datapack_count = index_lf.select(pl.len()).collect().item()
+        logger.info(f"    {dataset:<24} ({datapack_count:>4} datapacks)")
 
 
 @app.command()
