@@ -169,6 +169,7 @@ def calc_stat_for_container_node(node: PlaceNode):
     indicator_names = [
         "container.cpu.usage:request_percentage",
         "container.memory.usage:request_percentage",
+        "k8s.container.restarts",
     ]
 
     for name in indicator_names:
@@ -200,6 +201,12 @@ def calc_stat_for_container_node(node: PlaceNode):
             mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
             node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
             node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
+
+        elif indicator.name == "k8s.container.restarts":
+            stat_name = "restart_count"
+            max_value = [indicator.data[f"{STAT_PREFIX[i]}.max"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = max_value[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = max_value[1]
 
 
 def calc_stat_for_function_node(node: PlaceNode):
@@ -262,6 +269,7 @@ def calc_regular_stat(
     stat_functions = [
         ("count", calc_count),
         ("min", calc_min),
+        ("max", calc_max),
         ("mean", calc_mean),
     ]
 
@@ -302,6 +310,12 @@ def calc_count(value: np.ndarray) -> float:
 
 def calc_min(value: np.ndarray) -> float:
     ans = value.min()
+    assert isinstance(ans, float) and not math.isnan(ans), f"ans=`{ans}`"
+    return float(ans)
+
+
+def calc_max(value: np.ndarray) -> float:
+    ans = value.max()
     assert isinstance(ans, float) and not math.isnan(ans), f"ans=`{ans}`"
     return float(ans)
 
