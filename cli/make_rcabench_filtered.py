@@ -180,15 +180,7 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
                 "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
             }
 
-    single_point_failures = (
-        "PodFailure",
-        "CPUStress",
-        "MemoryStress",
-        "JVMCPUStress",
-        "JVMMemoryStress",
-    )
-
-    if injection_fault_type in single_point_failures:
+    if is_single_point_failure(injection_fault_type):
         target_service = injection_point.get("app_label")
         if target_service is None:
             target_service = injection_point.get("app_name")
@@ -213,6 +205,10 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
             "datapack": datapack,
             "reason": scan_duplicated_spans.__name__,
         }
+
+
+def is_single_point_failure(fault_type: str) -> bool:
+    return fault_type.startswith("JVM") or fault_type in ("PodFailure", "CPUStress", "MemoryStress")
 
 
 @timeit()
