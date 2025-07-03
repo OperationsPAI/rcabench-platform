@@ -105,8 +105,30 @@ HTTP_REPLACE_METHODS: list[str] = [
     "PATCH",
 ]
 
+HTTP_REPLACE_BODY_TYPE: dict[int, str] = {
+    0: "empty",
+    1: "random",
+}
+
+JVM_MEM_TYPE: dict[int, str] = {
+    1: "heap",
+    2: "stack",
+}
+
+JVM_RETURN_TYPE: dict[int, str] = {
+    1: "String",
+    2: "Int",
+}
+
+JVM_RETURN_VALUE_OPT: dict[int, str] = {
+    0: "Default",
+    1: "Random",
+}
+
 
 def rcabench_fix_injection(injection: dict[str, Any]) -> None:
+    injection["fault_type"] = FAULT_TYPES[injection["fault_type"]]
+
     injection["engine_config"] = json.loads(injection["engine_config"])
 
     display_config: dict[str, Any] = json.loads(injection["display_config"])
@@ -116,4 +138,22 @@ def rcabench_fix_injection(injection: dict[str, Any]) -> None:
 
 def rcabench_fix_injection_display_config(display_config: dict[str, Any]) -> None:
     if (replace_method := display_config.get("replace_method")) is not None:
-        display_config["replace_method"] = HTTP_REPLACE_METHODS[replace_method]
+        if isinstance(replace_method, int):
+            display_config["replace_method"] = HTTP_REPLACE_METHODS[replace_method]
+        elif isinstance(replace_method, str):
+            pass
+        else:
+            raise ValueError(f"Invalid replace_method type: {type(replace_method)}. Expected int or str.")
+
+    replacements = [
+        ("body_type", HTTP_REPLACE_BODY_TYPE),
+        ("mem_type", JVM_MEM_TYPE),
+        ("return_type", JVM_RETURN_TYPE),
+        ("return_value_opt", JVM_RETURN_VALUE_OPT),
+    ]
+
+    for k, d in replacements:
+        v = display_config.get(k)
+        if v is None:
+            continue
+        display_config[k] = d[v]
