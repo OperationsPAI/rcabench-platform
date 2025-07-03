@@ -1,4 +1,4 @@
-from .common import is_constant_metric, replace_enum_values, add_node_opt
+from .common import calc_metric_min_max, is_constant_metric, replace_enum_values, add_node_opt
 
 from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 
@@ -51,6 +51,8 @@ def build_sdg_from_rcabench(dataset: str, datapack: str, input_folder: Path) -> 
     del traces, logs
 
     apply_services_link(sdg)
+
+    apply_extra_indicators(sdg)
 
     apply_detector_conclusion(sdg, input_folder)
 
@@ -112,6 +114,15 @@ METRIC_PREFIX_PLACE_KIND: dict[str, PlaceKind] = {
 }
 
 
+def is_special_constant_metric(metric: str) -> bool:
+    return metric in (
+        "k8s.container.cpu_request",
+        "k8s.container.memory_request",
+        "k8s.container.cpu_limit",
+        "k8s.container.memory_limit",
+    )
+
+
 @timeit(log_args=False)
 def apply_metrics(sdg: SDG, df: pl.DataFrame) -> None:
     df_map = df.partition_by("metric", as_dict=True)
@@ -120,7 +131,7 @@ def apply_metrics(sdg: SDG, df: pl.DataFrame) -> None:
     for (metric,), df in df_map.items():
         assert isinstance(metric, str) and metric
 
-        if is_constant_metric(df):
+        if (not is_special_constant_metric(metric)) and is_constant_metric(df):
             logger.debug(f"ignore constant metric `{metric}`")
             continue
 
@@ -155,7 +166,7 @@ def apply_place_metrics(sdg: SDG, df: pl.DataFrame, place_kind: PlaceKind, metri
     for (place_name,), df in df_map.items():
         assert isinstance(place_name, str) and place_name
 
-        if is_constant_metric(df):
+        if (not is_special_constant_metric(metric)) and is_constant_metric(df):
             logger.debug(f"ignore constant metric `{metric}` for place `{place_name}`")
             continue
 
@@ -486,6 +497,7 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
                     "trace_id",
                     "span_id",
                     "parent_span_id",
+                    "attr.span_kind",
                 )
             )
             fn_lf_list.append(indicator_lf)
@@ -611,6 +623,16 @@ def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) ->
                 else:
                     pass
 
+                if service_node and pod_node:
+                    sdg.add_edge(
+                        DepEdge(
+                            src_id=service_node.id,
+                            dst_id=pod_node.id,
+                            kind=DepKind.routes_to,
+                        ),
+                        strict=False,
+                    )
+
     logs = logs.with_columns(
         pl.col("span_id").map_elements(lambda x: id2op.get(x), return_dtype=pl.String).alias("op_name")
     )
@@ -672,6 +694,33 @@ def apply_services_link(sdg: SDG) -> None:
                 ),
                 strict=False,
             )
+
+    for pod_node in sdg.get_all_nodes_by_kind(PlaceKind.pod):
+        resource = get_parent_resource_from_pod_name(pod_node.self_name)
+        if resource[1]:
+            service_node = sdg.add_node(PlaceNode(kind=PlaceKind.service, self_name=resource[1]), strict=False)
+            sdg.add_edge(DepEdge(src_id=service_node.id, dst_id=pod_node.id, kind=DepKind.routes_to), strict=False)
+
+
+def apply_extra_indicators(sdg: SDG) -> None:
+    pairs = [
+        ("container.cpu.usage", "k8s.container.cpu_request"),
+        ("container.memory.usage", "k8s.container.memory_request"),
+    ]
+    for container in sdg.get_all_nodes_by_kind(PlaceKind.container):
+        for usage, request in pairs:
+            usage_indicator = container.indicators.get(usage)
+            request_indicator = container.indicators.get(request)
+            if usage_indicator is None or request_indicator is None:
+                continue
+
+            request_min, request_max = calc_metric_min_max(request_indicator.df)
+            if not ((request_max - request_min) < 1e-8):
+                continue
+            request_value = (request_max + request_min) / 2
+
+            df = usage_indicator.df.select("time", "anomal", pl.col("value").truediv(request_value))
+            container.add_indicator(Indicator(name=usage + ":request_percentage", df=df))
 
 
 def apply_detector_conclusion(sdg: SDG, input_folder: Path) -> None:

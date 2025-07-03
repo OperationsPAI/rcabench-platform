@@ -3,12 +3,17 @@ from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 import polars as pl
 
 
-def is_constant_metric(df: pl.DataFrame) -> bool:
+def calc_metric_min_max(df: pl.DataFrame) -> tuple[float, float]:
     col = pl.col("value")
     df = df.select(min=col.min(), max=col.max())
     min_value, max_value = df.row(0)
     assert isinstance(min_value, float)
     assert isinstance(max_value, float)
+    return min_value, max_value
+
+
+def is_constant_metric(df: pl.DataFrame) -> bool:
+    min_value, max_value = calc_metric_min_max(df)
     return (max_value - min_value) < 1e-8
 
 
