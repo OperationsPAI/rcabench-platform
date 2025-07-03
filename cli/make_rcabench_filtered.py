@@ -206,6 +206,13 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
             "reason": scan_duplicated_spans.__name__,
         }
 
+    if scan_large_latency_in_normal_range(datapack_folder):
+        logger.debug(f"datapack `{datapack}`: large_latency_in_normal_range")
+        return {
+            "datapack": datapack,
+            "reason": scan_large_latency_in_normal_range.__name__,
+        }
+
 
 def is_single_point_failure(fault_type: str) -> bool:
     return fault_type.startswith("JVM") or fault_type in ("PodFailure", "CPUStress", "MemoryStress")
@@ -267,6 +274,14 @@ def scan_duplicated_spans(datapack_folder: Path) -> bool:
             return True
 
     return False
+
+
+@timeit()
+def scan_large_latency_in_normal_range(datapack_folder: Path) -> bool:
+    lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    lf = lf.select(pl.col("duration").max())
+    max_duration = lf.collect().item()
+    return max_duration > 10 * 1e9
 
 
 if __name__ == "__main__":

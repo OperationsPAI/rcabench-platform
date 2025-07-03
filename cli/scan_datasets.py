@@ -154,5 +154,26 @@ def validate_datapacks(dataset: str):
         logger.error(f"Validation failed for {count} out of {len(datapacks)} datapacks in dataset {dataset}.")
 
 
+@app.command()
+@timeit()
+def scan_max_duration(dataset: str):
+    assert dataset.startswith("rcabench")
+    datapacks = get_datapack_list(dataset)
+
+    tasks = [functools.partial(_scan_max_duration, dataset, datapack) for datapack in datapacks]
+    results = fmap_threadpool(tasks, parallel=32)
+
+    df = pl.DataFrame(results)
+    save_parquet(df, path=get_dataset_meta_file(dataset, "max_duration.parquet"))
+
+
+def _scan_max_duration(dataset: str, datapack: str) -> dict[str, Any]:
+    datapack_folder = get_datapack_folder(dataset, datapack)
+    lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    lf = lf.select(pl.col("duration").max())
+    df = lf.collect()
+    return {"datapack": datapack, "normal_traces_duration:max": df.item()}
+
+
 if __name__ == "__main__":
     app()
