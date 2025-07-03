@@ -52,5 +52,24 @@ def scan_rcaeval_ranks(dataset: str, algorithm: str):
     save_parquet(df, path=get_output_meta_folder(dataset) / f"{algorithm}.ranks.summary.parquet")
 
 
+@app.command()
+@timeit()
+def compare_traceback():
+    meta_folder = get_output_meta_folder("rcabench_filtered")
+    df = pl.read_parquet(meta_folder / "fault_types.perf.parquet")
+
+    index = "injection.fault_type"
+
+    df = df.filter(pl.col("algorithm").str.contains("traceback"))
+
+    total = df.select(index, "total").unique().sort(by=index)
+
+    df = df.pivot(on="algorithm", index=index, values=["MRR", "AC@1", "AC@3", "AC@5"])
+
+    df = total.join(df, on=index, how="left")
+
+    save_parquet(df, path=meta_folder / "compare.parquet")
+
+
 if __name__ == "__main__":
     app()
