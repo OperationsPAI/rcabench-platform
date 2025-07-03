@@ -307,14 +307,44 @@ class NezhaDatasetLoader(DatasetLoader):
         return NezhaDatapackLoader(new_case_data, self.source_dir, inject_time, end_time)
 
 
+class MultiDateDatasetLoader(DatasetLoader):
+    def __init__(self, source_dir: str, dates: list[str], name: str):
+        self.source_dir = source_dir
+        self.dates = dates
+        self._name = name
+        self.all_cases = []
+        for date in dates:
+            loader = NezhaDatasetLoader(source_dir, date)
+            for i in range(len(loader)):
+                self.all_cases.append(loader[i])
+
+    def name(self) -> str:
+        return self._name
+
+    def __len__(self) -> int:
+        return len(self.all_cases)
+
+    def __getitem__(self, index: int) -> NezhaDatapackLoader:
+        return self.all_cases[index]
+
+
 @app.command(help="Convert Nezha dataset to RCABench format")
 @timeit()
 def run(
     source_dir: str = "data/nezha",
-    date: str = "2022-08-22",
+    ob_dates: list[str] = typer.Option([], help="ob系统的所有日期,2022-08-22 2022-08-23"),
+    tt_dates: list[str] = typer.Option([], help="tt系统的所有日期,2023-01-29 2023-01-30"),
 ):
-    loader = NezhaDatasetLoader(source_dir, date)
-    convert_dataset(loader, skip_finished=False, parallel=4)
+    if ob_dates:
+        logger.info(f"开始处理nezha_ob: {ob_dates}")
+        loader_ob = MultiDateDatasetLoader(source_dir, ob_dates, name="nezha_ob")
+        convert_dataset(loader_ob, skip_finished=False, parallel=4)
+        logger.info("nezha_ob数据集处理完成！")
+    if tt_dates:
+        logger.info(f"开始处理nezha_tt: {tt_dates}")
+        loader_tt = MultiDateDatasetLoader(source_dir, tt_dates, name="nezha_tt")
+        convert_dataset(loader_tt, skip_finished=False, parallel=4)
+        logger.info("nezha_tt数据集处理完成！")
 
 
 @app.command(help="Create a symbolic link from source path to target path for Eadro dataset access")
