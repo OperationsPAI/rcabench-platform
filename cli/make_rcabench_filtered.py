@@ -58,13 +58,17 @@ def run():
         | (pl.col("injection.mem_worker") * pl.col("injection.memory_size") >= 500)
     )
 
+    unsuccessful_time_ranges = [
+        ((2025, 5, 27, 8), (2025, 5, 28, 0)),
+        ((2025, 5, 30, 4), (2025, 5, 30, 16)),
+        ((2025, 6, 18, 20), (2025, 6, 18, 21)),
+    ]
+    unsuccessful_time_ranges_pl = [
+        (pl.datetime(y1, m1, d1, h1, time_zone="UTC"), pl.datetime(y2, m2, d2, h2, time_zone="UTC"))
+        for (y1, m1, d1, h1), (y2, m2, d2, h2) in unsuccessful_time_ranges
+    ]
     col = pl.col("inject_time")
-    lf = lf.filter(
-        (col < pl.datetime(2025, 5, 27, 8, time_zone="UTC")) | (col > pl.datetime(2025, 5, 28, 0, time_zone="UTC")),
-    )
-    lf = lf.filter(
-        (col < pl.datetime(2025, 5, 30, 4, time_zone="UTC")) | (col > pl.datetime(2025, 5, 30, 16, time_zone="UTC"))
-    )
+    lf = lf.filter([(col < start) | (col > end) for start, end in unsuccessful_time_ranges_pl])
 
     df = lf.collect()
 
