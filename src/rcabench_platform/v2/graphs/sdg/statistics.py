@@ -19,6 +19,8 @@ def calc_statistics(sdg: SDG):
             calc_stat_for_function_node(node)
         elif node.kind == PlaceKind.pod:
             calc_stat_for_pod_node(node)
+        elif node.kind == PlaceKind.container:
+            calc_stat_for_container_node(node)
 
     for node in sdg.iter_nodes():
         if node.kind == PlaceKind.service:
@@ -156,6 +158,45 @@ def calc_stat_for_pod_node(node: PlaceNode):
 
         elif indicator.name == "jvm.gc.duration:PS Scavenge:hist.sum":
             stat_name = "jvm_gc_duration"
+            mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
+
+
+def calc_stat_for_container_node(node: PlaceNode):
+    assert node.kind == PlaceKind.container
+
+    indicator_names = [
+        "container.cpu.usage:request_percentage",
+        "container.memory.usage:request_percentage",
+    ]
+
+    for name in indicator_names:
+        indicator = node.indicators.get(name)
+        if indicator is None:
+            continue
+
+        assert indicator.df.schema["value"] == pl.Float64
+        assert indicator.df["value"].is_not_null().all()
+
+        lf = indicator.df.lazy()
+        normal_lf = lf.filter(pl.col("anomal") == 0)
+        anomal_lf = lf.filter(pl.col("anomal") == 1)
+
+        df_list = pl.collect_all([normal_lf, anomal_lf])
+
+        value_list = [df["value"].to_numpy() for df in df_list]
+
+        calc_regular_stat(node, indicator, value_list)
+
+        if indicator.name == "container.cpu.usage:request_percentage":
+            stat_name = "cpu_usage"
+            mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
+
+        elif indicator.name == "container.memory.usage:request_percentage":
+            stat_name = "memory_usage"
             mean = [indicator.data[f"{STAT_PREFIX[i]}.mean"] for i in range(2)]
             node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = mean[0]
             node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = mean[1]
