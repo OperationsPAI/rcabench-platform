@@ -115,13 +115,15 @@ class NezhaDatapackLoader(DatapackLoader):
                 hour = int(parts[0])
                 minute = int(parts[1])
 
-                assert self.inject_time is not None, "注入时间解析失败"
+                assert self.inject_time is not None, "Failed to parse injection time"
                 file_time = self.inject_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
                 if not (self.inject_time <= file_time <= self.end_time):
                     continue
 
                 df = pl.read_csv(trace_file)
+
+                # Handle ParentID=root
                 df = df.with_columns(pl.col("ParentID").str.replace("root", ""))
 
                 column_mapping = {
@@ -305,17 +307,47 @@ class NezhaDatasetLoader(DatasetLoader):
         return NezhaDatapackLoader(new_case_data, self.source_dir, inject_time, end_time)
 
 
+class MultiDateDatasetLoader(DatasetLoader):
+    def __init__(self, source_dir: str, dates: list[str], name: str):
+        self.source_dir = source_dir
+        self.dates = dates
+        self._name = name
+        self.all_cases = []
+        for date in dates:
+            loader = NezhaDatasetLoader(source_dir, date)
+            for i in range(len(loader)):
+                self.all_cases.append(loader[i])
+
+    def name(self) -> str:
+        return self._name
+
+    def __len__(self) -> int:
+        return len(self.all_cases)
+
+    def __getitem__(self, index: int) -> NezhaDatapackLoader:
+        return self.all_cases[index]
+
+
 @app.command(help="Convert Nezha dataset to RCABench format")
 @timeit()
 def run(
     source_dir: str = "data/nezha",
-    date: str = "2022-08-22",
+    ob_dates: list[str] = typer.Option(["2022-08-22", "2022-08-23"], help="All dates for ob system, e.g., 2022-08-22 2022-08-23"),
+    tt_dates: list[str] = typer.Option(["2023-01-29", "2023-01-30"], help="All dates for tt system, e.g., 2023-01-29 2023-01-30"),
 ):
-    loader = NezhaDatasetLoader(source_dir, date)
-    convert_dataset(loader, skip_finished=False, parallel=4)
+    if ob_dates:
+        logger.info(f"Starting to process nezha_ob: {ob_dates}")
+        loader_ob = MultiDateDatasetLoader(source_dir, ob_dates, name="nezha_ob")
+        convert_dataset(loader_ob, skip_finished=False, parallel=4)
+        logger.info("nezha_ob dataset processing completed!")
+    if tt_dates:
+        logger.info(f"Starting to process nezha_tt: {tt_dates}")
+        loader_tt = MultiDateDatasetLoader(source_dir, tt_dates, name="nezha_tt")
+        convert_dataset(loader_tt, skip_finished=False, parallel=4)
+        logger.info("nezha_tt dataset processing completed!")
 
 
-@app.command(help="Create a symbolic link from source path to target path for Eadro dataset access")
+@app.command(help="Create a symbolic link from source path to target path for Nezha dataset access")
 @timeit()
 def create_link(
     source_path: str = typer.Option(
