@@ -90,6 +90,7 @@ class AnomalyKey(StrEnum):
     cpu = auto()
     memory = auto()
     jvm_gc_duration = auto()
+    restart = auto()
 
     forward_call_prob = auto()
     backward_call_prob = auto()
@@ -132,6 +133,7 @@ def detect_node_anomalies(sdg: SDG, node: PlaceNode) -> list[Anomaly]:
         "cpu_usage": AnomalyKey.cpu,
         "memory_usage": AnomalyKey.memory,
         "jvm_gc_duration": AnomalyKey.jvm_gc_duration,
+        "restart_count": AnomalyKey.restart,
     }
 
     for key in keys:
@@ -494,6 +496,12 @@ def infer_server_fault(
 
 def detect_server_failure(sdg: SDG, node: PlaceNode) -> bool:
     assert node.kind in (PlaceKind.service, PlaceKind.pod, PlaceKind.container)
+    anomalies = detect_node_anomalies(sdg, node)
+
+    has_restart_up = has_anomaly(sdg, node, AnomalyKey.restart, AnomalyKind.up)
+    if has_restart_up:
+        logger.debug("detected server failure for node: `{}`, anomalies: {}", node.uniq_name, anomalies)
+        return True
 
     cpu_threshold = 0.8
     memory_threshold = 0.8
@@ -502,7 +510,6 @@ def detect_server_failure(sdg: SDG, node: PlaceNode) -> bool:
     has_memory_drop = has_anomaly(sdg, node, AnomalyKey.memory, AnomalyKind.down, score=memory_threshold)
 
     if has_cpu_drop and has_memory_drop:
-        anomalies = detect_node_anomalies(sdg, node)
         logger.debug("detected server failure for node: `{}`, anomalies: {}", node.uniq_name, anomalies)
         return True
 
