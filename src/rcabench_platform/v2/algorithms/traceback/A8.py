@@ -360,12 +360,33 @@ def is_user_interface(sdg: SDG, node: PlaceNode) -> bool:
     raise NotImplementedError
 
 
+def is_anomal_service(sdg, node: PlaceNode) -> bool:
+    if node.kind != PlaceKind.service:
+        return False
+
+    anomalies = detect_node_anomalies(sdg, node)
+    if not anomalies:
+        return False
+
+    major_keys = [
+        AnomalyKey.error_rate,
+        AnomalyKey.latency,
+        AnomalyKey.cpu,
+        AnomalyKey.memory,
+        AnomalyKey.restart,
+    ]
+    for anomaly in anomalies:
+        if anomaly.key in major_keys and anomaly.kind == AnomalyKind.up:
+            return True
+    return False
+
+
 def infer_user_impact(acg: nx.MultiDiGraph, sdg: SDG) -> None:
     assert not sdg.has_node(USER_NODE_ID)
     acg.add_node(USER_NODE_ID, name="USER", kind="USER")
 
     for node in acg_iter_nodes(acg, sdg):
-        if is_user_interface(sdg, node):
+        if is_user_interface(sdg, node) or is_anomal_service(sdg, node):
             u, v, kind = node.id, USER_NODE_ID, CausalEdgeKind.user_impact
             logger.debug("acg edge: ({}) `{}` -> `USER`", kind, node.uniq_name)
             acg.add_edge(u, v, key=kind, kind=kind)
