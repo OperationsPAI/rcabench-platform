@@ -66,7 +66,7 @@ def _(dataset_dropdown, get_dataset_meta_file, mo, pl, read_dataset_index):
     _index_df = read_dataset_index(dataset)
 
     _attributes_df_path = get_dataset_meta_file(dataset, "attributes.parquet")
-    if _attributes_df_path.exists():
+    if dataset.startswith("rcabench") and _attributes_df_path.exists():
         attributes_df = pl.read_parquet(_attributes_df_path)
         _df = attributes_df.select(
             "datapack",

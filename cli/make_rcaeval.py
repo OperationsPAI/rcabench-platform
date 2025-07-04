@@ -1,9 +1,13 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.datasets.spec import get_dataset_meta_file, read_dataset_index
 from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset
 from rcabench_platform.v2.sources.rcaeval import RcaevalDatapackLoader, RcaevalDatasetLoader
+from rcabench_platform.v2.utils.serde import save_parquet
 
 from pathlib import Path
+
+import polars as pl
 
 
 @app.command()
@@ -48,6 +52,15 @@ def local_test_2():
         dst_folder=Path("temp/rcaeval_re2_ob/checkoutservice_cpu_1"),
         skip_finished=False,
     )
+
+
+@app.command()
+@timeit()
+def collect_fault_types():
+    for dataset in ["rcaeval_re2_tt"]:
+        df = read_dataset_index(dataset)
+        df = df.with_columns(pl.col("datapack").str.split("_").list.get(1).alias("fault_type"))
+        save_parquet(df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
 
 
 if __name__ == "__main__":
