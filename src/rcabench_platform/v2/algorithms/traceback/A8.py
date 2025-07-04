@@ -66,7 +66,7 @@ class TraceBackA8(Algorithm):
 
 
 def assert_dataset(args: AlgorithmArgs) -> None:
-    datasets = ["rcabench"]
+    datasets = ["rcabench", "rcaeval_re2_tt"]
     if not any(args.dataset.startswith(ds) for ds in datasets):
         raise NotImplementedError
 
