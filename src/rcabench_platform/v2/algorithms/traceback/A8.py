@@ -128,7 +128,8 @@ def detect_node_anomalies(sdg: SDG, node: PlaceNode) -> list[Anomaly]:
         "error_rate": AnomalyKey.error_rate,
         "function_error_rate.mean": AnomalyKey.error_rate,
         "latency": AnomalyKey.latency,
-        "latency-50": AnomalyKey.latency,
+        "latency_p50": AnomalyKey.latency,
+        "latency_p90": AnomalyKey.latency,
         "qpm": AnomalyKey.qpm,
         "cpu_usage": AnomalyKey.cpu,
         "memory_usage": AnomalyKey.memory,
@@ -585,7 +586,9 @@ def infer_call_fault(acg: nx.MultiDiGraph, sdg: SDG):
         if caller.kind != PlaceKind.function:
             continue
 
-        if not has_anomaly(sdg, caller, AnomalyKey.error_rate, AnomalyKind.up):
+        has_error_rate_up = has_anomaly(sdg, caller, AnomalyKey.error_rate, AnomalyKind.up)
+        has_latency_up = has_anomaly(sdg, caller, AnomalyKey.latency, AnomalyKind.up)
+        if not (has_error_rate_up or has_latency_up):
             continue
 
         out_edges: list[DepEdge] = []

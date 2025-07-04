@@ -204,8 +204,8 @@ def detect_anomalies_for_function(node: PlaceNode) -> list[Anomaly]:
                 f"detected anomaly: {anomaly} node: `{node.uniq_name}` latency: {normal_latency} -> {anomal_latency}"
             )
 
-    normal_latency: float | None = node.data.get(f"{STAT_PREFIX[0]}.latency-50")
-    anomal_latency: float | None = node.data.get(f"{STAT_PREFIX[1]}.latency-50")
+    normal_latency: float | None = node.data.get(f"{STAT_PREFIX[0]}.latency_p50")
+    anomal_latency: float | None = node.data.get(f"{STAT_PREFIX[1]}.latency_p50")
 
     if normal_latency is not None and anomal_latency is not None:
         rel_diff = relative_diff(normal_latency, anomal_latency)
@@ -213,7 +213,9 @@ def detect_anomalies_for_function(node: PlaceNode) -> list[Anomaly]:
             anomaly = Anomaly(kind=AnomalyKind.latency_up, score=abs(rel_diff))
             ans.append(anomaly)
             logger.debug(
-                f"detected anomaly: {anomaly} node: `{node.uniq_name}` latency-50: {normal_latency} -> {anomal_latency}"
+                f"detected anomaly: {anomaly} "
+                f"node: `{node.uniq_name}` "
+                f"latency_p50: {normal_latency} -> {anomal_latency}"
             )
 
     normal_qpm: float | None = node.data.get(f"{STAT_PREFIX[0]}.qpm")

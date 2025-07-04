@@ -86,8 +86,8 @@ def calc_stat_for_service_node(sdg: SDG, node: PlaceNode):
             "socket": "socket",
             "workload": "workload",
             "error": "error_rate",
-            "latency-50": "latency_50",
-            "latency-90": "latency_90",
+            "latency-50": "latency_p50",
+            "latency-90": "latency_p90",
         }
 
         for indicator_name, stat_name in node_stat.items():
@@ -248,6 +248,16 @@ def calc_stat_for_function_node(node: PlaceNode):
             trimmed_mean_p10 = [indicator.data[f"{STAT_PREFIX[i]}.trimmed_mean.p10"] for i in range(2)]
             node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = trimmed_mean_p10[0]
             node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = trimmed_mean_p10[1]
+
+            stat_name = "latency_p50"
+            p50 = [indicator.data[f"{STAT_PREFIX[i]}.quantile.p50"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = p50[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = p50[1]
+
+            stat_name = "latency_p90"
+            p90 = [indicator.data[f"{STAT_PREFIX[i]}.quantile.p90"] for i in range(2)]
+            node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = p90[0]
+            node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = p90[1]
 
             stat_name = "traces_id_set"
             traces_id_set = [calc_traces_id_set(df_list[i]) for i in range(2)]
