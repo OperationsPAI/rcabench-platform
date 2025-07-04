@@ -40,8 +40,8 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
 def register_builtin_algorithms():
     from ..algorithms.random_ import Random
 
-    from ..algorithms.traceback.a7 import TraceBackA7
-    from ..algorithms.traceback.a8 import TraceBackA8
+    from ..algorithms.traceback.A7 import TraceBackA7
+    from ..algorithms.traceback.A8 import TraceBackA8
 
     from ..algorithms.rcaeval.baro import Baro
     from ..algorithms.rcaeval.nsigma import NSigma
