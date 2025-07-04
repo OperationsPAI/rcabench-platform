@@ -13,17 +13,21 @@ class Config:
     base_url: str
 
 
+_DEFAULT_DATA_ROOT = Path(os.getenv("DATA_ROOT", "data/rcabench-platform-v2"))
+_DEFAULT_OUTPUT_ROOT = Path(os.getenv("OUTPUT_ROOT", "output/rcabench-platform-v2"))
+_DEFAULT_TEMP_ROOT = Path(os.getenv("TEMP_ROOT", "temp"))
+
 _DEV_CONFIG = Config(
-    data=Path("data/rcabench-platform-v2"),
-    output=Path("output/rcabench-platform-v2"),
-    temp=Path("temp"),
+    data=_DEFAULT_DATA_ROOT,
+    output=_DEFAULT_OUTPUT_ROOT,
+    temp=_DEFAULT_TEMP_ROOT,
     base_url="https://10.10.10.161:8082",
 )
 
 _PROD_CONFIG = Config(
-    data=Path("data/rcabench-platform-v2"),
-    output=Path("output/rcabench-platform-v2"),
-    temp=Path("temp"),
+    data=_DEFAULT_DATA_ROOT,
+    output=_DEFAULT_OUTPUT_ROOT,
+    temp=_DEFAULT_TEMP_ROOT,
     base_url="http://10.10.10.220:32080",
 )
 
