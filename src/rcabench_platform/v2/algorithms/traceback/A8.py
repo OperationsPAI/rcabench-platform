@@ -350,8 +350,14 @@ def acg_iter_nodes(acg: nx.MultiDiGraph, sdg: SDG) -> Iterable[PlaceNode]:
 USER_NODE_ID = 999999999
 
 
-def is_user_interface(node: PlaceNode) -> bool:
-    return node.kind == PlaceKind.function and node.self_name.startswith("ts-ui-dashboard")
+def is_user_interface(sdg: SDG, node: PlaceNode) -> bool:
+    dataset: str = sdg.data["dataset"]
+    if dataset.startswith("rcabench"):
+        return node.kind == PlaceKind.function and node.self_name.startswith("ts-ui-dashboard")
+    if dataset.startswith("rcaeval"):
+        top_op_names: set[str] = sdg.data["top_op_names"]
+        return node.kind == PlaceKind.function and node.self_name in top_op_names
+    raise NotImplementedError
 
 
 def infer_user_impact(acg: nx.MultiDiGraph, sdg: SDG) -> None:
@@ -359,7 +365,7 @@ def infer_user_impact(acg: nx.MultiDiGraph, sdg: SDG) -> None:
     acg.add_node(USER_NODE_ID, name="USER", kind="USER")
 
     for node in acg_iter_nodes(acg, sdg):
-        if is_user_interface(node):
+        if is_user_interface(sdg, node):
             u, v, kind = node.id, USER_NODE_ID, CausalEdgeKind.user_impact
             logger.debug("acg edge: ({}) `{}` -> `USER`", kind, node.uniq_name)
             acg.add_edge(u, v, key=kind, kind=kind)
