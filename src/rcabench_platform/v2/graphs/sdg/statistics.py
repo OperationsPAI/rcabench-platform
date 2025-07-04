@@ -80,8 +80,8 @@ def calc_stat_for_service_node(sdg: SDG, node: PlaceNode):
         calc_regular_stat(node, indicator, value_list)
 
         node_stat = {
-            "cpu": "cpu",
-            "mem": "memory",
+            "cpu": "cpu_usage",
+            "mem": "memory_usage",
             "diskio": "diskio",
             "socket": "socket",
             "workload": "workload",
