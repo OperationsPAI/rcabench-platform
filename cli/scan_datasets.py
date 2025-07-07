@@ -156,23 +156,49 @@ def validate_datapacks(dataset: str):
 
 @app.command()
 @timeit()
-def scan_max_duration(dataset: str):
-    assert dataset.startswith("rcabench")
+def scan_normal_traces_duration(dataset: str):
+    assert dataset.startswith("rcabench") or dataset.startswith("rcaeval")
     datapacks = get_datapack_list(dataset)
 
-    tasks = [functools.partial(_scan_max_duration, dataset, datapack) for datapack in datapacks]
+    tasks = [functools.partial(_scan_normal_duration, dataset, datapack) for datapack in datapacks]
     results = fmap_threadpool(tasks, parallel=32)
 
     df = pl.DataFrame(results)
-    save_parquet(df, path=get_dataset_meta_file(dataset, "max_duration.parquet"))
+
+    attributes = pl.read_parquet(get_dataset_meta_file(dataset, "attributes.parquet"))
+    df = df.join(attributes, on="datapack", how="left")
+
+    save_parquet(df, path=get_dataset_meta_file(dataset, "normal_traces_duration.parquet"))
 
 
-def _scan_max_duration(dataset: str, datapack: str) -> dict[str, Any]:
+def _scan_normal_duration(dataset: str, datapack: str) -> dict[str, Any]:
     datapack_folder = get_datapack_folder(dataset, datapack)
-    lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
-    lf = lf.select(pl.col("duration").max())
+
+    if dataset.startswith("rcabench"):
+        lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    elif dataset.startswith("rcaeval"):
+        from rcabench_platform.v2.graphs.sdg.build_.rcaeval import load_inject_time
+
+        inject_time = load_inject_time(datapack_folder)
+        lf = pl.scan_parquet(datapack_folder / "traces.parquet")
+        lf = lf.filter(pl.col("time") <= inject_time)
+    else:
+        raise NotImplementedError
+
+    lf = lf.select(
+        pl.col("duration").max().alias("max"),
+        pl.col("duration").min().alias("min"),
+        pl.col("duration").mean().alias("mean"),
+        pl.col("duration").median().alias("median"),
+    )
     df = lf.collect()
-    return {"datapack": datapack, "normal_traces_duration:max": df.item()}
+    row = df.row(0, named=True)
+
+    ans = {"datapack": datapack}
+    for k, v in row.items():
+        ans["normal_traces_duration:" + k] = v
+
+    return ans
 
 
 if __name__ == "__main__":
