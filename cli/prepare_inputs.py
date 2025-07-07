@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.clients.clickhouse import ClickHouseClient, get_clickhouse_client
+from rcabench_platform.v2.clients.clickhouse import get_clickhouse_client, query_parquet_stream
 from rcabench_platform.v2.clients.k8s import download_kube_info
 from rcabench_platform.v2.clients.rcabench_ import RcabenchSdkHelper
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
@@ -33,17 +33,6 @@ def convert_to_clickhouse_time(unix_timestamp: int, tz: str) -> str:
         .astimezone(tz)  # type:ignore
         .strftime("%Y-%m-%d %H:%M:%S")
     )
-
-
-def query_parquet_stream(client: ClickHouseClient, query: str, save_path: Path):
-    assert save_path.suffix == ".parquet", "save_path must be a parquet file"
-    assert save_path.parent.is_dir(), "save_path parent must be a directory"
-
-    stream = client.raw_stream(query=query, fmt="Parquet")
-    with open(save_path, "wb") as f:
-        for chunk in stream:
-            f.write(chunk)
-        f.flush()
 
 
 @timeit()
