@@ -25,8 +25,8 @@ def run(*, enable_builtin_algorithms: bool = True):
     output_path = Path(os.environ["OUTPUT_PATH"])
 
     assert algorithm in global_algorithm_registry(), f"Unknown algorithm: {algorithm}"
-    assert input_path.is_dir()
-    assert output_path.is_dir()
+    assert input_path.is_dir(), f"input_path: {input_path}"
+    assert output_path.is_dir(), f"output_path: {output_path}"
 
     with open(input_path / "injection.json") as f:
         injection = json.load(f)
