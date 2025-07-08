@@ -2256,6 +2256,7 @@ dev = [
     { name = "pyqt6" },
     { name = "pyright" },
     { name = "ruff" },
+    { name = "uv-bump" },
     { name = "vegafusion" },
     { name = "vl-convert-python" },
 ]
@@ -2292,6 +2293,7 @@ dev = [
     { name = "pyqt6", specifier = ">=6.9.1" },
     { name = "pyright", specifier = ">=1.1.402" },
     { name = "ruff", specifier = ">=0.12.0" },
+    { name = "uv-bump", specifier = ">=0.1.2" },
     { name = "vegafusion", specifier = ">=2.0.2" },
     { name = "vl-convert-python", specifier = ">=1.8.0" },
 ]
@@ -2762,6 +2764,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+]
+
+[[package]]
+name = "uv-bump"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/d1/107d1780a2e77f2d16d27de3b95f678b55105282e812850d8f281cecc17f/uv_bump-0.1.2.tar.gz", hash = "sha256:9120e028dfdba83ceb4c46c5a3d162fef004e676797175847bd5ffab03540394", size = 5597, upload-time = "2025-05-10T09:26:24.116Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/a8/6cba3daba68da4040c16feebb10e86b9e4d0a068b9177df570f073a651ad/uv_bump-0.1.2-py3-none-any.whl", hash = "sha256:153ecf207fa721e9fcfae659dfc7532abbbb0663ef519ade6c828d5d502d3445", size = 5452, upload-time = "2025-05-10T09:26:22.482Z" },
 ]
 
 [[package]]
