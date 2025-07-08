@@ -37,7 +37,7 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
         save_path = temp / "loadgenerator_traces_all.parquet"
         query_parquet_stream(client, query, save_path)
 
-    df: pl.DataFrame = pl.read_parquet(save_path)
+    df = pl.read_parquet(save_path)
     assert len(df) > 0, "No traces found"
 
     loadgenerator_df = df.filter(
@@ -56,6 +56,13 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
         logger.error(f"Found {invalid_count}/{len(trace_id_list)} traces with no spans from other services")
     else:
         logger.info(f"All {len(trace_id_list)} traces have spans from other services")
+
+    invalid = []
+    for trace_id, result in zip(trace_id_list, results):
+        invalid.append({"TraceId": trace_id, "check:invalid": not result})
+    invalid_df = pl.DataFrame(invalid)
+    df = df.join(invalid_df, on="TraceId", how="left")
+    save_parquet(df, path=save_path)
 
     duration_df = df.select(pl.col("Duration").truediv(1e9).alias("duration")).select(
         pl.col("duration").mean().alias("duration:mean"),
