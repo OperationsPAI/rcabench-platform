@@ -5,7 +5,11 @@ import rcabench.rcabench
 import rcabench.model.injection
 
 from rcabench.openapi import ApiClient, Configuration, InjectionApi, DatasetApi
-from rcabench.openapi.models import DtoFaultInjectionInjectionResp, DtoFaultInjectionWithIssuesResp, DtoQueryDatasetResp
+from rcabench.openapi.models import (
+    DatabaseFaultInjectionSchedule,
+    DtoFaultInjectionWithIssuesResp,
+    DtoQueryDatasetResp,
+)
 
 
 def get_rcabench_sdk(base_url: str | None = None) -> rcabench.rcabench.RCABenchSDK:
@@ -37,9 +41,9 @@ class RcabenchSdkHelper:
         assert resp.data is not None
         return resp.data
 
-    def get_injection_details(self, *, dataset_name: str) -> DtoFaultInjectionInjectionResp:
+    def get_injection_details(self, *, dataset_name: str) -> DatabaseFaultInjectionSchedule:
         api = InjectionApi(self.api_client)
-        resp = api.api_v1_injections_detail_get(dataset_name=dataset_name)
+        resp = api.api_v1_injections_query_get(name=dataset_name)
         assert resp.data is not None
         return resp.data
 
