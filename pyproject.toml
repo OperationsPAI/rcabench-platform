@@ -9,7 +9,7 @@ authors = [ #
 requires-python = ">=3.12"
 dependencies = [ #
     "clickhouse-connect>=0.8.18",
-    "huggingface-hub>=0.33.1",
+    "huggingface-hub>=0.33.2",
     "kubernetes>=33.1.0",
     "loguru>=0.7.3",
     "matplotlib>=3.10.3",
@@ -17,9 +17,9 @@ dependencies = [ #
     "neo4j>=5.28.1",
     "networkx>=3.5",
     "numpy>=2.3.1",
-    "pandas>=2.3.0",
+    "pandas>=2.3.1",
     "pyarrow>=20.0.0",
-    "rcabench>=1.0.21",
+    "rcabench==1.0.21",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
     "scipy>=1.16.0",
@@ -64,15 +64,15 @@ exclude = [ #
 dev = [ #
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
-    "marimo[recommended]>=0.14.9",
+    "marimo[recommended]>=0.14.10",
     "kubernetes-stubs-elephant-fork>=33.1.0",
-    "plotly>=6.1.2",
+    "plotly>=6.2.0",
     "pyqt6>=6.9.1",
     "pyright>=1.1.402",
-    "ruff>=0.12.0",
+    "ruff>=0.12.2",
     "vegafusion>=2.0.2",
     "vl-convert-python>=1.8.0",
-    "pandas-stubs>=2.2.3.250527",
+    "pandas-stubs>=2.3.0.250703",
     "uv-bump>=0.1.2",
 ]
 
