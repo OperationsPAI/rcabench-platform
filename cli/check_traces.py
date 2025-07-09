@@ -15,6 +15,8 @@ from pathlib import Path
 import functools
 
 import polars as pl
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
 @app.command()
@@ -186,6 +188,72 @@ def _check_clickhouse(datapack: str, ranges: list[tuple[datetime, datetime]]):
     logger.debug("datapack=`{}`, lhs={:.3}s, rhs={:.3}s", datapack, lhs_duration, rhs_duration)
 
     return (rhs_duration / lhs_duration) > 1.5
+
+
+@app.command()
+@timeit()
+def concat_normal_ranges():
+    lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "attributes.parquet"))
+
+    lf = lf.filter(
+        pl.col("inject_time") >= pl.datetime(2025, 7, 7, 0, time_zone="UTC"),
+        pl.col("inject_time") <= pl.datetime(2025, 7, 7, 12, time_zone="UTC"),
+    )
+
+    df = lf.select("datapack").collect()
+    datapacks = df["datapack"].unique().to_list()
+
+    logger.info("found {} datapacks", len(datapacks))
+
+    lf_list: list[pl.LazyFrame] = []
+    for datapack in datapacks:
+        folder = get_datapack_folder("rcabench", datapack)
+        file_path = folder / "normal_traces.parquet"
+        if file_path.exists():
+            lf = pl.scan_parquet(file_path)
+            lf = lf.select("time", "duration")
+            lf = lf.group_by_dynamic("time", every="1s").agg(pl.col("duration").max())
+            lf_list.append(lf)
+
+    df = pl.concat(lf_list).collect()
+
+    # Convert duration from nanoseconds to seconds
+    df = df.with_columns(pl.col("duration") / 1e9)
+
+    # Sort by time for plotting
+    df = df.sort("time")
+
+    # Create the plot
+    temp = get_config().temp
+    plt.figure(figsize=(15, 8))
+
+    # Convert to pandas for easier plotting with matplotlib
+    df_pandas = df.to_pandas()
+    del df
+    # Plot duration over time
+    plt.plot(df_pandas["time"], df_pandas["duration"], linewidth=0.8, alpha=0.7)
+
+    # Format the plot
+    plt.title("Maximum Duration Over Time (1-second aggregation)", fontsize=14, fontweight="bold")
+    plt.xlabel("Time", fontsize=12)
+    plt.ylabel("Duration (seconds)", fontsize=12)
+    plt.yscale("log")  # Set y-axis to logarithmic scale
+    plt.grid(True, alpha=0.3)
+
+    # Format x-axis to show dates nicely
+    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
+    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=6))
+    plt.xticks(rotation=45)
+
+    # Adjust layout to prevent label cutoff
+    plt.tight_layout()
+
+    # Save the plot
+    output_path = temp / "normal_ranges_duration_timeline.png"
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    logger.info(f"Saved duration timeline plot to {output_path}")
+
+    plt.close()
 
 
 if __name__ == "__main__":
