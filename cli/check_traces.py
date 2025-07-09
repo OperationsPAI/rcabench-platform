@@ -1,11 +1,17 @@
 #!/usr/bin/env -S uv run -s
+from collections import defaultdict
+from dataclasses import dataclass
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.clickhouse import get_clickhouse_client, query_parquet_stream
 from rcabench_platform.v2.config import get_config
+from rcabench_platform.v2.datasets.spec import get_datapack_folder, get_dataset_meta_file
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
-from rcabench_platform.v2.utils.serde import save_parquet
+from rcabench_platform.v2.utils.serde import load_json, save_parquet
 
+from fractions import Fraction
+from datetime import datetime
+from pathlib import Path
 import functools
 
 import polars as pl
@@ -64,18 +70,9 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
     df = df.join(invalid_df, on="TraceId", how="left")
     save_parquet(df, path=save_path)
 
-    duration_df = df.select(pl.col("Duration").truediv(1e9).alias("duration")).select(
-        pl.col("duration").mean().alias("duration:mean"),
-        pl.col("duration").std().alias("duration:std"),
-        pl.col("duration").min().alias("duration:min"),
-        pl.col("duration").median().alias("duration:median"),
-        pl.col("duration").max().alias("duration:max"),
-        pl.col("duration").quantile(0.90).alias("duration:P90"),
-        pl.col("duration").quantile(0.95).alias("duration:P95"),
-        pl.col("duration").quantile(0.99).alias("duration:P99"),
-        pl.col("duration").quantile(0.999).alias("duration:P999"),
-        pl.col("duration").quantile(0.9999).alias("duration:P9999"),
-    )
+    duration_lf = df.lazy().select(pl.col("Duration").truediv(1e9).alias("duration"))
+    duration_df = duration_statistics(duration_lf).collect()
+
     print_dataframe(duration_df)
 
 
@@ -89,6 +86,106 @@ def _check_trace(trace_id: str, df: pl.DataFrame, loadgenerator_df: pl.DataFrame
         logger.warning(f"Trace `{trace_id}` ({timestamp}) has no spans from other services")
         return False
     return True
+
+
+def duration_statistics(lf: pl.LazyFrame) -> pl.LazyFrame:
+    return lf.select(
+        pl.col("duration").mean().alias("duration:mean"),
+        pl.col("duration").std().alias("duration:std"),
+        pl.col("duration").min().alias("duration:min"),
+        pl.col("duration").median().alias("duration:median"),
+        pl.col("duration").max().alias("duration:max"),
+        pl.col("duration").quantile(0.90).alias("duration:P90"),
+        pl.col("duration").quantile(0.95).alias("duration:P95"),
+        pl.col("duration").quantile(0.99).alias("duration:P99"),
+        pl.col("duration").quantile(0.999).alias("duration:P999"),
+        pl.col("duration").quantile(0.9999).alias("duration:P9999"),
+    )
+
+
+@dataclass(kw_only=True, slots=True)
+class DatapackCheck:
+    datapack: str
+    normal_start: datetime
+    normal_end: datetime
+    interference_start: datetime
+    interference_end: datetime
+
+
+@app.command()
+@timeit()
+def check_clickhouse():
+    lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "attributes.parquet"))
+
+    lf = lf.filter(
+        pl.col("inject_time") >= pl.datetime(2025, 7, 1, time_zone="UTC"),
+        pl.col("inject_time") <= pl.datetime(2025, 7, 7, time_zone="UTC"),
+    )
+
+    lf = lf.select(
+        pl.col("datapack"),
+        pl.col("env.normal_start").alias("normal_start"),
+        pl.col("env.normal_end").alias("normal_end"),
+        pl.col("env.abnormal_end").alias("interference_start"),
+        pl.col("env.abnormal_end").add(pl.duration(seconds=120)).alias("interference_end"),
+    )
+
+    df = lf.collect()
+
+    checks = [DatapackCheck(**row) for row in df.iter_rows(named=True)]
+    logger.info("checking {} datapacks", len(checks))
+
+    candidates: defaultdict[str, list[tuple[datetime, datetime]]] = defaultdict(list)
+
+    for check in checks:
+        assert isinstance(check.normal_start, datetime)
+        assert isinstance(check.interference_end, datetime)
+
+        for other in checks:
+            if check.datapack == other.datapack:
+                continue
+            if check.normal_end < other.interference_start:
+                continue
+            if check.normal_start > other.interference_end:
+                continue
+            candidates[check.datapack].append((other.interference_start, other.interference_end))
+
+    logger.info("checking {} datapacks", len(candidates))
+
+    tasks = [functools.partial(_check_clickhouse, datapack, ranges) for datapack, ranges in candidates.items()]
+    results = fmap_threadpool(tasks, parallel=32)
+    proportion = Fraction(sum(results), len(results))
+    logger.info("interference proportion = {} ({:.2%})", proportion, float(proportion))
+
+
+def _check_clickhouse(datapack: str, ranges: list[tuple[datetime, datetime]]):
+    lf = pl.scan_parquet(get_datapack_folder("rcabench", datapack) / "normal_traces.parquet")
+    lf = lf.select("time", (pl.col("duration") / 1e9).alias("duration"))
+
+    lhs_lf = lf
+    rhs_lf = lf
+    for start, end in ranges:
+        lhs_lf = lhs_lf.filter((pl.col("time") < start) | (pl.col("time") > end))
+        rhs_lf = rhs_lf.filter(pl.col("time") >= start, pl.col("time") <= end)
+
+    lhs_df = duration_statistics(lhs_lf).collect()
+    rhs_df = duration_statistics(rhs_lf).collect()
+
+    lhs_duration = lhs_df["duration:P9999"].item()
+    rhs_duration = rhs_df["duration:P9999"].item()
+
+    if rhs_duration is None:
+        return False
+
+    if lhs_duration is None:
+        return rhs_duration > 5
+
+    assert isinstance(lhs_duration, float)
+    assert isinstance(rhs_duration, float)
+
+    logger.debug("datapack=`{}`, lhs={:.3}s, rhs={:.3}s", datapack, lhs_duration, rhs_duration)
+
+    return (rhs_duration / lhs_duration) > 1.5
 
 
 if __name__ == "__main__":
