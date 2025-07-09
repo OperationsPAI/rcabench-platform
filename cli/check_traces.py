@@ -164,11 +164,12 @@ def _check_clickhouse(datapack: str, ranges: list[tuple[datetime, datetime]]):
     lf = pl.scan_parquet(get_datapack_folder("rcabench", datapack) / "normal_traces.parquet")
     lf = lf.select("time", (pl.col("duration") / 1e9).alias("duration"))
 
-    lhs_lf = lf
-    rhs_lf = lf
-    for start, end in ranges:
-        lhs_lf = lhs_lf.filter((pl.col("time") < start) | (pl.col("time") > end))
-        rhs_lf = rhs_lf.filter(pl.col("time") >= start, pl.col("time") <= end)
+    condition = functools.reduce(
+        lambda x, y: x & y,
+        [(pl.col("time") < start) | (pl.col("time") > end) for start, end in ranges],
+    )
+    lhs_lf = lf.filter(condition)
+    rhs_lf = lf.filter(condition.not_())
 
     lhs_df = duration_statistics(lhs_lf).collect()
     rhs_df = duration_statistics(rhs_lf).collect()
