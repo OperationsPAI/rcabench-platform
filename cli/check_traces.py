@@ -157,7 +157,7 @@ def check_clickhouse():
     tasks = [functools.partial(_check_clickhouse, datapack, ranges) for datapack, ranges in candidates.items()]
     results = fmap_threadpool(tasks, parallel=32)
     proportion = Fraction(sum(results), len(results))
-    logger.info("interference proportion = {} ({:.2%})", proportion, float(proportion))
+    logger.info("interference proportion = {}/{} ({:.2%})", sum(results), len(results), float(proportion))
 
 
 def _check_clickhouse(datapack: str, ranges: list[tuple[datetime, datetime]]):
@@ -188,7 +188,7 @@ def _check_clickhouse(datapack: str, ranges: list[tuple[datetime, datetime]]):
 
     logger.debug("datapack=`{}`, lhs={:.3}s, rhs={:.3}s", datapack, lhs_duration, rhs_duration)
 
-    return (rhs_duration / lhs_duration) > 1.5
+    return (rhs_duration / lhs_duration) > 1.2
 
 
 @app.command()
