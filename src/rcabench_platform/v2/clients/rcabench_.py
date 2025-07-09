@@ -7,7 +7,6 @@ from rcabench.openapi import (
     ApiClient,
     Configuration,
     InjectionApi,
-    DatasetApi,
     DtoQueryInjectionResp,
     DtoFaultInjectionWithIssuesResp,
 )
@@ -47,10 +46,3 @@ class RcabenchSdkHelper:
         resp = api.api_v1_injections_analysis_with_issues_get()
         assert resp.data is not None
         return resp.data
-
-    def list_injections(self, *, page_num: int = 1, page_size: int = 10):
-        # TODO: replace it with openapi client
-        sdk = get_rcabench_sdk()
-        output = sdk.injection.list(page_num=page_num, page_size=page_size)
-        assert isinstance(output, rcabench.model.injection.ListResult)
-        return output

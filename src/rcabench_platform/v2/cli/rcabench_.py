@@ -32,9 +32,9 @@ def query_injection(name: str):
     pprint(resp.model_dump())
 
 
-@app.command()
-@timeit()
-def list_injections(page_num: int = 1, page_size: int = 10):
-    sdk = RcabenchSdkHelper()
-    output = sdk.list_injections(page_num=page_num, page_size=page_size)
-    pprint(output.model_dump())
+# @app.command()
+# @timeit()
+# def list_injections(page_num: int = 1, page_size: int = 10):
+#     sdk = RcabenchSdkHelper()
+#     output = sdk.list_injections(page_num=page_num, page_size=page_size)
+#     pprint(output.model_dump())
