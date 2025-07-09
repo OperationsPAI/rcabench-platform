@@ -2230,7 +2230,7 @@ wheels = [
 
 [[package]]
 name = "rcabench"
-version = "1.0.21"
+version = "1.0.38"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -2248,9 +2248,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wheel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/11/3cc34e245227fc5aeefa42a8d4bfc820eb837a234fb0ff896ecf7e895d3f/rcabench-1.0.21.tar.gz", hash = "sha256:8a35b0d4927da17625fbd57781c8909cc29752b2830e19b193c828633a2418e4", size = 119164, upload-time = "2025-06-26T03:31:50.114Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/ba/081cd0bef510ffc431885491f805a7ce70c7588263dd0babfd75d3599099/rcabench-1.0.38.tar.gz", hash = "sha256:0598f8d91f8fad070c951eaa208a717a597c8e8960767a4efd520c009ca21098", size = 125334, upload-time = "2025-07-08T13:02:09.905Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/ae/7b5363c56c8664d3b057dec8e382519b6fb36ac7382bf14d3998b434b3c0/rcabench-1.0.21-py3-none-any.whl", hash = "sha256:d146a2d4990e1a35e78e5931572866ab5ecc96b726d9f174f6a524ee8f00f18d", size = 231386, upload-time = "2025-06-26T03:31:47.914Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/c4/b66e3a716b1c78b651242c1b3cdf94b1d071f6fcc78e0bfc5eb5868b89e9/rcabench-1.0.38-py3-none-any.whl", hash = "sha256:a14dee381d939354de41319b8f21b2e448a22a7497665a957b614d9a9569f7b2", size = 283055, upload-time = "2025-07-08T13:02:07.955Z" },
 ]
 
 [[package]]
@@ -2306,7 +2306,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.1" },
     { name = "pandas", specifier = ">=2.3.1" },
     { name = "pyarrow", specifier = ">=20.0.0" },
-    { name = "rcabench", specifier = "==1.0.21" },
+    { name = "rcabench", specifier = ">=1.0.38" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "scikit-learn", specifier = ">=1.7.0" },
     { name = "scipy", specifier = ">=1.16.0" },

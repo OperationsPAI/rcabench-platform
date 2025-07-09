@@ -26,14 +26,6 @@ def kube_info(save_path: Path | None = None):
 
 @app.command()
 @timeit()
-def query_dataset(name: str):
-    sdk = RcabenchSdkHelper()
-    resp = sdk.query_dataset(name=name)
-    pprint(resp.model_dump())
-
-
-@app.command()
-@timeit()
 def query_injection(name: str):
     sdk = RcabenchSdkHelper()
     resp = sdk.get_injection_details(dataset_name=name)

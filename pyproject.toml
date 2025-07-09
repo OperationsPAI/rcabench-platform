@@ -19,7 +19,7 @@ dependencies = [ #
     "numpy>=2.3.1",
     "pandas>=2.3.1",
     "pyarrow>=20.0.0",
-    "rcabench==1.0.21",
+    "rcabench>=1.0.38",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
     "scipy>=1.16.0",

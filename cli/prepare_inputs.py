@@ -375,5 +375,27 @@ def local_test():
     run()
 
 
+@app.command()
+def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
+    from rcabench.openapi import Configuration, ApiClient, InjectionApi
+    from pathlib import Path
+
+    config = Configuration(host=rcabench_url)
+    with ApiClient(configuration=config) as client:
+        api = InjectionApi(api_client=client)
+        resp = api.api_v1_injections_analysis_with_issues_get()
+
+    assert resp.data is not None, "No cases found in the response"
+    case_names = list(set([item.injection_name for item in resp.data if item.injection_name]))
+    for dataset_name in case_names:
+        injection = query_injection(rcabench_url, dataset_name)
+        if injection:
+            save_json(injection.model_dump(), path=Path("/mnt/jfs/rcabench_dataset") / dataset_name / "injection.json")
+            save_json(
+                injection.model_dump(),
+                path=Path("/mnt/jfs/rcabench_dataset") / dataset_name / "converted" / "injection.json",
+            )
+
+
 if __name__ == "__main__":
     app()

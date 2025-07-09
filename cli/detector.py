@@ -110,6 +110,7 @@ def preprocess_trace(file: Path):
         v["p90_duration"] = p90_duration / 1e9
         v["p95_duration"] = p95_duration / 1e9
         v["p99_duration"] = p99_duration / 1e9
+
         v["status_code"] = status_code
         v["request_content_length"] = request_content_length
         v["response_content_length"] = response_content_length
