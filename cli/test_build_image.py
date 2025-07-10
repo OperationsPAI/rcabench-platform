@@ -2,6 +2,12 @@
 from rcabench_platform.v2.cli.main import app, logger
 from rcabench_platform.v2.logging import timeit
 from rcabench_platform.v2.config import get_config
+
+from collections.abc import Generator
+from pathlib import Path
+import json
+import os
+
 from rcabench.openapi.api import AlgorithmApi
 from rcabench.const import EventType
 from rcabench.model.error import ModelHTTPError
@@ -11,12 +17,7 @@ from rcabench.openapi.exceptions import BadRequestException, NotFoundException, 
 from rcabench.openapi.models.dto_generic_response_dto_submit_resp import DtoGenericResponseDtoSubmitResp
 from rcabench.rcabench import RCABenchSDK
 
-from collections.abc import Generator
-from pathlib import Path
-
 import dotenv
-import json
-import os
 
 ENV_PATH = ".env"
 TOKEN_KEY = "GITHUB_TOKEN"
