@@ -13,6 +13,9 @@ on:
 
 jobs:
   develop:
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,4 +23,5 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          python-version: ${{ matrix.python-version }}
       - run: just ci
