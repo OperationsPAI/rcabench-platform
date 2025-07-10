@@ -124,7 +124,8 @@ Note that:
 
 Currently, we have the following algorithms:
 + [random](../src/rcabench_platform/v2/algorithms/random_.py)
-+ [traceback-A7](../src/rcabench_platform/v2/algorithms/traceback/a7.py) (our own)
++ [traceback-A7](../src/rcabench_platform/v2/algorithms/traceback/A7.py) (our own)
++ [traceback-A8](../src/rcabench_platform/v2/algorithms/traceback/A8.py) (our own)
 + [baro](../src/rcabench_platform/v2/algorithms/rcaeval/baro.py)
 + [nsigma](../src/rcabench_platform/v2/algorithms/rcaeval/nsigma.py)
 
