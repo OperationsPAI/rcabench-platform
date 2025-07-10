@@ -358,13 +358,13 @@ def copy_files(src: Path, dst: Path):
 @app.command()
 def local_test():
     env_params = {
-        "OUTPUT_PATH": "temp/ts1-ts-order-service-mysql-pwqdhw",
-        "NAMESPACE": "ts1",
+        "OUTPUT_PATH": "temp/ts5-ts-consign-service-partition-tstlvq",
+        "NAMESPACE": "ts5",
         "TIMEZONE": "Asia/Shanghai",
-        "NORMAL_START": "1750653226",
-        "NORMAL_END": "1750653466",
-        "ABNORMAL_START": "1750653466",
-        "ABNORMAL_END": "1750653704",
+        "NORMAL_START": "1752156428",
+        "NORMAL_END": "1752156668",
+        "ABNORMAL_START": "1752156668",
+        "ABNORMAL_END": "1752156908",
     }
 
     for key, value in env_params.items():
