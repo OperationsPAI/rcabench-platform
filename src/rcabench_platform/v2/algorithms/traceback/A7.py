@@ -7,11 +7,12 @@ from ...logging import logger, timeit
 from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode, GraphPath, ExpandedGraphPath
 from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
 from ...utils.env import debug
+from ....compat import StrEnum
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pprint import pformat
-from enum import StrEnum, auto
+from enum import auto
 import numpy as np
 import json
 

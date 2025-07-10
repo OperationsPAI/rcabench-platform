@@ -77,7 +77,11 @@ def scan_datapack_attributes():
 
 
 def _convert_time(ts: int, tz: datetime.tzinfo | None) -> datetime.datetime:
-    return datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).replace(tzinfo=tz).astimezone(datetime.UTC)
+    return (
+        datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+        .replace(tzinfo=tz)
+        .astimezone(datetime.timezone.utc)
+    )
 
 
 def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Path) -> dict[str, Any]:
@@ -180,7 +184,7 @@ def query_fault_types(dataset: str):
 @app.command()
 @timeit()
 def reset_after_time(timestamp: str):
-    dt = datetime.datetime.fromisoformat(timestamp).replace(tzinfo=datetime.UTC)
+    dt = datetime.datetime.fromisoformat(timestamp).replace(tzinfo=datetime.timezone.utc)
     logger.info(f"Resetting datapacks after {dt}")
 
     to_reset = []
@@ -189,7 +193,7 @@ def reset_after_time(timestamp: str):
     for datapack in tqdm(get_datapack_list(dataset)):
         src_folder = Path("data") / "rcabench_dataset" / datapack
         mtime = src_folder.stat().st_mtime
-        mtime_dt = datetime.datetime.fromtimestamp(mtime, tz=datetime.UTC)
+        mtime_dt = datetime.datetime.fromtimestamp(mtime, tz=datetime.timezone.utc)
 
         if mtime_dt >= dt:
             to_reset.append((datapack, mtime_dt))

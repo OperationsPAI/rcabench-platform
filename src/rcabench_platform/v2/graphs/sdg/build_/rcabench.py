@@ -78,7 +78,9 @@ def load_inject_time(input_folder: Path) -> datetime.datetime:
         inject_time = abnormal_start
 
     inject_time = (
-        datetime.datetime.fromtimestamp(inject_time, tz=datetime.UTC).replace(tzinfo=tz).astimezone(datetime.UTC)
+        datetime.datetime.fromtimestamp(inject_time, tz=datetime.timezone.utc)
+        .replace(tzinfo=tz)
+        .astimezone(datetime.timezone.utc)
     )
     logger.debug(f"inject_time=`{inject_time}`")
 
