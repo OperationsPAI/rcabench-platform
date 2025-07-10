@@ -2957,6 +2957,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/b0/4bc07ccd3572a2f9df7e6782f52b0c6c90dcbb803ac4a167702d7d0dfe1e/python_dotenv-1.1.1.tar.gz", hash = "sha256:a8a6399716257f45be6a007360200409fce5cda2661e3dec71d23dc15f6189ab", size = 41978, upload-time = "2025-06-24T04:21:07.341Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/ed/539768cf28c661b5b068d66d96a2f155c4971a5d55684a514c1a0e0dec2f/python_dotenv-1.1.1-py3-none-any.whl", hash = "sha256:31f23644fe2602f88ff55e1f5c79ba497e01224ee7737937930c448e4d0e24dc", size = 20556, upload-time = "2025-06-24T04:21:06.073Z" },
+]
+
+[[package]]
 name = "pytz"
 version = "2025.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3099,7 +3108,7 @@ wheels = [
 
 [[package]]
 name = "rcabench"
-version = "1.0.45"
+version = "1.0.46"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -3117,9 +3126,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wheel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/12/5948ef82b40ba7aa9289cbd43c52810f9c4e6f209e44abd696a52d1e98ce/rcabench-1.0.45.tar.gz", hash = "sha256:36201d9f1605405566fef4eee8ddd0d0ffff35974da67accd4298c9c136cf6b9", size = 160776, upload-time = "2025-07-10T04:24:35.133Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/6b/498600025313ba328b16b887b0c39c6bc6daf4c929458ed3faca5f390240/rcabench-1.0.46.tar.gz", hash = "sha256:5f58cb6c2c24366e91ac3e3d5a9f848bd2fa7638224861f2eff76beb7fe93aaf", size = 129506, upload-time = "2025-07-10T08:54:23.554Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/63/562b9fae2d28ed336b272f584142d41ab3aa0501bc88c4690ad56001dab5/rcabench-1.0.45-py3-none-any.whl", hash = "sha256:08dfa6e43358a311a76379ebc761843d546c109d6b2b01c3e14aaa5a984567b7", size = 308132, upload-time = "2025-07-10T04:24:33.118Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/a9/0a7681be9b2c2566b7b365109d5fd5133783c27135af00816fff10906459/rcabench-1.0.46-py3-none-any.whl", hash = "sha256:c518d362972a6fbea74b519ac35ca56f59a846d39fb86c823889e35c41cde54b", size = 308192, upload-time = "2025-07-10T08:54:21.918Z" },
 ]
 
 [[package]]
