@@ -7,6 +7,7 @@ from rcabench.const import EventType
 from rcabench.model.error import ModelHTTPError
 from rcabench.model.trace import AlgorithmItem, StreamEvent
 from rcabench.openapi.api_client import ApiClient, Configuration
+from rcabench.openapi.exceptions import BadRequestException, NotFoundException, ServiceException
 from rcabench.openapi.models.dto_generic_response_dto_submit_resp import DtoGenericResponseDtoSubmitResp
 from rcabench.rcabench import RCABenchSDK
 
@@ -110,7 +111,7 @@ def local(
                 file=(filename, file_content),
                 force_rebuild=force_rebuild,
             )
-    except Exception as e:
+    except (BadRequestException, NotFoundException, ServiceException) as e:
         logger.error(f"Failed to build algorithm '{algorithm}': {e}")
         return
 
@@ -166,7 +167,7 @@ def github(
                 github_path=path,
                 force_rebuild=force_rebuild,
             )
-    except Exception as e:
+    except (BadRequestException, NotFoundException, ServiceException) as e:
         logger.error(f"Failed to build algorithm '{algorithm}': {e}")
         return
 

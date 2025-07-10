@@ -1,5 +1,4 @@
 from ..config import get_config
-from ..logging import logger, timeit
 
 import rcabench.rcabench
 

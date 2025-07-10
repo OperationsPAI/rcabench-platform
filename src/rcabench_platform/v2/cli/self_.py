@@ -1,6 +1,7 @@
 from ..config import get_config
 from ..clients.rcabench_ import RcabenchSdkHelper, get_rcabench_sdk
 from ..clients.clickhouse import get_clickhouse_client
+from ..clients.rcabench_ import RcabenchSdkHelper
 from ..logging import logger, timeit
 
 import traceback
@@ -36,6 +37,12 @@ def test() -> None:
     except Exception as e:
         traceback.print_exc()
         logger.error(f"ClickHouse ping failed: {e}")
+
+    try:
+        ping_rcabench()
+    except Exception as e:
+        traceback.print_exc()
+        logger.error(f"RCABench ping failed: {e}")
 
     try:
         config = get_config()
