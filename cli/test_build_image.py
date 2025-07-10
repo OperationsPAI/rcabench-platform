@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger
 from rcabench_platform.v2.logging import timeit
-from rcabench_platform.v2.config import get_config, CONFIG_CLASSES, ENV_MODE_KEY
+from rcabench_platform.v2.config import get_config
 
 from collections.abc import Generator
 from pathlib import Path
@@ -91,9 +91,7 @@ def local(
         force_rebuild: Whether to force rebuild
     """
 
-    assert env in CONFIG_CLASSES, f"Invalid environment mode: {env}. Choose from {list(CONFIG_CLASSES.keys())}"
-    os.environ[ENV_MODE_KEY] = env
-    config = get_config()
+    config = get_config(env_mode=env)
 
     file_dir = config.temp
     file_path = file_dir / filename
@@ -117,8 +115,8 @@ def local(
             force_rebuild=force_rebuild,
         )
 
-    if resp is not None:
-        get_algorithm_item(host=config.base_url, response=resp)
+    assert resp is not None
+    get_algorithm_item(host=config.base_url, response=resp)
 
 
 @app.command()
@@ -148,9 +146,7 @@ def github(
     """
 
     set_token()
-    assert env in CONFIG_CLASSES, f"Invalid environment mode: {env}. Choose from {list(CONFIG_CLASSES.keys())}"
-    os.environ[ENV_MODE_KEY] = env
-    config = get_config()
+    config = get_config(env_mode=env)
 
     token = os.getenv(TOKEN_KEY)
     if token is None:
@@ -173,8 +169,8 @@ def github(
             force_rebuild=force_rebuild,
         )
 
-    if resp is not None:
-        get_algorithm_item(host=config.base_url, response=resp)
+    assert resp is not None
+    get_algorithm_item(host=config.base_url, response=resp)
 
 
 if __name__ == "__main__":

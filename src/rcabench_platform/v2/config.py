@@ -3,12 +3,11 @@ from pathlib import Path
 from contextlib import contextmanager
 import os
 
-ENV_MODE_KEY = "ENV_MODE"
-
 
 @dataclass(kw_only=True)
 class Config:
     env_mode: str
+
     data: Path
     output: Path
     temp: Path
@@ -44,25 +43,25 @@ _PROD_CONFIG = Config(
     base_url="http://10.10.10.220:32080",
 )
 
-CONFIG_CLASSES = {
+_CONFIG_CLASSES = {
     "debug": _DEBUG_CONFIG,
     "dev": _DEV_CONFIG,
     "prod": _PROD_CONFIG,
 }
 
-
-def _get_config() -> Config:
-    env = os.getenv(ENV_MODE_KEY, "prod").lower()
-    return CONFIG_CLASSES.get(env, _PROD_CONFIG)
-
-
 _CONFIG = None
 
 
-def get_config() -> Config:
+def get_config(env_mode: str | None = None) -> Config:
+    if env_mode is not None:
+        return _CONFIG_CLASSES[env_mode]
+
     global _CONFIG
+
     if _CONFIG is None:
-        _CONFIG = _get_config()
+        env_mode = os.getenv("ENV_MODE", "prod").lower()
+        _CONFIG = _CONFIG_CLASSES[env_mode]
+
     return _CONFIG
 
 
