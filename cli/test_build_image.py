@@ -90,7 +90,7 @@ def local(
     load_env_file()
     config = get_config()
 
-    file_dir = config.data if config.env_mode == "prod" else config.temp
+    file_dir = config.temp
     file_path = file_dir / filename
     if not file_path.exists():
         logger.error(f"File {file_path} does not exist. Please provide a valid file.")
