@@ -94,27 +94,23 @@ def local(
     file_path = file_dir / filename
     if not file_path.exists():
         logger.error(f"File {file_path} does not exist. Please provide a valid file.")
-        return
+        raise FileNotFoundError(f"{file_path} does not exist.")
 
     with open(file_path, "rb") as f:
         file_content = f.read()
 
     resp = None
-    try:
-        configuration = get_configuration(host=config.base_url)
-        with ApiClient(configuration=configuration) as client:
-            api = AlgorithmApi(api_client=client)
-            resp = api.api_v1_algorithms_build_post(
-                algorithm=algorithm,
-                image=image,
-                tag=tag,
-                source_type="file",
-                file=(filename, file_content),
-                force_rebuild=force_rebuild,
-            )
-    except (BadRequestException, NotFoundException, ServiceException) as e:
-        logger.error(f"Failed to build algorithm '{algorithm}': {e}")
-        return
+    configuration = get_configuration(host=config.base_url)
+    with ApiClient(configuration=configuration) as client:
+        api = AlgorithmApi(api_client=client)
+        resp = api.api_v1_algorithms_build_post(
+            algorithm=algorithm,
+            image=image,
+            tag=tag,
+            source_type="file",
+            file=(filename, file_content),
+            force_rebuild=force_rebuild,
+        )
 
     if resp is not None:
         get_algorithm_item(host=config.base_url, response=resp)
@@ -150,27 +146,23 @@ def github(
     token = os.getenv(TOKEN_KEY)
     if token is None:
         logger.error(f"Environment variable {TOKEN_KEY} not set. Please set it to your GitHub token.")
-        return
+        raise ValueError(f"Environment variable {TOKEN_KEY} not set.")
 
     resp = None
-    try:
-        configuration = get_configuration(host=config.base_url)
-        with ApiClient(configuration=configuration) as client:
-            api = AlgorithmApi(api_client=client)
-            resp = api.api_v1_algorithms_build_post(
-                algorithm=algorithm,
-                image=image,
-                tag=tag,
-                source_type="github",
-                github_token=token,
-                github_repo=repo,
-                github_branch=branch,
-                github_path=path,
-                force_rebuild=force_rebuild,
-            )
-    except (BadRequestException, NotFoundException, ServiceException) as e:
-        logger.error(f"Failed to build algorithm '{algorithm}': {e}")
-        return
+    configuration = get_configuration(host=config.base_url)
+    with ApiClient(configuration=configuration) as client:
+        api = AlgorithmApi(api_client=client)
+        resp = api.api_v1_algorithms_build_post(
+            algorithm=algorithm,
+            image=image,
+            tag=tag,
+            source_type="github",
+            github_token=token,
+            github_repo=repo,
+            github_branch=branch,
+            github_path=path,
+            force_rebuild=force_rebuild,
+        )
 
     if resp is not None:
         get_algorithm_item(host=config.base_url, response=resp)
