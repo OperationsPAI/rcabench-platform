@@ -3,6 +3,8 @@ from pathlib import Path
 from contextlib import contextmanager
 import os
 
+ENV_MODE_KEY = "ENV_MODE"
+
 
 @dataclass(kw_only=True)
 class Config:
@@ -50,7 +52,7 @@ CONFIG_CLASSES = {
 
 
 def _get_config() -> Config:
-    env = os.getenv("ENV_MODE", "prod").lower()
+    env = os.getenv(ENV_MODE_KEY, "prod").lower()
     return CONFIG_CLASSES.get(env, _PROD_CONFIG)
 
 
