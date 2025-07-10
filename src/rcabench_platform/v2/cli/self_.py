@@ -1,7 +1,6 @@
 from ..config import get_config
 from ..clients.rcabench_ import RcabenchSdkHelper, get_rcabench_sdk
 from ..clients.clickhouse import get_clickhouse_client
-from ..clients.rcabench_ import RcabenchSdkHelper
 from ..logging import logger, timeit
 
 import traceback
