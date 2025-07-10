@@ -20,6 +20,7 @@ dependencies = [ #
     "numpy>=2.2.6",
     "pandas>=2.3.1",
     "pyarrow>=20.0.0",
+    "python-dotenv>=1.1.1",
     "rcabench>=1.0.45",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
