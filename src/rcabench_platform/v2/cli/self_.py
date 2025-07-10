@@ -38,12 +38,6 @@ def test() -> None:
         logger.error(f"ClickHouse ping failed: {e}")
 
     try:
-        ping_rcabench()
-    except Exception as e:
-        traceback.print_exc()
-        logger.error(f"RCABench ping failed: {e}")
-
-    try:
         config = get_config()
         config.data.stat()
         logger.opt(colors=True).info(f"config.data is found: <green>{config.data}</green>")
