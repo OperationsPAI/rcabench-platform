@@ -9,6 +9,7 @@ from rcabench.openapi import (
     InjectionApi,
     DtoQueryInjectionResp,
     DtoFaultInjectionWithIssuesResp,
+    DatabaseFaultInjectionSchedule,
 )
 
 
@@ -44,5 +45,11 @@ class RcabenchSdkHelper:
     def get_analysis_with_issues(self) -> list[DtoFaultInjectionWithIssuesResp]:
         api = InjectionApi(self.api_client)
         resp = api.api_v1_injections_analysis_with_issues_get()
+        assert resp.data is not None
+        return resp.data
+
+    def list_injections(self) -> list[DatabaseFaultInjectionSchedule]:
+        api = InjectionApi(self.api_client)
+        resp = api.api_v1_injections_get()
         assert resp.data is not None
         return resp.data
