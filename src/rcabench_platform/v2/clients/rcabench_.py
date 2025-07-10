@@ -8,7 +8,7 @@ from rcabench.openapi import (
     InjectionApi,
     DtoQueryInjectionResp,
     DtoFaultInjectionWithIssuesResp,
-    DtoQueryInjectionResp,
+    DatabaseFaultInjectionSchedule,
 )
 
 
