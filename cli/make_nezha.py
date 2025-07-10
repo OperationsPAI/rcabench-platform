@@ -2,7 +2,7 @@
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.sources.convert import convert_dataset, DatasetLoader, DatapackLoader, Label
-from datetime import datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from pathlib import Path
 import polars as pl
@@ -14,7 +14,7 @@ import typer
 
 def to_utc_time(time_str: str) -> datetime:
     dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-    return dt.replace(tzinfo=UTC)
+    return dt.replace(tzinfo=timezone.utc)
 
 
 def parse_time_utc(time_str: str) -> datetime | None:

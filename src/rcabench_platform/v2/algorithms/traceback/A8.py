@@ -6,26 +6,23 @@ from ...logging import logger, timeit
 
 from ...datasets.rcabench import rcabench_fix_injection
 
-from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, PlaceKind, PlaceNode
 from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
-from ...graphs.sdg.neo4j import export_sdg_to_neo4j
 from ...graphs.networkx.neo4j import export_networkx_to_neo4j
 
-from ...utils.serde import load_json, save_parquet
+from ...utils.serde import load_json
 from ...utils.env import debug
+from ....compat import StrEnum
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 from collections import defaultdict
-from enum import StrEnum, auto
+from enum import auto
 from pprint import pformat
-from pathlib import Path
-from typing import Self
 from queue import Queue
 
 import networkx as nx
 import polars as pl
-import numpy as np
 
 
 class TraceBackA8(Algorithm):

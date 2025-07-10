@@ -42,7 +42,7 @@ def load_inject_time(input_folder: Path) -> datetime.datetime:
 
     with open(inject_time_file) as f:
         timestamp = int(f.read().strip())
-    inject_time = datetime.datetime.fromtimestamp(timestamp, tz=datetime.UTC)
+    inject_time = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
 
     logger.debug(f"inject_time=`{inject_time}`")
     return inject_time

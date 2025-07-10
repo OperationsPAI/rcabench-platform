@@ -1,10 +1,13 @@
 from ...logging import logger
 
+from ....compat import StrEnum
+
 from dataclasses import dataclass, field
 from collections import defaultdict
 from collections.abc import Iterable
-from enum import StrEnum, auto
-from typing import Any, Self, TypeAlias
+from enum import auto
+from typing import Any, TypeAlias
+from typing_extensions import Self
 import itertools
 
 
