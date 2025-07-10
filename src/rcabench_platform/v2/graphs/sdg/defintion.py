@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 from collections.abc import Iterable
 from enum import StrEnum, auto
-from typing import Any, Self
+from typing import Any, Self, TypeAlias
 import itertools
 
 
@@ -265,7 +265,7 @@ class SDG:
         return list(ans)
 
 
-type ExpandedGraphPath = list[PlaceNode | DepEdge]
+ExpandedGraphPath: TypeAlias = list[PlaceNode | DepEdge]
 
 
 @dataclass(kw_only=True, slots=True, frozen=True)

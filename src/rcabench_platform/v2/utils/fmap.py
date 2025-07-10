@@ -3,7 +3,7 @@ from ..config import set_config, get_config
 from ..algorithms.spec import global_algorithm_registry, set_global_algorithm_registry
 
 from collections.abc import Callable, Sequence
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 import multiprocessing
 import multiprocessing.pool
 import traceback
@@ -25,7 +25,10 @@ def call_initializers(init_list: list[tuple[Callable, Any]]) -> None:
         func(*args)
 
 
-def _fmap[R](
+R = TypeVar("R")
+
+
+def _fmap(
     mode: Literal["threadpool", "processpool"],
     tasks: Sequence[Callable[[], R]],
     *,
@@ -118,10 +121,10 @@ def _fmap[R](
 
 
 @timeit(log_args=False)
-def fmap_threadpool[R](tasks: Sequence[Callable[[], R]], *, parallel: int, ignore_exceptions: bool = False) -> list[R]:
+def fmap_threadpool(tasks: Sequence[Callable[[], R]], *, parallel: int, ignore_exceptions: bool = False) -> list[R]:
     return _fmap("threadpool", tasks, parallel=parallel, ignore_exceptions=ignore_exceptions)
 
 
 @timeit(log_args=False)
-def fmap_processpool[R](tasks: Sequence[Callable[[], R]], *, parallel: int, ignore_exceptions: bool = False) -> list[R]:
+def fmap_processpool(tasks: Sequence[Callable[[], R]], *, parallel: int, ignore_exceptions: bool = False) -> list[R]:
     return _fmap("processpool", tasks, parallel=parallel, ignore_exceptions=ignore_exceptions)
