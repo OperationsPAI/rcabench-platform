@@ -380,8 +380,8 @@ class RcabenchDatapackLoader(DatapackLoader):
                 name = f"{prefix}{key}.parquet"
                 ans[name] = func(self._src_folder / name)
 
-        ans["_traces"] = convert_traces(self._src_folder / "normal_traces.parquet", p99=True)
-        ans["_traces"] = convert_traces(self._src_folder / "abnormal_traces.parquet", p99=False)
+        ans["normal_traces.parquet"] = convert_traces(self._src_folder / "normal_traces.parquet", p99=True)
+        ans["abnormal_traces.parquet"] = convert_traces(self._src_folder / "abnormal_traces.parquet", p99=False)
 
         return ans
 
