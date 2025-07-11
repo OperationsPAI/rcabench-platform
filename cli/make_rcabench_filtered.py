@@ -285,6 +285,8 @@ def scan_large_latency_in_normal_range(datapack_folder: Path) -> bool:
     lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
     lf = lf.select(pl.col("duration").max())
     max_duration = lf.collect().item()
+    if max_duration is None:
+        return False
     return max_duration > 5 * 1e9
 
 
