@@ -21,7 +21,9 @@ def run(db_only: bool = False, require_filtered: bool = False):
     rows = []
     for item in with_issues_resp:
         assert item.injection_name
-        assert item.engine_config and item.engine_config.value
+        assert item.engine_config
+        assert item.engine_config.value is not None
+
         row = {
             "injection_name": item.injection_name,
             "fault_type": FAULT_TYPES[item.engine_config.value],
