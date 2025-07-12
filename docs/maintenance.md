@@ -23,7 +23,7 @@ For patch releases (bug fixes, minor improvements), use the automated release sc
 ./scripts/release-patch.sh
 ```
 
-#### What the script does:
+What the script does:
 
 1. **Switches to main branch**: Ensures you're working from the correct branch
 2. **Checks working tree**: Verifies there are no uncommitted changes
@@ -43,8 +43,8 @@ The **fundamental** image containing the project code and dependencies.
 Build and push:
 
 ```bash
-./scripts/docker.sh build
-./scripts/docker.sh push
+./scripts/docker.py build rcabench-platform
+./scripts/docker.py push  rcabench-platform
 ```
 
 This image serves as the base for other images and **should be built first**.
@@ -58,9 +58,8 @@ It is used by [rcabench](https://github.com/LGU-SE-Internal/rcabench) services.
 Build and push:
 
 ```bash
-cd docker/clickhouse_dataset
-./cli.sh build
-./cli.sh push
+./scripts/docker.py build clickhouse_dataset
+./scripts/docker.py push  clickhouse_dataset
 ```
 
 ### detector
@@ -72,7 +71,6 @@ It is used by [rcabench](https://github.com/LGU-SE-Internal/rcabench) services.
 Build and push:
 
 ```bash
-cd docker/detector
-./cli.sh build
-./cli.sh push
+./scripts/docker.py build detector
+./scripts/docker.py push  detector
 ```
