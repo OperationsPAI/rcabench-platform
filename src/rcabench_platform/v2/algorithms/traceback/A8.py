@@ -362,6 +362,9 @@ def is_anomal_service(sdg, node: PlaceNode) -> bool:
     if node.kind != PlaceKind.service:
         return False
 
+    if node.self_name == "loadgenerator-service":
+        return False
+
     anomalies = detect_node_anomalies(sdg, node)
     if not anomalies:
         return False
