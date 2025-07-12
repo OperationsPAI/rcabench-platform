@@ -192,6 +192,22 @@ This call will run the evaluation in debug mode without clearing the existing ou
 
 The algorithms can be accelerated by caching intermediate calculations in the output directory. However, you should enable caching only when debugging the algorithm, as it may cause issues when the algorithm implementation changes.
 
+### Automatic Parallelization
+
+The `eval batch` subcommand automatically parallelizes the evaluation process. The degree of parallelism is determined by the algorithm's implementation and the available CPUs.
+
+An algorithm can specify how many CPUs it needs for a single run by implementing the `needs_cpu_count()` method.
++ If it returns `None`, the algorithm will be run sequentially across all datapacks.
++ If it returns an integer `N` (where `N > 0`), the runner will execute multiple instances of the algorithm in parallel.
+
+The total number of CPUs for the runner can be specified with the `--use-cpus` flag. If not specified, it defaults to using all available CPUs minus 4. The number of parallel processes is then calculated as `floor(usable_cpus / N)`.
+
+For example, if an algorithm needs 8 CPUs, and the machine has 128 CPUs, then `floor((128 - 4) / 8) = 15` processes will be run in parallel. If you want to use only 64 CPUs, you can specify `--use-cpus=64`, and then `floor(64 / 8) = 8` processes will be run in parallel.
+
+For heavy algorithms using PyTorch, the `needs_cpu_count()` method should return `None` to avoid running multiple instances in parallel, as it can lead to excessive contention for CPU, GPU and memory resources.
+
+You can also build your own parallel runner by calling the `run_single` function from the `rcabench_platform.v2.experiments.single` module.
+
 ## Analysis
 
 ### SDG Visualization
