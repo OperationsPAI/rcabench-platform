@@ -54,7 +54,7 @@ def build(image_name: str):
         tmp = Path(".docker-build")
         tmp.mkdir(exist_ok=True)
 
-        sh_out(["uv", "version", "0.0.0"])
+        sh(["uv", "version", "0.0.0"])
         shutil.copyfile("pyproject.toml", tmp / "pyproject.toml")
         shutil.copyfile("uv.lock", tmp / "uv.lock")
 
