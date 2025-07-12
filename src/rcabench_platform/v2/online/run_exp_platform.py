@@ -33,7 +33,7 @@ def run(*, enable_builtin_algorithms: bool = True):
         injection_name = injection["injection_name"]
         assert isinstance(injection_name, str) and injection_name
 
-    converted_input_path = output_path / "converted"
+    converted_input_path = input_path / "converted"
 
     convert_datapack(
         loader=RcabenchDatapackLoader(src_folder=input_path, datapack=injection_name),
