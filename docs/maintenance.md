@@ -36,6 +36,12 @@ What the script does:
 
 This project manages several Docker images to support its functionality.
 
+### Update All Images
+
+```bash
+./scripts/docker.py update-all
+```
+
 ### rcabench-platform
 
 The **fundamental** image containing the project code and dependencies.

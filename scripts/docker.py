@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app
+from rcabench_platform.v2.cli.main import app, timeit
 
 from pathlib import Path
 import subprocess
@@ -7,9 +7,9 @@ import shutil
 import os
 
 CONTEXTS: dict[str, Path] = {
-    "rcabench-platform": Path("."),
-    "clickhouse_dataset": Path("docker/clickhouse_dataset"),
-    "detector": Path("docker/detector"),
+    "rcabench-platform": Path.cwd(),
+    "clickhouse_dataset": Path.cwd() / "docker/clickhouse_dataset",
+    "detector": Path.cwd() / "docker/detector",
 }
 
 IMAGE_PREFIX = "10.10.10.240/library"
@@ -39,6 +39,7 @@ def get_project_version() -> str:
 
 
 @app.command()
+@timeit()
 def build(image_name: str):
     assert_clean()
 
@@ -85,6 +86,7 @@ def build(image_name: str):
 
 
 @app.command()
+@timeit()
 def push(image_name: str):
     directory = CONTEXTS[image_name]
     os.chdir(directory)
@@ -96,6 +98,16 @@ def push(image_name: str):
 
     image_latest = f"{IMAGE_PREFIX}/{image_name}:latest"
     sh(["docker", "push", image_latest])
+
+
+@app.command()
+@timeit()
+def update_all():
+    for image_name in CONTEXTS:
+        build(image_name)
+
+    for image_name in CONTEXTS:
+        push(image_name)
 
 
 if __name__ == "__main__":
