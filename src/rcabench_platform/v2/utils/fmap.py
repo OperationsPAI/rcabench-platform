@@ -8,16 +8,39 @@ import multiprocessing
 import multiprocessing.pool
 import traceback
 import time
+import os
 
 from tqdm.auto import tqdm
 
 
-def initializers() -> list[tuple[Callable, Any]]:
-    return [
+def set_cpu_limit_outer(n: int | None) -> None:
+    if n is None:
+        return
+
+    os.environ["POLARS_MAX_THREADS"] = str(n)
+
+
+def set_cpu_limit_inner(n: int | None) -> None:
+    if n is None:
+        return
+
+    try:
+        import torch  # type: ignore
+
+        torch.set_num_threads(n)
+    except ImportError:
+        pass
+
+
+def initializers(*, cpu_limit: int | None = None) -> list[tuple[Callable, Any]]:
+    ans = [
+        (set_cpu_limit_inner, (cpu_limit,)),
         (set_real_logger, (get_real_logger(),)),
         (set_config, (get_config(),)),
         (set_global_algorithm_registry, (global_algorithm_registry(),)),
     ]
+
+    return ans
 
 
 def call_initializers(init_list: list[tuple[Callable, Any]]) -> None:
@@ -33,8 +56,13 @@ def _fmap(
     tasks: Sequence[Callable[[], R]],
     *,
     parallel: int,
-    ignore_exceptions: bool = False,
+    ignore_exceptions: bool,
+    cpu_limit_each: int | None,
 ) -> list[R]:
+    if cpu_limit_each is not None:
+        assert mode == "processpool", "cpu_limit is only supported for processpool mode"
+        assert cpu_limit_each > 0, "cpu_limit must be greater than 0"
+
     if not isinstance(tasks, list):
         tasks = list(tasks)
 
@@ -55,6 +83,7 @@ def _fmap(
                 processes=num_workers,
             )
         elif mode == "processpool":
+            set_cpu_limit_outer(cpu_limit_each)
             pool = multiprocessing.get_context("spawn").Pool(
                 processes=num_workers,
                 initializer=call_initializers,
@@ -121,10 +150,33 @@ def _fmap(
 
 
 @timeit(log_args=False)
-def fmap_threadpool(tasks: Sequence[Callable[[], R]], *, parallel: int, ignore_exceptions: bool = False) -> list[R]:
-    return _fmap("threadpool", tasks, parallel=parallel, ignore_exceptions=ignore_exceptions)
+def fmap_threadpool(
+    tasks: Sequence[Callable[[], R]],
+    *,
+    parallel: int,
+    ignore_exceptions: bool = False,
+) -> list[R]:
+    return _fmap(
+        "threadpool",
+        tasks,
+        parallel=parallel,
+        ignore_exceptions=ignore_exceptions,
+        cpu_limit_each=None,
+    )
 
 
 @timeit(log_args=False)
-def fmap_processpool(tasks: Sequence[Callable[[], R]], *, parallel: int, ignore_exceptions: bool = False) -> list[R]:
-    return _fmap("processpool", tasks, parallel=parallel, ignore_exceptions=ignore_exceptions)
+def fmap_processpool(
+    tasks: Sequence[Callable[[], R]],
+    *,
+    parallel: int,
+    ignore_exceptions: bool = False,
+    cpu_limit_each: int | None = None,
+) -> list[R]:
+    return _fmap(
+        "processpool",
+        tasks,
+        parallel=parallel,
+        ignore_exceptions=ignore_exceptions,
+        cpu_limit_each=cpu_limit_each,
+    )

@@ -48,9 +48,6 @@ def run_batch(
                 usable_cpu_count = use_cpus or max(multiprocessing.cpu_count() - 4, 0)
                 parallel = usable_cpu_count // alg_cpu_count
 
-                if parallel:
-                    os.environ["POLARS_MAX_THREADS"] = str(alg_cpu_count)
-
             del alg
 
             tasks = []
@@ -67,7 +64,7 @@ def run_batch(
                 )
 
             t0 = time.time()
-            fmap_processpool(tasks, parallel=parallel)
+            fmap_processpool(tasks, parallel=parallel, cpu_limit_each=alg_cpu_count)
             t1 = time.time()
 
             total_walltime = t1 - t0
