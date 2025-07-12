@@ -1,7 +1,9 @@
 from ..config import get_config
+from ..logging import timeit
 
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 
 import polars as pl
 
@@ -95,3 +97,12 @@ def read_dataset_labels(dataset: str) -> pl.DataFrame:
     labels_path = get_dataset_labels_path(dataset)
     labels_df = pl.read_parquet(labels_path)
     return labels_df
+
+
+@timeit()
+def delete_dataset(dataset: str):
+    meta_folder = get_dataset_meta_folder(dataset)
+    data_folder = get_dataset_folder(dataset)
+
+    shutil.rmtree(meta_folder, ignore_errors=True)
+    shutil.rmtree(data_folder, ignore_errors=True)
