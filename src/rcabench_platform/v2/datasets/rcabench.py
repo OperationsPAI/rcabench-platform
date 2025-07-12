@@ -1,6 +1,13 @@
+from ..sources.convert import link_subset
+from ..logging import logger, timeit
+
+from collections import defaultdict
 from typing import Any
+import random
+import math
 import json
 import re
+
 
 DATAPACK_PATTERN = (
     r"(ts|ts\d)-(mysql|ts-rabbitmq|ts-ui-dashboard|ts-\w+-service|ts-\w+-\w+-service|ts-\w+-\w+-\w+-service)-(.+)-[^-]+"
@@ -157,3 +164,69 @@ def rcabench_fix_injection_display_config(display_config: dict[str, Any]) -> Non
         if v is None:
             continue
         display_config[k] = d[v]
+
+
+@timeit(log_args={"ratio", "train_dataset_name", "test_dataset_name"})
+def rcabench_split_train_test(
+    datapacks: list[str],
+    train_ratio: float,
+    train_dataset_name: str,
+    test_dataset_name: str,
+    previous_train_datapacks: list[str],
+    previous_test_datapacks: list[str],
+):
+    assert len(datapacks) > 0, "Datapacks list cannot be empty."
+    assert 0 < train_ratio < 1, "Ratio must be between 0 and 1."
+
+    assert train_dataset_name and test_dataset_name
+    assert train_dataset_name != test_dataset_name
+
+    prev_train_set = set(previous_train_datapacks)
+    prev_test_set = set(previous_test_datapacks)
+    additional_datapacks = set(datapacks) - prev_train_set - prev_test_set
+
+    group_by_service: defaultdict[str, list[str]] = defaultdict(list)
+    for datapack in additional_datapacks:
+        service_name = rcabench_get_service_name(datapack)
+        group_by_service[service_name].append(datapack)
+
+    min_group_size = min(len(v) for v in group_by_service.values())
+    logger.debug("min_group_size: {}", min_group_size)
+
+    threshold = min_group_size
+    while True:
+        train_total = 0
+        for service_datapacks in group_by_service.values():
+            num_train = math.ceil(len(service_datapacks) * train_ratio)
+            num_train = min(num_train, threshold)
+            train_total += num_train
+
+        target = len(additional_datapacks) * train_ratio
+
+        logger.debug("threshold={} (train_total={}, target={})", threshold, train_total, target)
+
+        if train_total >= target:
+            break
+
+        threshold += 1
+
+    train_datapacks: list[str] = []
+    test_datapacks: list[str] = []
+
+    for service_name, service_datapacks in group_by_service.items():
+        random.shuffle(service_datapacks)
+
+        num_train = math.ceil(len(service_datapacks) * train_ratio)
+        num_train = min(num_train, threshold)
+
+        train_datapacks.extend(service_datapacks[:num_train])
+        test_datapacks.extend(service_datapacks[num_train:])
+
+    train_datapacks = list(prev_train_set) + train_datapacks
+    test_datapacks = list(prev_test_set) + test_datapacks
+
+    link_subset("rcabench", train_dataset_name, train_datapacks)
+    link_subset("rcabench", test_dataset_name, test_datapacks)
+
+    logger.info("train dataset: {} ({} datapacks)", train_dataset_name, len(train_datapacks))
+    logger.info("test dataset: {} ({} datapacks)", test_dataset_name, len(test_datapacks))
