@@ -7,7 +7,6 @@ An experiment framework for Root Cause Analysis (RCA), supporting fast developme
 + [Development Guide](./CONTRIBUTING.md): How to set up the development environment and contribute to this project.
 + [Specifications](./docs/specifications.md): Our design details about RCA algorithms and data formats.
 + [Workflow References](./docs/workflow-references.md): How to use the functionalities of this project.
-+ [Docker Images](./docs/docker-images.md): How to manage docker images in this project.
 + [Maintenance](./docs/maintenance.md): Guidelines for maintaining the project and release procedures.
 
 ## Related Projects

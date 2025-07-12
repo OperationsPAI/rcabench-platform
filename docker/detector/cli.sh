@@ -4,6 +4,12 @@ IMAGE_NAME="detector"
 COMMIT_HASH=$(git rev-parse --short HEAD)
 IMAGE_FULL="${IMAGE_PREFIX}/${IMAGE_NAME}:${COMMIT_HASH}"
 
+# assert that `entrypoint.sh` exists
+if [[ ! -f ./entrypoint.sh ]]; then
+    echo "entrypoint.sh not found in the current directory."
+    exit 1
+fi
+
 function build() {
     # assert that the working directory is clean
     [[ -z "$(git status -s)" ]] # https://stackoverflow.com/a/9393642
