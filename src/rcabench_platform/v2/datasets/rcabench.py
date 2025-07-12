@@ -166,7 +166,7 @@ def rcabench_fix_injection_display_config(display_config: dict[str, Any]) -> Non
         display_config[k] = d[v]
 
 
-@timeit(log_args={"ratio", "train_dataset_name", "test_dataset_name"})
+@timeit(log_args={"train_ratio", "train_dataset_name", "test_dataset_name"})
 def rcabench_split_train_test(
     datapacks: list[str],
     train_ratio: float,
