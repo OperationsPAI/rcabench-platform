@@ -37,6 +37,12 @@ git clone git@github.com:LGU-SE-Internal/rcabench-platform.git
 cd rcabench-platform
 ```
 
+### Install Dependencies
+
+```bash
+uv sync --all-extras
+```
+
 ### Run Basic Checks
 
 ```bash

@@ -24,11 +24,11 @@ WORKDIR /app
 # FIXME: https://github.com/astral-sh/uv-docker-example/issues/61
 COPY .docker-build/pyproject.toml .docker-build/uv.lock /app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-install-project
+    uv sync --all-extras --locked --no-install-project
 
 ADD . /app
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked
+    uv sync --all-extras --locked
 
 CMD ["/bin/bash"]

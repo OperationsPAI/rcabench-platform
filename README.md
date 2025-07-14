@@ -4,26 +4,6 @@ An experiment framework for Root Cause Analysis (RCA), supporting fast developme
 
 ## Installation
 
-### Development Installation
-
-Install the basic package for development:
-
-```bash
-uv sync
-```
-
-For dataset analysis functionality (includes visualization tools):
-
-```bash
-# Using dependency groups (for development)
-uv sync --group analysis
-
-# Or using optional dependencies
-uv sync --extra analysis
-```
-
-### Adding to Another Project
-
 To add this package to another uv-managed project:
 
 ```bash
@@ -46,6 +26,5 @@ The `analysis` extra includes additional dependencies like `graphviz` and `matpl
 ## Related Projects
 
 + [rcabench](https://github.com/LGU-SE-Internal/rcabench)
-+ [rca-algo-template](https://github.com/LGU-SE-Internal/rca-algo-template)
 + [rca-algo-contrib](https://github.com/LGU-SE-Internal/rca-algo-contrib)
 + [rca-algo-random](https://github.com/LGU-SE-Internal/rca-algo-random)
