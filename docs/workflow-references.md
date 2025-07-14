@@ -217,3 +217,36 @@ Edit the SDG notebook to visualize datapacks:
 ```bash
 ./notebooks/sdg.py
 ```
+
+## Online Mode
+
+The online mode uses [rcabench](https://github.com/LGU-SE-Internal/rcabench) services to run workflows on remote servers.
+
+### query injection
+
+```bash
+./main.py online query-injection --help
+
+# example
+./main.py online query-injection ts5-ts-ui-dashboard-request-replace-method-fjhvwr
+```
+
+### list algorithms
+
+```bash
+./main.py online list-algorithms
+```
+
+### submit execution
+
+```bash
+./main.py online submit-execution --help
+
+# example
+./main.py online submit-execution \
+    -a eadro \
+    -d ts5-ts-ui-dashboard-request-replace-method-fjhvwr \
+    --env CHECKPOINT_PATH="/experiment_storage/eadro/checkpoints/exp_rcabench_20250712_115132/best_model.ckpt" \
+    --env DYNACONF_PATHS__METADATA="/experiment_storage/eadro/metadata" \
+    --env DYNACONF_PATHS__CKPT="/experiment_storage/eadro/checkpoints"
+```
