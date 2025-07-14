@@ -210,6 +210,32 @@ You can also build your own parallel runner by calling the `run_single` function
 
 ## Analysis
 
+### Algorithm Execution
+
+Execute algorithms on datasets using the rcabench service:
+
+```bash
+./main.py rcabench execute-algorithm --help
+```
+
+Submit an algorithm for execution on a specific dataset:
+
+```bash
+# Basic usage
+./main.py rcabench execute-algorithm traceback-A7 ts3-ts-route-plan-service-request-delay-59s2q4
+
+# With custom container image
+./main.py rcabench execute-algorithm traceback-A7 ts3-ts-route-plan-service-request-delay-59s2q4 --image my-custom-image --tag v1.0
+
+# Example with baro algorithm
+./main.py rcabench execute-algorithm baro rcabench_filtered_sample_dataset
+```
+
+The command will:
++ Submit the algorithm execution request to the rcabench service
++ Display the execution response with task traces
++ Show the final status (SUCCESS/FAILURE)
+
 ### SDG Visualization
 
 Edit the SDG notebook to visualize datapacks:

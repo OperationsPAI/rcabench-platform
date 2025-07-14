@@ -43,3 +43,51 @@ def list_injections():
         items.append(item.model_dump())
 
     pprint(items)
+
+
+@app.command()
+@timeit()
+def execute_algorithm(
+    algorithm_name: str,
+    dataset_name: str,
+    image: str | None = None,
+    tag: str | None = None,
+):
+    """Execute an algorithm on a dataset.
+    
+    Args:
+        algorithm_name: Name of the algorithm to execute
+        dataset_name: Name of the dataset/datapack to process
+        image: Optional container image name
+        tag: Optional container image tag
+    """
+    sdk = RcabenchSdkHelper()
+    
+    try:
+        resp = sdk.execute_algorithm(
+            algorithm_name=algorithm_name,
+            dataset_name=dataset_name,
+            image=image,
+            tag=tag
+        )
+        
+        print(f"Algorithm execution submitted successfully!")
+        print(f"Response code: {resp.code}")
+        print(f"Message: {resp.message}")
+        
+        if resp.data and resp.data.traces:
+            print(f"Execution traces:")
+            for trace in resp.data.traces:
+                print(f"  - Trace ID: {trace.trace_id}")
+                print(f"    Head Task ID: {trace.head_task_id}")
+                print(f"    Index: {trace.index}")
+        
+        # Determine success/failure based on response code
+        if resp.code == 200:
+            print("Status: SUCCESS")
+        else:
+            print("Status: FAILURE")
+            
+    except Exception as e:
+        print(f"Algorithm execution failed: {str(e)}")
+        print("Status: FAILURE")

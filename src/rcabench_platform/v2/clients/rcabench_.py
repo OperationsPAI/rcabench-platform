@@ -6,9 +6,13 @@ from rcabench.openapi import (
     ApiClient,
     Configuration,
     InjectionApi,
+    AlgorithmApi,
     DtoQueryInjectionResp,
     DtoFaultInjectionWithIssuesResp,
     DatabaseFaultInjectionSchedule,
+    DtoExecutionPayload,
+    DtoAlgorithmItem,
+    DtoGenericResponseDtoSubmitResp,
 )
 
 
@@ -52,3 +56,36 @@ class RcabenchSdkHelper:
         resp = api.api_v1_injections_get()
         assert resp.data is not None
         return resp.data
+
+    def execute_algorithm(
+        self, *, algorithm_name: str, dataset_name: str, image: str | None = None, tag: str | None = None
+    ) -> DtoGenericResponseDtoSubmitResp:
+        """Execute an algorithm on a dataset.
+        
+        Args:
+            algorithm_name: Name of the algorithm to execute
+            dataset_name: Name of the dataset/datapack to process
+            image: Optional container image name
+            tag: Optional container image tag
+            
+        Returns:
+            Response containing execution details including task traces
+        """
+        api = AlgorithmApi(self.api_client)
+        
+        # Create algorithm item
+        algorithm_item = DtoAlgorithmItem(
+            name=algorithm_name,
+            image=image,
+            tag=tag
+        )
+        
+        # Create execution payload
+        execution_payload = DtoExecutionPayload(
+            algorithm=algorithm_item,
+            dataset=dataset_name
+        )
+        
+        # Submit execution
+        resp = api.api_v1_algorithms_post(body=[execution_payload])
+        return resp
