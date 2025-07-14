@@ -72,7 +72,7 @@ def list_algorithms():
 def submit_execution(
     algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
     datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
-    envs: Annotated[list[str], typer.Option("--env")],
+    envs: Annotated[list[str] | None, typer.Option("--env")] = None,
 ):
     from rcabench.openapi.models import DtoExecutionPayload, DtoAlgorithmItem
 
@@ -80,11 +80,12 @@ def submit_execution(
     assert datasets, "At least one dataset must be specified."
 
     env_vars: dict[str, str] = {}
-    for env in envs:
-        if "=" not in env:
-            raise ValueError(f"Invalid environment variable format: {env}. Expected 'key=value'.")
-        key, value = env.split("=", 1)
-        env_vars[key] = value
+    if envs is not None:
+        for env in envs:
+            if "=" not in env:
+                raise ValueError(f"Invalid environment variable format: `{env}`. Expected 'key=value'.")
+            key, value = env.split("=", 1)
+            env_vars[key] = value
 
     payloads = []
     for algorithm in algorithms:
