@@ -5,7 +5,7 @@ from ..clients.rcabench_ import get_rcabench_openapi_client
 from ..logging import logger, timeit
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 import json
 
 from rcabench.openapi import InjectionApi, AlgorithmApi
@@ -64,4 +64,41 @@ def list_algorithms():
     assert resp.data is not None
 
     ans = [item.model_dump() for item in resp.data]
+    print_json(ans)
+
+
+@app.command()
+@timeit()
+def submit_execution(
+    algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
+    datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
+    envs: Annotated[list[str], typer.Option("--env")],
+):
+    from rcabench.openapi.models import DtoExecutionPayload, DtoAlgorithmItem
+
+    assert algorithms, "At least one algorithm must be specified."
+    assert datasets, "At least one dataset must be specified."
+
+    env_vars: dict[str, str] = {}
+    for env in envs:
+        if "=" not in env:
+            raise ValueError(f"Invalid environment variable format: {env}. Expected 'key=value'.")
+        key, value = env.split("=", 1)
+        env_vars[key] = value
+
+    payloads = []
+    for algorithm in algorithms:
+        for dataset in datasets:
+            payload = DtoExecutionPayload(
+                algorithm=DtoAlgorithmItem(name=algorithm),
+                dataset=dataset,
+                env_vars=env_vars,
+            )
+            payloads.append(payload)
+
+    api = AlgorithmApi(get_rcabench_openapi_client())
+    resp = api.api_v1_algorithms_post(body=payloads)
+    assert resp.data is not None
+
+    ans = resp.data.model_dump()
     print_json(ans)
