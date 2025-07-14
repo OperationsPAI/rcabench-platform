@@ -23,13 +23,14 @@ def _():
 
 
 def main(*, enable_builtin_algorithms: bool = True) -> None:
-    from . import self_, tools, rcabench_, sdg, eval
+    from . import self_, tools, rcabench_, sdg, eval, container
 
     app.add_typer(self_.app, name="self")
     app.add_typer(tools.app, name="tools")
     app.add_typer(rcabench_.app, name="rcabench")
     app.add_typer(sdg.app, name="sdg")
     app.add_typer(eval.app, name="eval")
+    app.add_typer(container.app, name="container")
 
     if enable_builtin_algorithms:
         register_builtin_algorithms()
