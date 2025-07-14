@@ -2,6 +2,40 @@
 
 An experiment framework for Root Cause Analysis (RCA), supporting fast development of RCA algorithms and their evaluation on various datasets.
 
+## Installation
+
+### Development Installation
+
+Install the basic package for development:
+
+```bash
+uv sync
+```
+
+For dataset analysis functionality (includes visualization tools):
+
+```bash
+# Using dependency groups (for development)
+uv sync --group analysis
+
+# Or using optional dependencies
+uv sync --extra analysis
+```
+
+### Adding to Another Project
+
+To add this package to another uv-managed project:
+
+```bash
+# Install basic package
+uv add rcabench-platform
+
+# Install with dataset analysis functionality
+uv add "rcabench-platform[analysis]"
+```
+
+The `analysis` extra includes additional dependencies like `graphviz` and `matplotlib` needed for the dataset analysis features.
+
 ## Documentation
 
 + [Development Guide](./CONTRIBUTING.md): How to set up the development environment and contribute to this project.

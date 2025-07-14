@@ -955,6 +955,15 @@ wheels = [
 ]
 
 [[package]]
+name = "graphviz"
+version = "0.21"
+source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/f8/b3/3ac91e9be6b761a4b30d66ff165e54439dcd48b83f4e20d644867215f6ca/graphviz-0.21.tar.gz", hash = "sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78", size = 200434, upload-time = "2025-06-15T09:35:05.824Z" }
+wheels = [
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/91/4c/e0ce1ef95d4000ebc1c11801f9b944fa5910ecc15b5e351865763d8657f8/graphviz-0.21-py3-none-any.whl", hash = "sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42", size = 47300, upload-time = "2025-06-15T09:35:04.433Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
@@ -3141,7 +3150,6 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "kubernetes" },
     { name = "loguru" },
-    { name = "matplotlib" },
     { name = "minio" },
     { name = "neo4j" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }, marker = "python_full_version < '3.11'" },
@@ -3160,7 +3168,17 @@ dependencies = [
     { name = "typer" },
 ]
 
+[package.optional-dependencies]
+analysis = [
+    { name = "graphviz" },
+    { name = "matplotlib" },
+]
+
 [package.dev-dependencies]
+analysis = [
+    { name = "graphviz" },
+    { name = "matplotlib" },
+]
 dev = [
     { name = "ipykernel" },
     { name = "ipywidgets" },
@@ -3180,10 +3198,11 @@ dev = [
 requires-dist = [
     { name = "backports-strenum", marker = "python_full_version < '3.11'", specifier = ">=1.3.1" },
     { name = "clickhouse-connect", specifier = ">=0.8.18" },
+    { name = "graphviz", marker = "extra == 'analysis'", specifier = ">=0.20.3" },
     { name = "huggingface-hub", specifier = ">=0.33.2" },
     { name = "kubernetes", specifier = ">=33.1.0" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "matplotlib", specifier = ">=3.10.3" },
+    { name = "matplotlib", marker = "extra == 'analysis'", specifier = ">=3.10.3" },
     { name = "minio", specifier = ">=7.2.15" },
     { name = "neo4j", specifier = ">=5.28.1" },
     { name = "networkx", specifier = ">=3.4.2" },
@@ -3198,8 +3217,13 @@ requires-dist = [
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "typer", specifier = ">=0.16.0" },
 ]
+provides-extras = ["analysis"]
 
 [package.metadata.requires-dev]
+analysis = [
+    { name = "graphviz", specifier = ">=0.20.3" },
+    { name = "matplotlib", specifier = ">=3.10.3" },
+]
 dev = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "ipywidgets", specifier = ">=8.1.7" },

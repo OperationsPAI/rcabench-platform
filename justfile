@@ -14,7 +14,7 @@ lint:
     uv run pyright --pythonpath .venv/bin/python
 
 ci:
-    uv sync --locked
+    uv sync --extra analysis --locked
     uv run ruff format --check
     just lint
     uv build

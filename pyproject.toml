@@ -13,7 +13,6 @@ dependencies = [ #
     "huggingface-hub>=0.33.2",
     "kubernetes>=33.1.0",
     "loguru>=0.7.3",
-    "matplotlib>=3.10.3",
     "minio>=7.2.15",
     "neo4j>=5.28.1",
     "networkx>=3.4.2",
@@ -29,7 +28,17 @@ dependencies = [ #
     "typer>=0.16.0",
 ]
 
+[project.optional-dependencies]
+analysis = [
+    "graphviz>=0.20.3",
+    "matplotlib>=3.10.3",
+]
+
 [dependency-groups]
+analysis = [
+    "graphviz>=0.20.3",
+    "matplotlib>=3.10.3",
+]
 dev = [ #
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
