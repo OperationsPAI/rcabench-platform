@@ -69,108 +69,108 @@ def trace_execution(
     return sdk.trace.stream_trace_events(trace_id, timeout=timeout)
 
 
-@app.command()
-@timeit()
-def local(
-    env: str = "prod",
-    algorithm: str = "traceback",
-    filename: str = "traceback.zip",
-    image: str = "10.10.10.240/library/rca-algo-traceback-local-file",
-    tag: str = "latest",
-    force_rebuild: bool = False,
-):
-    """
-    Build and upload local file algorithm image
+# @app.command()
+# @timeit()
+# def local(
+#     env: str = "prod",
+#     algorithm: str = "traceback",
+#     filename: str = "traceback.zip",
+#     image: str = "10.10.10.240/library/rca-algo-traceback-local-file",
+#     tag: str = "latest",
+#     force_rebuild: bool = False,
+# ):
+#     """
+#     Build and upload local file algorithm image
 
-    Args:
-        env: Environment mode (prod or dev or debug)
-        filename: Source code filename
-        algorithm: Algorithm name
-        image: Docker image name
-        tag: Image tag
-        force_rebuild: Whether to force rebuild
-    """
+#     Args:
+#         env: Environment mode (prod or dev or debug)
+#         filename: Source code filename
+#         algorithm: Algorithm name
+#         image: Docker image name
+#         tag: Image tag
+#         force_rebuild: Whether to force rebuild
+#     """
 
-    config = get_config(env_mode=env)
+#     config = get_config(env_mode=env)
 
-    file_dir = config.temp
-    file_path = file_dir / filename
-    if not file_path.exists():
-        logger.error(f"File {file_path} does not exist. Please provide a valid file.")
-        raise FileNotFoundError(f"{file_path} does not exist.")
+#     file_dir = config.temp
+#     file_path = file_dir / filename
+#     if not file_path.exists():
+#         logger.error(f"File {file_path} does not exist. Please provide a valid file.")
+#         raise FileNotFoundError(f"{file_path} does not exist.")
 
-    with open(file_path, "rb") as f:
-        file_content = f.read()
+#     with open(file_path, "rb") as f:
+#         file_content = f.read()
 
-    resp = None
-    configuration = get_configuration(host=config.base_url)
-    with ApiClient(configuration=configuration) as client:
-        api = AlgorithmApi(api_client=client)
-        resp = api.api_v1_algorithms_build_post(
-            algorithm=algorithm,
-            image=image,
-            tag=tag,
-            source_type="file",
-            file=(filename, file_content),
-            force_rebuild=force_rebuild,
-        )
+#     resp = None
+#     configuration = get_configuration(host=config.base_url)
+#     with ApiClient(configuration=configuration) as client:
+#         api = AlgorithmApi(api_client=client)
+#         resp = api.api_v1_algorithms_build_post( # FIXME
+#             algorithm=algorithm,
+#             image=image,
+#             tag=tag,
+#             source_type="file",
+#             file=(filename, file_content),
+#             force_rebuild=force_rebuild,
+#         )
 
-    assert resp is not None
-    get_algorithm_item(host=config.base_url, response=resp)
+#     assert resp is not None
+#     get_algorithm_item(host=config.base_url, response=resp)
 
 
-@app.command()
-@timeit()
-def github(
-    env: str = "prod",
-    algorithm: str = "traceback",
-    image: str = "10.10.10.240/library/rca-algo-traceback-github",
-    tag: str = "latest",
-    repo: str = "LGU-SE-Internal/rca-algo-contrib",
-    branch: str = "main",
-    path: str = "algorithms/traceback",
-    force_rebuild: bool = False,
-):
-    """
-    Build and upload GitHub repository algorithm image
+# @app.command()
+# @timeit()
+# def github(
+#     env: str = "prod",
+#     algorithm: str = "traceback",
+#     image: str = "10.10.10.240/library/rca-algo-traceback-github",
+#     tag: str = "latest",
+#     repo: str = "LGU-SE-Internal/rca-algo-contrib",
+#     branch: str = "main",
+#     path: str = "algorithms/traceback",
+#     force_rebuild: bool = False,
+# ):
+#     """
+#     Build and upload GitHub repository algorithm image
 
-    Args:
-        env: Environment mode (prod or dev or debug)
-        algorithm: Algorithm name
-        image: Docker image name
-        tag: Image tag
-        repo: GitHub repository (owner/repo)
-        branch: Git branch name
-        path: Sub-directory path in repository
-        force_rebuild: Whether to force rebuild
-    """
+#     Args:
+#         env: Environment mode (prod or dev or debug)
+#         algorithm: Algorithm name
+#         image: Docker image name
+#         tag: Image tag
+#         repo: GitHub repository (owner/repo)
+#         branch: Git branch name
+#         path: Sub-directory path in repository
+#         force_rebuild: Whether to force rebuild
+#     """
 
-    set_token()
-    config = get_config(env_mode=env)
+#     set_token()
+#     config = get_config(env_mode=env)
 
-    token = os.getenv(TOKEN_KEY)
-    if token is None:
-        logger.error(f"Environment variable {TOKEN_KEY} not set. Please set it to your GitHub token.")
-        raise ValueError(f"Environment variable {TOKEN_KEY} not set.")
+#     token = os.getenv(TOKEN_KEY)
+#     if token is None:
+#         logger.error(f"Environment variable {TOKEN_KEY} not set. Please set it to your GitHub token.")
+#         raise ValueError(f"Environment variable {TOKEN_KEY} not set.")
 
-    resp = None
-    configuration = get_configuration(host=config.base_url)
-    with ApiClient(configuration=configuration) as client:
-        api = AlgorithmApi(api_client=client)
-        resp = api.api_v1_algorithms_build_post(
-            algorithm=algorithm,
-            image=image,
-            tag=tag,
-            source_type="github",
-            github_token=token,
-            github_repo=repo,
-            github_branch=branch,
-            github_path=path,
-            force_rebuild=force_rebuild,
-        )
+#     resp = None
+#     configuration = get_configuration(host=config.base_url)
+#     with ApiClient(configuration=configuration) as client:
+#         api = AlgorithmApi(api_client=client)
+#         resp = api.api_v1_algorithms_build_post( # FIXME
+#             algorithm=algorithm,
+#             image=image,
+#             tag=tag,
+#             source_type="github",
+#             github_token=token,
+#             github_repo=repo,
+#             github_branch=branch,
+#             github_path=path,
+#             force_rebuild=force_rebuild,
+#         )
 
-    assert resp is not None
-    get_algorithm_item(host=config.base_url, response=resp)
+#     assert resp is not None
+#     get_algorithm_item(host=config.base_url, response=resp)
 
 
 if __name__ == "__main__":
