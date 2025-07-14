@@ -21,9 +21,9 @@ app = typer.Typer()
 @app.command()
 @timeit()
 def run(
-    algorithm: Annotated[str, typer.Argument(envvar="ALGORITHM")],
-    input_path: Annotated[Path, typer.Argument(envvar="INPUT_PATH")],
-    output_path: Annotated[Path, typer.Argument(envvar="OUTPUT_PATH")],
+    algorithm: Annotated[str, typer.Option("-a", "--algorithm", envvar="ALGORITHM")],
+    input_path: Annotated[Path, typer.Option("-i", "--input-path", envvar="INPUT_PATH")],
+    output_path: Annotated[Path, typer.Option("-o", "--output-path", envvar="OUTPUT_PATH")],
 ):
     assert algorithm in global_algorithm_registry(), f"Unknown algorithm: {algorithm}"
     assert input_path.is_dir(), f"input_path: {input_path}"
