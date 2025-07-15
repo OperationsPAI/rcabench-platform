@@ -870,5 +870,9 @@ def unify_to_service_candidates(sdg: SDG, rcc_list: list[PlaceNode]) -> list[str
         for service_name, total_dp in services:
             logger.debug(f"  {service_name}: total_dp={total_dp}")
 
-    ans = [service_name for service_name, _ in services]
+    if all(total_dp == 0 for _, total_dp in services):
+        datapack = sdg.data["datapack"]
+        logger.warning("all service candidates have zero dp: datapack=`{}`", datapack)
+
+    ans = [service_name for service_name, _ in services if service_name != "loadgenerator-service"]
     return ans
