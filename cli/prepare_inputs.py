@@ -386,7 +386,7 @@ def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
     from rcabench.openapi import InjectionApi
 
     api = InjectionApi(get_rcabench_openapi_client(base_url=rcabench_url))
-    resp = api.api_v1_injections_analysis_with_issues_get()
+    resp = api.api_v1_injections_get()
     assert resp.data is not None, "No cases found in the response"
 
     case_names = list(set([item.injection_name for item in resp.data if item.injection_name]))
