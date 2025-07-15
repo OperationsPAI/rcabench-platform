@@ -398,7 +398,10 @@ def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
             save_json(injection.model_dump(), path=dataset_path / "converted" / "injection.json")
 
             platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / dataset_name
-            save_json(injection.model_dump(), path=platform_path / "injection.json")
+            if platform_path.exists():
+                json_path = platform_path / "injection.json"
+                save_json(injection.model_dump(), path=json_path)
+                os.chown(json_path, 1000, 1000)
         else:
             logger.warning(f"No injection details found for dataset: {dataset_name}")
 
