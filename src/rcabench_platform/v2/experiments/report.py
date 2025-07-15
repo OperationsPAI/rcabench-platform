@@ -41,6 +41,7 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False):
             attr_df = pl.read_parquet(attributes_df_path, columns=["datapack", attr_col])
             attr_df = output_df.join(attr_df, on="datapack", how="left")
             perf_df = calc_all_perf_by_datapack_attr(attr_df, dataset, attr_col)
+            save_parquet(perf_df, path=output_meta_folder / "fault_types.perf.parquet")
     elif dataset.startswith("rcaeval"):
         attributes_df_path = get_dataset_meta_folder(dataset) / "attributes.parquet"
         if attributes_df_path.exists():
