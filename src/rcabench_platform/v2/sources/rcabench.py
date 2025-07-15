@@ -156,7 +156,7 @@ def convert_metrics_histogram(src: Path) -> pl.LazyFrame:
     return lf
 
 
-def convert_traces(src: Path, p99: bool) -> pl.LazyFrame:
+def convert_traces(src: Path) -> pl.LazyFrame:
     lf = pl.scan_parquet(src).select(
         "Timestamp",
         "TraceId",
@@ -240,20 +240,20 @@ def convert_traces(src: Path, p99: bool) -> pl.LazyFrame:
         }
     )
 
-    if p99:
-        root_spans_p99 = (
-            lf.filter(pl.col("parent_span_id").is_null())
-            .group_by("trace_id")
-            .agg(pl.col("duration").quantile(0.99).alias("p99_duration"))
-        )
+    # if p99:
+    #     root_spans_p99 = (
+    #         lf.filter(pl.col("parent_span_id").is_null())
+    #         .group_by("trace_id")
+    #         .agg(pl.col("duration").quantile(0.99).alias("p99_duration"))
+    #     )
 
-        global_p99_threshold = (
-            root_spans_p99.select(pl.col("p99_duration").quantile(0.99).alias("threshold")).collect().item()
-        )
+    #     global_p99_threshold = (
+    #         root_spans_p99.select(pl.col("p99_duration").quantile(0.99).alias("threshold")).collect().item()
+    #     )
 
-        filtered_trace_ids = root_spans_p99.filter(pl.col("p99_duration") <= global_p99_threshold).select("trace_id")
+    #     filtered_trace_ids = root_spans_p99.filter(pl.col("p99_duration") <= global_p99_threshold).select("trace_id")
 
-        lf = lf.join(filtered_trace_ids, on="trace_id", how="inner")
+    #     lf = lf.join(filtered_trace_ids, on="trace_id", how="inner")
 
     lf = lf.sort("time")
 
@@ -368,7 +368,7 @@ class RcabenchDatapackLoader(DatapackLoader):
         }
 
         converters = {
-            # "_traces": convert_traces,
+            "_traces": convert_traces,
             "_logs": convert_logs,
             "_metrics": convert_metrics,
             "_metrics_sum": convert_metrics,
@@ -379,9 +379,6 @@ class RcabenchDatapackLoader(DatapackLoader):
             for prefix in ("normal", "abnormal"):
                 name = f"{prefix}{key}.parquet"
                 ans[name] = func(self._src_folder / name)
-
-        ans["normal_traces.parquet"] = convert_traces(self._src_folder / "normal_traces.parquet", p99=True)
-        ans["abnormal_traces.parquet"] = convert_traces(self._src_folder / "abnormal_traces.parquet", p99=False)
 
         return ans
 
