@@ -4,7 +4,6 @@ from rcabench_platform.v2.sources.convert import link_subset
 from rcabench_platform.v2.utils.serde import save_parquet
 from rcabench_platform.v2.datasets.spec import get_dataset_folder, get_dataset_meta_file, read_dataset_index
 from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
-from rcabench_platform.v2.clients.rcabench_ import RcabenchSdkHelper
 
 from fractions import Fraction
 import shutil
@@ -12,11 +11,21 @@ import shutil
 import polars as pl
 
 
+def get_analysis_with_issues():
+    from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
+    from rcabench.openapi import InjectionApi
+
+    api = InjectionApi(get_rcabench_openapi_client())
+    resp = api.api_v1_injections_analysis_with_issues_get()
+    assert resp.data is not None
+
+    return resp.data
+
+
 @app.command()
 @timeit()
 def run(db_only: bool = False, require_filtered: bool = False):
-    sdk = RcabenchSdkHelper()
-    with_issues_resp = sdk.get_analysis_with_issues()
+    with_issues_resp = get_analysis_with_issues()
 
     rows = []
     for item in with_issues_resp:

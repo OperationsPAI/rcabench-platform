@@ -13,22 +13,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gcc curl wget git zip unzip just
 
 ENV UV_LINK_MODE=copy
-ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 # https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-WORKDIR /app
-
 RUN uv python install 3.13
 
-COPY pyproject.toml uv.lock ./
+WORKDIR /app
+
+# FIXME: https://github.com/astral-sh/uv-docker-example/issues/61
+COPY .docker-build/pyproject.toml .docker-build/uv.lock /app/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project
+    uv sync --all-extras --locked --no-install-project
 
 ADD . /app
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync
+    uv sync --all-extras --locked
 
 CMD ["/bin/bash"]

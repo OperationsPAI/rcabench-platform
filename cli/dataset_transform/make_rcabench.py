@@ -46,7 +46,7 @@ def run(skip_finished: bool = True, parallel: int = 4, scan: bool = True):
 @app.command()
 @timeit()
 def local_test_1():
-    datapack = "ts3-ts-basic-service-request-replace-path-4nnqvb"
+    datapack = "ts3-ts-travel2-service-partition-rtkjjr"
     loader = RcabenchDatapackLoader(
         src_folder=Path("data") / "rcabench_dataset" / datapack,
         datapack=datapack,

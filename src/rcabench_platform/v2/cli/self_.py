@@ -1,5 +1,5 @@
 from ..config import get_config
-from ..clients.rcabench_ import RcabenchSdkHelper, get_rcabench_sdk
+from ..clients.rcabench_ import get_rcabench_openapi_client
 from ..clients.clickhouse import get_clickhouse_client
 from ..logging import logger, timeit
 
@@ -21,8 +21,12 @@ def ping_clickhouse() -> None:
 @app.command()
 @timeit()
 def ping_rcabench() -> None:
-    sdk = RcabenchSdkHelper()
-    sdk.get_analysis_with_issues()
+    from rcabench.openapi import AlgorithmApi
+
+    api = AlgorithmApi(get_rcabench_openapi_client())
+    resp = api.api_v1_algorithms_get()
+    assert resp.data is not None
+
     logger.info("rcabench is reachable")
 
 

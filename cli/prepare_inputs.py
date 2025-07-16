@@ -1,8 +1,10 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
+
 from rcabench_platform.v2.clients.clickhouse import get_clickhouse_client, query_parquet_stream
 from rcabench_platform.v2.clients.k8s import download_kube_info
-from rcabench_platform.v2.clients.rcabench_ import RcabenchSdkHelper
+from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
+
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
 
@@ -226,9 +228,13 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
 @timeit()
 def query_injection(rcabench_url: str, name: str):
+    from rcabench.openapi import InjectionApi
+
     try:
-        sdk = RcabenchSdkHelper.from_base_url(base_url=rcabench_url)
-        return sdk.get_injection_details(dataset_name=name)
+        api = InjectionApi(get_rcabench_openapi_client(base_url=rcabench_url))
+        resp = api.api_v1_injections_query_get(name=name)
+        assert resp.data is not None
+        return resp.data
     except Exception:
         traceback.print_exc()
         logger.error(f"Failed to query injection details: {name}")
@@ -377,24 +383,27 @@ def local_test():
 
 @app.command()
 def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
-    from rcabench.openapi import Configuration, ApiClient, InjectionApi
-    from pathlib import Path
+    from rcabench.openapi import InjectionApi
 
-    config = Configuration(host=rcabench_url)
-    with ApiClient(configuration=config) as client:
-        api = InjectionApi(api_client=client)
-        resp = api.api_v1_injections_analysis_with_issues_get()
-
+    api = InjectionApi(get_rcabench_openapi_client(base_url=rcabench_url))
+    resp = api.api_v1_injections_get()
     assert resp.data is not None, "No cases found in the response"
+
     case_names = list(set([item.injection_name for item in resp.data if item.injection_name]))
     for dataset_name in case_names:
         injection = query_injection(rcabench_url, dataset_name)
         if injection:
-            save_json(injection.model_dump(), path=Path("/mnt/jfs/rcabench_dataset") / dataset_name / "injection.json")
-            save_json(
-                injection.model_dump(),
-                path=Path("/mnt/jfs/rcabench_dataset") / dataset_name / "converted" / "injection.json",
-            )
+            dataset_path = Path("/mnt/jfs/rcabench_dataset") / dataset_name
+            save_json(injection.model_dump(), path=dataset_path / "injection.json")
+            save_json(injection.model_dump(), path=dataset_path / "converted" / "injection.json")
+
+            platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / dataset_name
+            if platform_path.exists():
+                json_path = platform_path / "injection.json"
+                save_json(injection.model_dump(), path=json_path)
+                os.chown(json_path, 1000, 1000)
+        else:
+            logger.warning(f"No injection details found for dataset: {dataset_name}")
 
 
 if __name__ == "__main__":

@@ -1,37 +1,37 @@
+from ..logging import timeit
 from ..config import get_config
-from ..cli.main import app, logger, timeit
-from ..cli.main import register_builtin_algorithms
+
 from ..algorithms.spec import global_algorithm_registry
+from ..algorithms.spec import AlgorithmArgs
+
 from ..sources.rcabench import RcabenchDatapackLoader
 from ..sources.convert import convert_datapack
-from ..algorithms.spec import AlgorithmArgs
-from ..utils.serde import save_csv
 
+from ..utils.serde import save_csv, load_json
+
+from typing import Annotated
 from pathlib import Path
-import json
-import os
 
 import polars as pl
+import typer
+
+app = typer.Typer()
 
 
 @app.command()
 @timeit()
-def run(*, enable_builtin_algorithms: bool = True):
-    if enable_builtin_algorithms:
-        register_builtin_algorithms()
-
-    algorithm = str(os.environ["ALGORITHM"])
-    input_path = Path(os.environ["INPUT_PATH"])
-    output_path = Path(os.environ["OUTPUT_PATH"])
-
+def run(
+    algorithm: Annotated[str, typer.Option("-a", "--algorithm", envvar="ALGORITHM")],
+    input_path: Annotated[Path, typer.Option("-i", "--input-path", envvar="INPUT_PATH")],
+    output_path: Annotated[Path, typer.Option("-o", "--output-path", envvar="OUTPUT_PATH")],
+):
     assert algorithm in global_algorithm_registry(), f"Unknown algorithm: {algorithm}"
     assert input_path.is_dir(), f"input_path: {input_path}"
     assert output_path.is_dir(), f"output_path: {output_path}"
 
-    with open(input_path / "injection.json") as f:
-        injection = json.load(f)
-        injection_name = injection["injection_name"]
-        assert isinstance(injection_name, str) and injection_name
+    injection = load_json(path=input_path / "injection.json")
+    injection_name = injection["injection_name"]
+    assert isinstance(injection_name, str) and injection_name
 
     converted_input_path = input_path / "converted"
 
@@ -65,12 +65,4 @@ def local_test(algorithm: str, datapack: str):
     output_path = get_config().temp / "run_exp_platform" / datapack / algorithm
     output_path.mkdir(parents=True, exist_ok=True)
 
-    os.environ["ALGORITHM"] = algorithm
-    os.environ["INPUT_PATH"] = str(input_path)
-    os.environ["OUTPUT_PATH"] = str(output_path)
-
-    run()
-
-
-if __name__ == "__main__":
-    app()
+    run(algorithm, input_path, output_path)

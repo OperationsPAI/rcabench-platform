@@ -2,7 +2,7 @@
 # https://docs.astral.sh/uv/
 
 dev:
-    uv sync
+    uv sync --all-extras
     just fmt
     just lint
 
@@ -14,7 +14,7 @@ lint:
     uv run pyright --pythonpath .venv/bin/python
 
 ci:
-    uv sync --locked
+    uv sync --all-extras --locked
     uv run ruff format --check
     just lint
     uv build

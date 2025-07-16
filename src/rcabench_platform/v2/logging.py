@@ -31,6 +31,9 @@ logger = GlobalLogger()
 def timeit(*, log_level: str = "DEBUG", log_args: bool | set[str] = True):
     def decorator(func):
         sig = inspect.signature(func)
+        if isinstance(log_args, set):
+            for arg in log_args:
+                assert arg in sig.parameters, f"Argument '{arg}' not found in function `{func.__name__}` signature."
 
         @wraps(func)
         def wrapper(*args, **kwargs):

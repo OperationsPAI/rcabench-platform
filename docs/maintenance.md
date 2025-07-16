@@ -23,7 +23,7 @@ For patch releases (bug fixes, minor improvements), use the automated release sc
 ./scripts/release-patch.sh
 ```
 
-#### What the script does:
+What the script does:
 
 1. **Switches to main branch**: Ensures you're working from the correct branch
 2. **Checks working tree**: Verifies there are no uncommitted changes
@@ -31,3 +31,52 @@ For patch releases (bug fixes, minor improvements), use the automated release sc
 4. **Commits changes**: Creates a commit with the message "release vX.Y.Z"
 5. **Pushes to main**: Uploads the release commit
 6. **Creates and pushes tag**: Tags the release and pushes the tag to enable automated deployments
+
+## Docker Images
+
+This project manages several Docker images to support its functionality.
+
+### Update All Images
+
+```bash
+./scripts/docker.py update-all
+```
+
+### rcabench-platform
+
+The **fundamental** image containing the project code and dependencies.
+
+Build and push:
+
+```bash
+./scripts/docker.py build rcabench-platform
+./scripts/docker.py push  rcabench-platform
+```
+
+This image serves as the base for other images and **should be built first**.
+
+### clickhouse_dataset
+
+The image for collecting telemetry data from ClickHouse.
+
+It is used by [rcabench](https://github.com/LGU-SE-Internal/rcabench) services.
+
+Build and push:
+
+```bash
+./scripts/docker.py build clickhouse_dataset
+./scripts/docker.py push  clickhouse_dataset
+```
+
+### detector
+
+The image for detecting SLI anomalies in rcabench data.
+
+It is used by [rcabench](https://github.com/LGU-SE-Internal/rcabench) services.
+
+Build and push:
+
+```bash
+./scripts/docker.py build detector
+./scripts/docker.py push  detector
+```
