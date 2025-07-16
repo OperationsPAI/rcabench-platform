@@ -10,13 +10,8 @@ import json
 import polars as pl
 
 
-def local_to_utc(col: pl.Expr) -> pl.Expr:
-    col = col.dt.replace_time_zone("Asia/Shanghai")
-    return col.dt.cast_time_unit("ns").dt.convert_time_zone("UTC")
-
-
 def replace_time_col(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
-    lf = lf.with_columns(local_to_utc(pl.col(col_name))).rename({col_name: "time"})
+    lf = lf.with_columns(pl.col(col_name)).rename({col_name: "time"})
     return lf
 
 

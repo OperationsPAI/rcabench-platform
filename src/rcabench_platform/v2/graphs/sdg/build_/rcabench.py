@@ -62,7 +62,7 @@ def build_sdg_from_rcabench(dataset: str, datapack: str, input_folder: Path) -> 
 def load_inject_time(input_folder: Path) -> datetime.datetime:
     env = load_json(path=input_folder / "env.json")
 
-    tz = dateutil.tz.gettz(env["TIMEZONE"])
+    # tz = dateutil.tz.gettz(env["TIMEZONE"])
 
     normal_start = int(env["NORMAL_START"])
     normal_end = int(env["NORMAL_END"])
@@ -77,11 +77,7 @@ def load_inject_time(input_folder: Path) -> datetime.datetime:
     else:
         inject_time = abnormal_start
 
-    inject_time = (
-        datetime.datetime.fromtimestamp(inject_time, tz=datetime.timezone.utc)
-        .replace(tzinfo=tz)
-        .astimezone(datetime.timezone.utc)
-    )
+    inject_time = datetime.datetime.fromtimestamp(inject_time, tz=datetime.timezone.utc)
     logger.debug(f"inject_time=`{inject_time}`")
 
     return inject_time

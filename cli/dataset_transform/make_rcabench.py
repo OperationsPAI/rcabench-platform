@@ -76,12 +76,8 @@ def scan_datapack_attributes():
     save_parquet(df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
 
 
-def _convert_time(ts: int, tz: datetime.tzinfo | None) -> datetime.datetime:
-    return (
-        datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
-        .replace(tzinfo=tz)
-        .astimezone(datetime.timezone.utc)
-    )
+def _convert_time(ts: int) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
 
 
 def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Path) -> dict[str, Any]:
@@ -90,11 +86,11 @@ def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Pa
     env = load_json(path=input_folder / "env.json")
     injection = load_json(path=input_folder / "injection.json")
 
-    tz = dateutil.tz.gettz(env["TIMEZONE"])
-    normal_start = _convert_time(int(env["NORMAL_START"]), tz)
-    normal_end = _convert_time(int(env["NORMAL_END"]), tz)
-    abnormal_start = _convert_time(int(env["ABNORMAL_START"]), tz)
-    abnormal_end = _convert_time(int(env["ABNORMAL_END"]), tz)
+    # tz = dateutil.tz.gettz(env["TIMEZONE"])
+    normal_start = _convert_time(int(env["NORMAL_START"]))
+    normal_end = _convert_time(int(env["NORMAL_END"]))
+    abnormal_start = _convert_time(int(env["ABNORMAL_START"]))
+    abnormal_end = _convert_time(int(env["ABNORMAL_END"]))
 
     attrs["inject_time"] = abnormal_start
 

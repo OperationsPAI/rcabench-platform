@@ -9,7 +9,6 @@ from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import load_json, save_parquet
 from rcabench_platform.v2.datasets.train_ticket import _normalize_op_name
-from rcabench_platform.v2.sources.rcabench import local_to_utc
 from datetime import datetime
 from pathlib import Path
 import functools
