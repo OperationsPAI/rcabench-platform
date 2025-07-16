@@ -26,22 +26,12 @@ def run():
     lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "attributes.parquet"))
 
     col = pl.col("files.total_size:MiB")
-    lf = lf.filter(
-        (col >= 10) & (col <= 500),
-    )
+    lf = lf.filter(col <= 500)
 
     lf = lf.filter(
         pl.col("detector.conclusion.rows").is_not_null(),
         pl.col("detector.issues.rows") > 0,
     )
-
-    unsuccessful_fault_types = (
-        "DNSError",
-        "DNSRandom",
-        "JVMMySQLLatency",
-        "JVMMySQLException",
-    )
-    lf = lf.filter(pl.col("injection.fault_type").is_in(unsuccessful_fault_types).not_())
 
     col = pl.col("injection.injection_point.class_name")
     lf = lf.filter(
@@ -58,28 +48,33 @@ def run():
         | (pl.col("injection.mem_worker") * pl.col("injection.memory_size") >= 500)
     )
 
-    unsuccessful_time_ranges = [
-        ((2025, 5, 27, 8), (2025, 5, 28, 0)),
-        ((2025, 5, 30, 4), (2025, 5, 30, 16)),
-        ((2025, 6, 18, 20), (2025, 6, 18, 21)),
-    ]
-    unsuccessful_time_ranges_pl = [
-        (pl.datetime(y1, m1, d1, h1, time_zone="UTC"), pl.datetime(y2, m2, d2, h2, time_zone="UTC"))
-        for (y1, m1, d1, h1), (y2, m2, d2, h2) in unsuccessful_time_ranges
-    ]
-    col = pl.col("inject_time")
-    lf = lf.filter([(col < start) | (col > end) for start, end in unsuccessful_time_ranges_pl])
-
     df = lf.collect()
 
     tasks = []
     for row in df.select("datapack", "injection.fault_type", "injection.display_config").iter_rows(named=True):
         tasks.append(functools.partial(_check_datapack, row))
-    results = fmap_threadpool(tasks, parallel=32)
-    kickout_df = pl.DataFrame([r for r in results if r is not None])
-    save_parquet(kickout_df, path=get_dataset_meta_file("rcabench", "kickout.parquet"))
 
-    kickout_datapacks = kickout_df["datapack"].to_list()
+    results = fmap_threadpool(tasks, parallel=32)
+    rules_df = pl.DataFrame(results)
+
+    save_parquet(rules_df, path=get_dataset_meta_file("rcabench", "rules_check.parquet"))
+
+    # Filter out datapacks that failed any rule
+    rule_columns = [
+        "rule_1_network_no_direct_calls",
+        "rule_2_http_method_same",
+        "rule_3_http_no_direct_calls",
+        "rule_4_single_point_no_calls",
+        "rule_5_duplicated_spans",
+        "rule_6_large_latency_normal",
+    ]
+
+    # Create a boolean mask for datapacks that failed any rule
+    failed_any_rule = rules_df.select(pl.any_horizontal([pl.col(col) for col in rule_columns]).alias("failed_any"))[
+        "failed_any"
+    ]
+    kickout_datapacks = rules_df.filter(failed_any_rule)["datapack"].to_list()
+
     df = df.filter(pl.col("datapack").is_in(kickout_datapacks).not_())
 
     dataset = "rcabench_filtered"
@@ -96,7 +91,7 @@ def run():
     save_parquet(df, path=meta_folder / "attributes.parquet")
 
 
-def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
+def _check_datapack(row: dict[str, Any]) -> dict[str, Any]:
     datapack = row["datapack"]
     assert isinstance(datapack, str) and datapack
 
@@ -111,10 +106,23 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
     rcabench_fix_injection_display_config(injection_config)
 
     injection_point = injection_config.get("injection_point")
+
+    # Initialize result with all rules as False
+    result = {
+        "datapack": datapack,
+        "rule_1_network_no_direct_calls": False,
+        "rule_2_http_method_same": False,
+        "rule_3_http_no_direct_calls": False,
+        "rule_4_single_point_no_calls": False,
+        "rule_5_duplicated_spans": False,
+        "rule_6_large_latency_normal": False,
+    }
+
     if not injection_point:
-        return None
+        return result
     assert isinstance(injection_point, dict)
 
+    # Rule 1: Network fault types - no direct calls
     if injection_fault_type.startswith("Network"):
         direction = injection_point.get("direction")
         if direction is None:
@@ -123,99 +131,90 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any] | None:
 
         source_service = injection_point.get("source_service")
         target_service = injection_point.get("target_service")
-        if not source_service or not target_service:
-            return None
-        assert isinstance(source_service, str)
-        assert isinstance(target_service, str)
+        if source_service and target_service:
+            assert isinstance(source_service, str)
+            assert isinstance(target_service, str)
 
-        has_direct_calls = False
+            has_direct_calls = False
 
-        if direction in ("from", "both"):
-            has_direct_calls |= scan_direct_calls_from_traces(
-                datapack_folder,
-                source_service,
-                target_service,
-            )
+            if direction in ("from", "both"):
+                has_direct_calls |= scan_direct_calls_from_traces(
+                    datapack_folder,
+                    source_service,
+                    target_service,
+                )
 
-        if direction in ("to", "both"):
-            has_direct_calls |= scan_direct_calls_from_traces(
-                datapack_folder,
-                target_service,
-                source_service,
-            )
+            if direction in ("to", "both"):
+                has_direct_calls |= scan_direct_calls_from_traces(
+                    datapack_folder,
+                    target_service,
+                    source_service,
+                )
 
-        if not has_direct_calls:
-            logger.debug(
-                f"datapack `{datapack}`: no direct calls between \
-                    `{source_service}` and `{target_service}`, direction `{direction}`"
-            )
-            return {
-                "datapack": datapack,
-                "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
-            }
+            if not has_direct_calls:
+                logger.debug(
+                    f"datapack `{datapack}`: no direct calls between \
+                        `{source_service}` and `{target_service}`, direction `{direction}`"
+                )
+                result["rule_1_network_no_direct_calls"] = True
 
+    # Rule 2: HTTPRequestReplaceMethod - same method
     if injection_fault_type == "HTTPRequestReplaceMethod":
         method = injection_point.get("method")
         replace_method = injection_config.get("replace_method")
-        assert isinstance(method, str) and method
-        assert isinstance(replace_method, str) and replace_method
-        if method == replace_method:
-            return {
-                "datapack": datapack,
-                "reason": f"{injection_fault_type};check replace_method",
-            }
+        if method and replace_method:
+            assert isinstance(method, str) and method
+            assert isinstance(replace_method, str) and replace_method
+            if method == replace_method:
+                result["rule_2_http_method_same"] = True
 
+    # Rule 3: HTTP fault types - no direct calls
     if injection_fault_type.startswith("HTTP"):
         app_name = injection_point.get("app_name")
         server_address = injection_point.get("server_address")
-        assert isinstance(app_name, str) and app_name
-        assert isinstance(server_address, str) and server_address
+        if app_name and server_address:
+            assert isinstance(app_name, str) and app_name
+            assert isinstance(server_address, str) and server_address
 
-        has_direct_calls = scan_direct_calls_from_traces(
-            datapack_folder,
-            source_service=app_name,
-            target_service=server_address,
-        )
+            has_direct_calls = scan_direct_calls_from_traces(
+                datapack_folder,
+                source_service=app_name,
+                target_service=server_address,
+            )
 
-        if not has_direct_calls:
-            logger.debug(f"datapack `{datapack}`: no direct calls between `{app_name}` and `{server_address}`")
-            return {
-                "datapack": datapack,
-                "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
-            }
+            if not has_direct_calls:
+                logger.debug(f"datapack `{datapack}`: no direct calls between `{app_name}` and `{server_address}`")
+                result["rule_3_http_no_direct_calls"] = True
 
+    # Rule 4: Single point failure - no calls to target
     if is_single_point_failure(injection_fault_type):
         target_service = injection_point.get("app_label")
         if target_service is None:
             target_service = injection_point.get("app_name")
-        assert isinstance(target_service, str) and target_service
+        if target_service:
+            assert isinstance(target_service, str) and target_service
 
-        has_direct_calls = scan_direct_calls_from_traces(
-            datapack_folder,
-            None,
-            target_service,
-        )
+            has_direct_calls = scan_direct_calls_from_traces(
+                datapack_folder,
+                None,
+                target_service,
+            )
 
-        if not has_direct_calls:
-            logger.debug(f"datapack `{datapack}`: no direct calls to `{target_service}`")
-            return {
-                "datapack": datapack,
-                "reason": f"{injection_fault_type};{scan_direct_calls_from_traces.__name__}",
-            }
+            if not has_direct_calls:
+                logger.debug(f"datapack `{datapack}`: no direct calls to `{target_service}`")
+                result["rule_4_single_point_no_calls"] = True
 
+    # Rule 5: Duplicated spans
     if scan_duplicated_spans(datapack_folder):
         logger.debug(f"datapack `{datapack}`: has duplicated spans")
-        return {
-            "datapack": datapack,
-            "reason": scan_duplicated_spans.__name__,
-        }
+        result["rule_5_duplicated_spans"] = True
 
+    # Rule 6: Large latency in normal range
     if scan_large_latency_in_normal_range(datapack_folder):
         logger.debug(f"datapack `{datapack}`: large_latency_in_normal_range")
-        return {
-            "datapack": datapack,
-            "reason": scan_large_latency_in_normal_range.__name__,
-        }
+        result["rule_6_large_latency_normal"] = True
+
+    return result
 
 
 def is_single_point_failure(fault_type: str) -> bool:

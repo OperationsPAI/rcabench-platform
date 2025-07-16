@@ -2,7 +2,7 @@ from ..config import get_config
 from ..logging import timeit, logger
 from ..utils.serde import save_parquet
 from ..utils.env import debug
-
+import re
 from collections import defaultdict
 
 import polars as pl
@@ -126,3 +126,11 @@ def tt_fix_client_spans(traces: pl.DataFrame):
         traces = traces.with_columns(pl.coalesce("op_name_right", "op_name").alias("op_name"))
 
     return traces, id2op, id2parent
+
+
+def extract_path(uri: str):
+    for pattern, replacement in PATTERN_REPLACEMENTS:
+        res = re.sub(pattern, replacement, uri)
+        if res != uri:
+            return res
+    return uri

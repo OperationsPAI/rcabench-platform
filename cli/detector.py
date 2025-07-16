@@ -5,7 +5,7 @@ Migrated from https://github.com/LGU-SE-Internal/ts-anomaly-detector
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
-
+from rcabench_platform.v2.datasets.train_ticket import extract_path
 from pathlib import Path
 import json
 import re
@@ -14,6 +14,8 @@ import polars as pl
 import scipy.stats as stats
 import numpy as np
 import functools
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
 
 def calculate_anomaly_score(normal_data: list, abnormal_value: float) -> dict:
@@ -106,16 +108,6 @@ def is_success_rate_significant(
         "normal_rate": normal_rate,
         "abnormal_rate": abnormal_rate,
     }
-
-
-def extract_path(uri: str):
-    from rcabench_platform.v2.datasets.train_ticket import PATTERN_REPLACEMENTS
-
-    for pattern, replacement in PATTERN_REPLACEMENTS:
-        res = re.sub(pattern, replacement, uri)
-        if res != uri:
-            return res
-    return uri
 
 
 def read_dataframe(file: Path) -> pl.LazyFrame:
@@ -473,8 +465,6 @@ def query_issues():
             logger.warning(f"No conclusion found for {datapack.name}, skipping")
             continue
 
-        logger.info(f"Processing {datapack} for issues")
-
         try:
             conclusion = pl.read_csv(con)
 
@@ -489,7 +479,342 @@ def query_issues():
             continue
 
     logger.info(f"Found {len(datapacks)} datapacks with issues, skipping {len(errs)} with errors")
+    logger.info(datapacks[:20])
     return datapacks, errs
+
+
+def process_datapack_confidence(datapack_path: Path, du: int) -> str | None:
+    if not datapack_path.is_dir():
+        return None
+    normal_traces_file = datapack_path / "normal_traces.parquet"
+    if not normal_traces_file.exists():
+        logger.warning(f"No normal_traces.parquet found for {datapack_path.name}, skipping")
+        return None
+    try:
+        df = read_dataframe(normal_traces_file)
+        max_duration = df.select(pl.col("Duration").max()).collect().item()
+        if max_duration is not None and max_duration < du * 1e9:  # 1 second in nanoseconds
+            return datapack_path.name
+
+    except Exception as e:
+        logger.error(f"Error processing {datapack_path.name}: {e}")
+    return None
+
+
+@app.command()
+@timeit()
+def query_with_confidence(duration: int):
+    input_path = Path("data") / "rcabench_dataset"
+
+    datapack_paths = [datapack for datapack in input_path.iterdir() if datapack.is_dir()]
+
+    tasks = [
+        functools.partial(process_datapack_confidence, datapack_path, duration) for datapack_path in datapack_paths
+    ]
+
+    # Process in parallel using thread pool (I/O bound operations)
+    cpu = os.cpu_count()
+    assert cpu is not None
+    results = fmap_threadpool(tasks, parallel=min(cpu, 32))
+
+    # Filter out None results
+    datapacks = [result for result in results if result is not None]
+
+    logger.info(f"Found {len(datapacks)} datapacks with all durations < {duration}s")
+
+    return datapacks
+
+
+def vis_call(datapack: Path):
+    # First, check if conclusion.csv exists and get APIs with issues
+    conclusion_file = datapack / "conclusion.csv"
+    apis_with_issues = set()
+
+    if conclusion_file.exists():
+        try:
+            conclusion = pl.read_csv(conclusion_file)
+            # Filter APIs that have non-empty issues
+            non_empty_issues = conclusion.filter(
+                (pl.col("Issues").is_not_null()) & (pl.col("Issues") != "") & (pl.col("Issues") != "{}")
+            )
+            apis_with_issues = set(non_empty_issues["SpanName"].to_list())
+            logger.info(f"Found {len(apis_with_issues)} APIs with issues to visualize")
+        except Exception as e:
+            logger.warning(f"Could not read conclusion.csv: {e}, visualizing all APIs")
+    else:
+        logger.warning("No conclusion.csv found, visualizing all APIs")
+
+    df1 = pl.scan_parquet(datapack / "normal_traces.parquet").collect()
+    df2 = pl.scan_parquet(datapack / "abnormal_traces.parquet").collect()
+
+    df1 = df1.with_columns(pl.lit("normal").alias("trace_type"))
+    df2 = df2.with_columns(pl.lit("abnormal").alias("trace_type"))
+
+    merged_df = pl.concat([df1, df2])
+
+    entry_df = merged_df.filter(pl.col("ServiceName") == "loadgenerator-service")
+
+    entry_count = len(entry_df)
+    if entry_count == 0:
+        logger.error("loadgenerator-service not found in trace data, using ts-ui-dashboard as fallback")
+        entry_df = merged_df.filter(pl.col("ServiceName") == "ts-ui-dashboard")
+        entry_count = len(entry_df)
+
+    if entry_count == 0:
+        logger.error("No valid entrypoint found in trace data")
+        return
+
+    # Check timestamp data type once for the entire function
+    timestamp_dtype = entry_df.select("Timestamp").dtypes[0]
+
+    # Handle timestamp conversion - check if already datetime or needs conversion
+    if timestamp_dtype == pl.Datetime:
+        # Already datetime, use as is
+        entry_df = entry_df.with_columns(
+            [
+                pl.col("Timestamp").alias("datetime"),
+                (pl.col("Duration") / 1e9).alias("duration"),
+            ]
+        ).sort("Timestamp")
+    else:
+        # Assume nanosecond timestamp, convert to datetime
+        entry_df = entry_df.with_columns(
+            [
+                pl.from_epoch(pl.col("Timestamp") // 1_000_000_000).alias("datetime"),
+                (pl.col("Duration") / 1e9).alias("duration"),
+            ]
+        ).sort("Timestamp")
+
+    entry_df = entry_df.with_columns(
+        pl.col("SpanName").map_elements(extract_path, return_dtype=pl.Utf8).alias("api_path")
+    )
+
+    api_groups = entry_df.group_by("api_path")
+
+    output_dir = Path("temp") / "vis" / datapack.name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    processed_count = 0
+    for api_path, group_df in api_groups:
+        api_name = api_path[0] if isinstance(api_path, tuple) else str(api_path)
+
+        # Skip APIs that don't have issues (if we have conclusion data)
+        if apis_with_issues and api_name not in apis_with_issues:
+            continue
+
+        if len(group_df) < 10:
+            continue
+
+        group_df = group_df.sort("datetime")
+
+        # Separate normal and abnormal data
+        normal_data = group_df.filter(pl.col("trace_type") == "normal")
+        abnormal_data = group_df.filter(pl.col("trace_type") == "abnormal")
+
+        if len(normal_data) == 0 and len(abnormal_data) == 0:
+            continue
+
+        fig, ax = plt.subplots(figsize=(15, 8))
+
+        # Plot normal data lines
+        if len(normal_data) > 0:
+            normal_times = normal_data["datetime"].to_list()
+            normal_durations = normal_data["duration"].to_list()
+
+            # Calculate moving statistics or use raw data points
+            # For simplicity, we'll plot the raw duration points as lines
+            ax.plot(
+                normal_times,
+                normal_durations,
+                label="Normal - Duration",
+                color="blue",
+                alpha=0.7,
+                linewidth=1,
+                marker="o",
+                markersize=2,
+            )
+
+            # Calculate and plot moving averages if there are enough points
+            if len(normal_data) >= 10:
+                # Create a rolling window calculation
+                normal_sorted = normal_data.sort("datetime")
+                window_size = max(5, len(normal_data) // 20)  # Adaptive window size
+
+                # Calculate rolling statistics
+                normal_with_stats = normal_sorted.with_columns(
+                    [
+                        pl.col("duration").rolling_mean(window_size).alias("avg_duration"),
+                        pl.col("duration").rolling_quantile(0.9, window_size=window_size).alias("p90_duration"),
+                        pl.col("duration").rolling_quantile(0.99, window_size=window_size).alias("p99_duration"),
+                    ]
+                )
+
+                # Filter out null values from rolling calculations
+                normal_with_stats = normal_with_stats.filter(pl.col("avg_duration").is_not_null())
+
+                if len(normal_with_stats) > 0:
+                    times = normal_with_stats["datetime"].to_list()
+                    ax.plot(
+                        times,
+                        normal_with_stats["avg_duration"].to_list(),
+                        label="Normal - Average",
+                        color="blue",
+                        alpha=0.8,
+                        linewidth=2,
+                    )
+                    ax.plot(
+                        times,
+                        normal_with_stats["p90_duration"].to_list(),
+                        label="Normal - P90",
+                        color="green",
+                        alpha=0.8,
+                        linewidth=2,
+                    )
+                    ax.plot(
+                        times,
+                        normal_with_stats["p99_duration"].to_list(),
+                        label="Normal - P99",
+                        color="orange",
+                        alpha=0.8,
+                        linewidth=2,
+                    )
+
+        # Plot abnormal data lines
+        if len(abnormal_data) > 0:
+            abnormal_times = abnormal_data["datetime"].to_list()
+            abnormal_durations = abnormal_data["duration"].to_list()
+
+            # Plot raw duration points
+            ax.plot(
+                abnormal_times,
+                abnormal_durations,
+                label="Abnormal - Duration",
+                color="red",
+                alpha=0.7,
+                linewidth=1,
+                linestyle="--",
+                marker="x",
+                markersize=2,
+            )
+
+            # Calculate and plot moving averages if there are enough points
+            if len(abnormal_data) >= 10:
+                abnormal_sorted = abnormal_data.sort("datetime")
+                window_size = max(5, len(abnormal_data) // 20)
+
+                abnormal_with_stats = abnormal_sorted.with_columns(
+                    [
+                        pl.col("duration").rolling_mean(window_size).alias("avg_duration"),
+                        pl.col("duration").rolling_quantile(0.9, window_size=window_size).alias("p90_duration"),
+                        pl.col("duration").rolling_quantile(0.99, window_size=window_size).alias("p99_duration"),
+                    ]
+                )
+
+                abnormal_with_stats = abnormal_with_stats.filter(pl.col("avg_duration").is_not_null())
+
+                if len(abnormal_with_stats) > 0:
+                    times = abnormal_with_stats["datetime"].to_list()
+                    ax.plot(
+                        times,
+                        abnormal_with_stats["avg_duration"].to_list(),
+                        label="Abnormal - Average",
+                        color="red",
+                        alpha=0.8,
+                        linewidth=2,
+                        linestyle="--",
+                    )
+                    ax.plot(
+                        times,
+                        abnormal_with_stats["p90_duration"].to_list(),
+                        label="Abnormal - P90",
+                        color="darkred",
+                        alpha=0.8,
+                        linewidth=2,
+                        linestyle="--",
+                    )
+                    ax.plot(
+                        times,
+                        abnormal_with_stats["p99_duration"].to_list(),
+                        label="Abnormal - P99",
+                        color="maroon",
+                        alpha=0.8,
+                        linewidth=2,
+                        linestyle="--",
+                    )
+
+        # Add vertical line to separate normal and abnormal periods
+        if len(normal_data) > 0:
+            normal_times = normal_data["datetime"].to_list()
+            # Find the last time point in normal data
+            last_normal_time = max(normal_times)
+            ax.axvline(
+                x=last_normal_time,
+                color="black",
+                linestyle="-",
+                linewidth=2,
+                alpha=0.8,
+                label="Normal/Abnormal Boundary",
+            )
+
+        ax.set_xlabel("Time", fontsize=12)
+        ax.set_ylabel("Latency (s)", fontsize=12)
+        ax.set_title(f"Latency Time Series - {api_name}", fontsize=14, fontweight="bold")
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        ax.grid(True, alpha=0.3)
+
+        # Format x-axis with minute granularity
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=1))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+
+        plt.tight_layout()
+
+        safe_filename = re.sub(r"[^\w\-_.]", "_", str(api_name))
+        output_file = output_dir / f"{safe_filename}_latency_timeseries.png"
+
+        plt.savefig(output_file, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        logger.info(f"Saved latency time series plot for {api_name} to {output_file}")
+        processed_count += 1
+
+    logger.info(f"Processed {processed_count} APIs with issues, all visualization plots saved to {output_dir}")
+
+
+@app.command()
+@timeit()
+def visualize_latency(datapack: str):
+    datapack_path = Path("data") / "rcabench_dataset" / datapack
+
+    if not datapack_path.exists():
+        logger.error(f"Datapack not found: {datapack_path}")
+        return
+
+    normal_traces = datapack_path / "normal_traces.parquet"
+    abnormal_traces = datapack_path / "abnormal_traces.parquet"
+
+    if not normal_traces.exists() or not abnormal_traces.exists():
+        logger.error(f"Required trace files not found in {datapack_path}")
+        return
+
+    logger.info(f"Starting visualization for datapack: {datapack}")
+    vis_call(datapack_path)
+    logger.info(f"Visualization completed for datapack: {datapack}")
+
+
+@app.command()
+@timeit()
+def batch_visualize():
+    datapacks, _ = query_issues()
+    for datapack_path in datapacks:
+        try:
+            logger.info(f"Processing {datapack_path}")
+            vis_call(Path("data/rcabench_dataset") / datapack_path)
+        except Exception as e:
+            logger.error(f"Error processing {datapack_path}: {e}")
+            continue
+
+    logger.info("Batch visualization completed")
 
 
 if __name__ == "__main__":

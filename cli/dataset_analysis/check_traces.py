@@ -8,11 +8,12 @@ from rcabench_platform.v2.datasets.spec import get_datapack_folder, get_dataset_
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import load_json, save_parquet
-
-from fractions import Fraction
+from rcabench_platform.v2.datasets.train_ticket import _normalize_op_name
+from rcabench_platform.v2.sources.rcabench import local_to_utc
 from datetime import datetime
 from pathlib import Path
 import functools
+import re
 
 import polars as pl
 import matplotlib.pyplot as plt
@@ -29,18 +30,19 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
     logger.info("Checking loadgenerator traces")
 
     with get_clickhouse_client() as client:
-        query = f"""
+        query = """
         WITH target_traces AS (
             SELECT      TraceId
             FROM        otel_traces
-            WHERE       ServiceName = 'loadgenerator-service' AND ParentSpanId = ''
+            WHERE       ServiceName = 'loadgenerator-service' 
+                      AND ParentSpanId = '' 
+                      AND Timestamp > toDateTime('2025-07-16 00:00:00')
             ORDER BY    Timestamp DESC
-            LIMIT       {limit}
         )
-        SELECT      *
+        SELECT      TraceId, SpanName, Duration, Timestamp
         FROM        otel_traces
         WHERE       TraceId IN (SELECT TraceId FROM target_traces)
-        ORDER BY    TraceId, Timestamp ASC
+        ORDER BY    Timestamp ASC
         """
         save_path = temp / "loadgenerator_traces_all.parquet"
         query_parquet_stream(client, query, save_path)
@@ -48,46 +50,11 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
     df = pl.read_parquet(save_path)
     assert len(df) > 0, "No traces found"
 
-    loadgenerator_df = df.filter(
-        pl.col("ServiceName") == "loadgenerator-service",
-        pl.col("ParentSpanId") == "",
-    )
-    trace_id_list = loadgenerator_df["TraceId"].unique().to_list()
+    trace_id_list = df["TraceId"].unique().to_list()
 
     logger.info(f"Found {len(trace_id_list)} unique traces")
 
-    tasks = [functools.partial(_check_trace, trace_id, df, loadgenerator_df) for trace_id in trace_id_list]
-    results = fmap_threadpool(tasks, parallel=parallel)
-    invalid_count = sum(not result for result in results)
-
-    if invalid_count > 0:
-        logger.error(f"Found {invalid_count}/{len(trace_id_list)} traces with no spans from other services")
-    else:
-        logger.info(f"All {len(trace_id_list)} traces have spans from other services")
-
-    invalid = []
-    for trace_id, result in zip(trace_id_list, results):
-        invalid.append({"TraceId": trace_id, "check:invalid": not result})
-    invalid_df = pl.DataFrame(invalid)
-    df = df.join(invalid_df, on="TraceId", how="left")
-    save_parquet(df, path=save_path)
-
-    duration_lf = df.lazy().select(pl.col("Duration").truediv(1e9).alias("duration"))
-    duration_df = duration_statistics(duration_lf).collect()
-
-    print_dataframe(duration_df)
-
-
-def _check_trace(trace_id: str, df: pl.DataFrame, loadgenerator_df: pl.DataFrame) -> bool:
-    trace_df = df.filter(
-        pl.col("TraceId") == trace_id,
-        pl.col("ServiceName") != "loadgenerator-service",
-    )
-    if len(trace_df) == 0:
-        timestamp = loadgenerator_df.filter(pl.col("TraceId") == trace_id)["Timestamp"].item()
-        logger.warning(f"Trace `{trace_id}` ({timestamp}) has no spans from other services")
-        return False
-    return True
+    df = df.with_columns(_normalize_op_name(pl.col("SpanName")).alias("SpanName"))
 
 
 def duration_statistics(lf: pl.LazyFrame) -> pl.LazyFrame:
@@ -112,83 +79,6 @@ class DatapackCheck:
     normal_end: datetime
     interference_start: datetime
     interference_end: datetime
-
-
-@app.command()
-@timeit()
-def check_clickhouse():
-    lf = pl.scan_parquet(get_dataset_meta_file("rcabench", "attributes.parquet"))
-
-    lf = lf.filter(
-        pl.col("inject_time") >= pl.datetime(2025, 7, 1, time_zone="UTC"),
-        pl.col("inject_time") <= pl.datetime(2025, 7, 7, time_zone="UTC"),
-    )
-
-    lf = lf.select(
-        pl.col("datapack"),
-        pl.col("env.normal_start").alias("normal_start"),
-        pl.col("env.normal_end").alias("normal_end"),
-        pl.col("env.abnormal_end").alias("interference_start"),
-        pl.col("env.abnormal_end").add(pl.duration(seconds=120)).alias("interference_end"),
-    )
-
-    df = lf.collect()
-
-    checks = [DatapackCheck(**row) for row in df.iter_rows(named=True)]
-    logger.info("checking {} datapacks", len(checks))
-
-    candidates: defaultdict[str, list[tuple[datetime, datetime]]] = defaultdict(list)
-
-    for check in checks:
-        assert isinstance(check.normal_start, datetime)
-        assert isinstance(check.interference_end, datetime)
-
-        for other in checks:
-            if check.datapack == other.datapack:
-                continue
-            if check.normal_end < other.interference_start:
-                continue
-            if check.normal_start > other.interference_end:
-                continue
-            candidates[check.datapack].append((other.interference_start, other.interference_end))
-
-    logger.info("checking {} datapacks", len(candidates))
-
-    tasks = [functools.partial(_check_clickhouse, datapack, ranges) for datapack, ranges in candidates.items()]
-    results = fmap_threadpool(tasks, parallel=32)
-    proportion = Fraction(sum(results), len(results))
-    logger.info("interference proportion = {}/{} ({:.2%})", sum(results), len(results), float(proportion))
-
-
-def _check_clickhouse(datapack: str, ranges: list[tuple[datetime, datetime]]):
-    lf = pl.scan_parquet(get_datapack_folder("rcabench", datapack) / "normal_traces.parquet")
-    lf = lf.select("time", (pl.col("duration") / 1e9).alias("duration"))
-
-    condition = functools.reduce(
-        lambda x, y: x & y,
-        [(pl.col("time") < start) | (pl.col("time") > end) for start, end in ranges],
-    )
-    lhs_lf = lf.filter(condition)
-    rhs_lf = lf.filter(condition.not_())
-
-    lhs_df = duration_statistics(lhs_lf).collect()
-    rhs_df = duration_statistics(rhs_lf).collect()
-
-    lhs_duration = lhs_df["duration:P9999"].item()
-    rhs_duration = rhs_df["duration:P9999"].item()
-
-    if rhs_duration is None:
-        return False
-
-    if lhs_duration is None:
-        return rhs_duration > 5
-
-    assert isinstance(lhs_duration, float)
-    assert isinstance(rhs_duration, float)
-
-    logger.debug("datapack=`{}`, lhs={:.3}s, rhs={:.3}s", datapack, lhs_duration, rhs_duration)
-
-    return (rhs_duration / lhs_duration) > 1.2
 
 
 @app.command()
@@ -255,6 +145,165 @@ def concat_normal_ranges():
     logger.info(f"Saved duration timeline plot to {output_path}")
 
     plt.close()
+
+
+@app.command()
+@timeit()
+def visualize_span_latency():
+    temp = get_config().temp
+
+    logger.info("Starting span latency visualization")
+
+    save_path = temp / "loadgenerator_traces_all.parquet"
+
+    with get_clickhouse_client() as client:
+        query = """
+        SELECT      TraceId, SpanName, Duration, Timestamp
+        FROM        otel_traces
+        WHERE       ServiceName = 'loadgenerator-service' 
+        AND ParentSpanId = '' 
+        AND Timestamp > toDateTime('2025-07-16 11:50:00') 
+        AND ResourceAttributes['service.namespace'] = 'ts1'
+        ORDER BY    Timestamp
+        """
+        query_parquet_stream(client, query, save_path)
+
+    df = pl.read_parquet(save_path)
+    assert len(df) > 0, "No traces found"
+
+    logger.info(f"Loaded {len(df)} trace records")
+
+    if len(df) > 0:
+        min_time = df["Timestamp"].min()
+        max_time = df["Timestamp"].max()
+        logger.info(f"Time range: {min_time} to {max_time}")
+
+    df = df.with_columns(
+        [
+            _normalize_op_name(pl.col("SpanName")).alias("SpanName"),
+            (pl.col("Timestamp")).alias("datetime"),
+            (pl.col("Duration") / 1e9).alias("duration_seconds"),
+        ]
+    )
+
+    span_names = df["SpanName"].unique().to_list()
+    logger.info(f"Found {len(span_names)} unique span names")
+
+    # 收集所有有效的 span 数据
+    valid_spans = []
+
+    for span_name in span_names:
+        span_df = df.filter(pl.col("SpanName") == span_name)
+
+        if len(span_df) < 10:
+            continue
+
+        span_aggregated = (
+            span_df.group_by_dynamic(
+                "datetime",
+                every="1m",
+            )
+            .agg(
+                [
+                    pl.col("duration_seconds").mean().alias("avg_duration"),
+                    pl.col("duration_seconds").quantile(0.90).alias("p90_duration"),
+                    pl.col("duration_seconds").quantile(0.99).alias("p99_duration"),
+                    pl.col("duration_seconds").count().alias("count"),
+                ]
+            )
+            .sort("datetime")
+        )
+
+        span_aggregated = span_aggregated.filter(pl.col("count") > 0)
+
+        if len(span_aggregated) < 2:
+            continue
+
+        plot_data = span_aggregated.to_pandas()
+        valid_spans.append((span_name, plot_data))
+
+    if not valid_spans:
+        logger.warning("No valid spans found for plotting")
+        return
+
+    logger.info(f"Found {len(valid_spans)} valid spans for plotting")
+
+    # 创建垂直堆叠的子图
+    fig, axes = plt.subplots(len(valid_spans), 1, figsize=(15, 6 * len(valid_spans)), sharex=True)
+
+    # 如果只有一个子图，axes 不是数组，需要转换
+    if len(valid_spans) == 1:
+        axes = [axes]
+
+    # 确定全局时间范围用于 x 轴格式化
+    all_times = []
+    for _, plot_data in valid_spans:
+        all_times.extend([plot_data["datetime"].min(), plot_data["datetime"].max()])
+
+    global_time_span = max(all_times) - min(all_times)
+
+    for i, (span_name, plot_data) in enumerate(valid_spans):
+        ax = axes[i]
+
+        ax.plot(
+            plot_data["datetime"],
+            plot_data["avg_duration"],
+            label="Average",
+            color="blue",
+            linewidth=2,
+            marker="o",
+            markersize=3,
+        )
+
+        ax.plot(
+            plot_data["datetime"],
+            plot_data["p90_duration"],
+            label="P90",
+            color="green",
+            linewidth=2,
+            marker="s",
+            markersize=3,
+        )
+
+        ax.plot(
+            plot_data["datetime"],
+            plot_data["p99_duration"],
+            label="P99",
+            color="red",
+            linewidth=2,
+            marker="^",
+            markersize=3,
+        )
+
+        ax.set_ylabel("Duration (seconds)", fontsize=12)
+        ax.set_title(f"Latency Time Series - {span_name}", fontsize=14, fontweight="bold")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    # 只在最后一个子图设置 x 轴标签和格式
+    axes[-1].set_xlabel("Time", fontsize=12)
+
+    # 根据全局时间跨度设置时间格式
+    if global_time_span.total_seconds() < 3600:
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=2))
+    elif global_time_span.total_seconds() < 86400:
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+        axes[-1].xaxis.set_major_locator(mdates.HourLocator(interval=1))
+    else:
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+        axes[-1].xaxis.set_major_locator(mdates.HourLocator(interval=6))
+
+    plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45)
+
+    plt.tight_layout()
+
+    # 保存合并后的图表
+    output_file = temp / "combined_span_latency_timeseries.png"
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"Saved combined latency time series plot with {len(valid_spans)} spans to {output_file}")
 
 
 if __name__ == "__main__":

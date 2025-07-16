@@ -14,21 +14,14 @@ import os
 import networkx as nx
 from collections import defaultdict
 import matplotlib
+import typer
+from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
+from rcabench_platform.v2.datasets.train_ticket import extract_path
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import graphviz
-
-
-def extract_path(uri: str):
-    from rcabench_platform.v2.datasets.train_ticket import PATTERN_REPLACEMENTS
-
-    for pattern, replacement in PATTERN_REPLACEMENTS:
-        res = re.sub(pattern, replacement, uri)
-        if res != uri:
-            return res
-    return uri
 
 
 def get_files(dataset: str) -> dict[str, list[str]]:
@@ -389,6 +382,14 @@ def patch(dataset: str):
     )
 
 
+def extract_deployment_name(service_name: str) -> str:
+    pattern = r"^(.+)-[a-z0-9]{8,10}-[a-z0-9]{5}$"
+    match = re.match(pattern, service_name)
+    if match:
+        return match.group(1)
+    return service_name
+
+
 def build_service_dependency_graph(traces_df: pl.DataFrame) -> nx.DiGraph:
     graph = nx.DiGraph()
 
@@ -399,6 +400,7 @@ def build_service_dependency_graph(traces_df: pl.DataFrame) -> nx.DiGraph:
             span_id = row["span_id"]
             parent_span_id = row["parent_span_id"]
             service_name = row["service_name"]
+            service_name = extract_deployment_name(service_name)
 
             spans[span_id] = {"service": service_name, "parent": parent_span_id if parent_span_id else None}
 
@@ -411,22 +413,16 @@ def build_service_dependency_graph(traces_df: pl.DataFrame) -> nx.DiGraph:
     return graph
 
 
-def find_entry_service(traces_df: pl.DataFrame) -> str:
-    """找到入口服务（通常是用户直接访问的服务）"""
-    # 找到所有根span（没有parent的span）的服务
+def find_entry_service(traces_df: pl.DataFrame) -> str | None:
     root_spans = traces_df.filter((pl.col("parent_span_id") == "") | pl.col("parent_span_id").is_null())
-
-    # 统计根span最多的服务作为入口服务
     entry_service_counts = (
         root_spans.group_by("service_name").agg(pl.len().alias("count")).sort("count", descending=True)
     )
 
     if entry_service_counts.height > 0:
-        return entry_service_counts.row(0)[0]  # 返回count最高的服务名
+        return extract_deployment_name(entry_service_counts.row(0)[0])
 
-    # 如果没有找到，返回第一个服务
-    first_service = traces_df.select("service_name").limit(1).item()
-    return first_service
+    return None
 
 
 def calculate_blast_radius(traces_df: pl.DataFrame, baseline_traces_df: pl.DataFrame) -> float:
@@ -478,11 +474,103 @@ def calculate_blast_radius(traces_df: pl.DataFrame, baseline_traces_df: pl.DataF
     return affected_count / all_comparable_services
 
 
-def calculate_fault_metrics(datapack_path: Path) -> FaultMetrics | None:
+def load_cached_fault_metrics(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
+    if ignore_cache:
+        return None
+
+    cache_file = datapack_path / "fault_metrics_cache.json"
+
+    if not cache_file.exists():
+        return None
+
+    try:
+        with open(cache_file) as f:
+            cached_data = json.load(f)
+            metrics = FaultMetrics(
+                causal_path_length=cached_data["causal_path_length"],
+                blast_radius=cached_data["blast_radius"],
+                centrality_stress=cached_data["centrality_stress"],
+            )
+            print(f"Loaded cached fault metrics for {datapack_path}")
+            return metrics
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"Cache file corrupted for {datapack_path}, recalculating: {e}")
+        return None
+
+
+def generate_debug_graph(
+    dependency_graph: nx.DiGraph,
+    entry_service: str,
+    root_cause_service: list[str],
+    datapack_path: Path,
+):
+    dot = graphviz.Digraph(comment="Service Dependency Graph")
+    dot.attr(rankdir="TB")  # Top to Bottom layout
+    dot.attr("node", shape="box", style="rounded,filled", fontname="Arial")
+    dot.attr("edge", fontname="Arial")
+
+    dot.attr(size="12,8")
+    dot.attr(dpi="300")
+    dot.attr(bgcolor="white")
+
+    for node in dependency_graph.nodes():
+        if node in root_cause_service:
+            dot.node(node, node, fillcolor="lightcoral", color="red", penwidth="3")
+        elif node == entry_service:
+            dot.node(node, node, fillcolor="lightgreen", color="green", penwidth="3")
+        else:
+            dot.node(node, node, fillcolor="lightblue", color="black")
+
+    for edge in dependency_graph.edges():
+        dot.edge(edge[0], edge[1])
+
+    with dot.subgraph(name="cluster_legend") as legend:  # type: ignore
+        legend.attr(label="Legend", style="rounded", color="gray")
+        legend.node(
+            "legend_root",
+            f"Root Cause\n{', '.join(root_cause_service)}",
+            fillcolor="lightcoral",
+            color="red",
+            penwidth="3",
+        )
+        legend.node(
+            "legend_entry", f"Entry Service\n{entry_service}", fillcolor="lightgreen", color="green", penwidth="3"
+        )
+        legend.node("legend_other", "Other Services", fillcolor="lightblue", color="black")
+
+    debug_dir = Path("temp/debug_graphs")
+    debug_dir.mkdir(exist_ok=True)
+    output_file = debug_dir / f"{datapack_path.name}"
+
+    dot.render(str(output_file), format="png", cleanup=True)
+    print(f"Debug graph saved to: {output_file}.png")
+
+
+def handle_path_finding_error(
+    e: Exception, entry_service: str, root_cause_service: list[str], dependency_graph: nx.DiGraph, datapack_path: Path
+) -> None:
+    if isinstance(e, AssertionError):
+        print(f"Assertion failed: entry_service={entry_service}, root_cause_service={root_cause_service}")
+    else:
+        print(f"No path found between {entry_service} and {root_cause_service} in undirected graph.")
+
+    generate_debug_graph(dependency_graph, entry_service, root_cause_service, datapack_path)
+
+
+def calculate_fault_metrics_rcabench(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
+    cached_metrics = load_cached_fault_metrics(datapack_path, ignore_cache)
+    if cached_metrics is not None:
+        return cached_metrics
+
     metrics = FaultMetrics()
 
     injection_file = datapack_path / "injection.json"
-    assert injection_file.exists(), f"Injection file not found in {datapack_path}"
+    abnormal_traces_file = datapack_path / "abnormal_traces.parquet"
+    normal_traces_file = datapack_path / "normal_traces.parquet"
+
+    if not injection_file.exists() or not abnormal_traces_file.exists() or not normal_traces_file.exists():
+        print(f"Skipping {datapack_path} due to missing files.")
+        return None
 
     with open(injection_file) as f:
         injection = json.load(f)
@@ -490,18 +578,13 @@ def calculate_fault_metrics(datapack_path: Path) -> FaultMetrics | None:
 
     assert root_cause_service, f"{injection}"
 
-    abnormal_traces_file = datapack_path / "abnormal_traces.parquet"
-    assert abnormal_traces_file.exists(), f"Abnormal traces file not found in {datapack_path}"
-
     abnormal_traces = pl.scan_parquet(abnormal_traces_file).collect()
-
     entry_service = find_entry_service(abnormal_traces)
-    normal_traces_file = datapack_path / "normal_traces.parquet"
-    baseline_traces = None
-    assert normal_traces_file.exists(), f"Normal traces file not found in {datapack_path}"
+    if entry_service is None:
+        print(f"No entry service found in abnormal traces for {datapack_path}")
+        return None
     baseline_traces = pl.scan_parquet(normal_traces_file).collect()
     assert baseline_traces is not None, "Baseline traces must be provided"
-
     combined_traces = pl.concat([baseline_traces, abnormal_traces])
     dependency_graph = build_service_dependency_graph(combined_traces)
 
@@ -524,6 +607,99 @@ def calculate_fault_metrics(datapack_path: Path) -> FaultMetrics | None:
                 path_lengths.append(path_length)
                 print(f"Found undirected path from {entry_service} to {rc_service}: length {path_length}")
             except nx.NetworkXNoPath:
+                continue
+
+        if path_lengths:
+            metrics.causal_path_length = min(path_lengths)
+            print(f"Minimum causal path length: {metrics.causal_path_length}")
+        else:
+            raise nx.NetworkXNoPath("No paths found to any root cause service")
+    except (nx.NetworkXNoPath, AssertionError) as e:
+        handle_path_finding_error(e, entry_service, root_cause_service, dependency_graph, datapack_path.parent)
+        metrics.causal_path_length = -1
+        return None
+
+    metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces)
+    betweenness = nx.betweenness_centrality(dependency_graph, normalized=True)
+    centrality_scores = [betweenness.get(rc_service, 0.0) for rc_service in root_cause_service]
+    metrics.centrality_stress = sum(centrality_scores) / len(centrality_scores) if centrality_scores else 0.0
+
+    # Cache the results
+    cache_file = datapack_path / "fault_metrics_cache.json"
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(metrics.to_dict(), f, indent=2)
+        print(f"Cached fault metrics for {datapack_path}")
+    except Exception as e:
+        print(f"Failed to cache fault metrics for {datapack_path}: {e}")
+
+    return metrics
+
+
+def calculate_fault_metrics_nezha(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
+    if "normal" in str(datapack_path):
+        return None
+    cached_metrics = load_cached_fault_metrics(datapack_path, ignore_cache)
+    if cached_metrics is not None:
+        return cached_metrics
+
+    metrics = FaultMetrics()
+
+    injection_file = datapack_path / "fault_info.json"
+    abnormal_traces_file = datapack_path / "trace.parquet"
+
+    normal_traces_file1 = Path("data/rcabench-platform-v2/data/nezha_tt/2023-01-29_08-50_normal_case/trace.parquet")
+    normal_traces_file2 = Path("data/rcabench-platform-v2/data/nezha_tt/2023-01-30_11-39_normal_case/trace.parquet")
+
+    missing_files = []
+    if not injection_file.exists():
+        missing_files.append(f"injection.json: {injection_file}")
+    if not abnormal_traces_file.exists():
+        missing_files.append(f"abnormal_traces.parquet: {abnormal_traces_file}")
+    if not normal_traces_file1.exists():
+        missing_files.append(f"normal_traces_file1: {normal_traces_file1}")
+    if not normal_traces_file2.exists():
+        missing_files.append(f"normal_traces_file2: {normal_traces_file2}")
+
+    if missing_files:
+        print(f"Skipping {datapack_path} due to missing files:")
+        for missing_file in missing_files:
+            print(f"  - {missing_file}")
+        return None
+
+    with open(injection_file) as f:
+        injection = json.load(f)
+        root_cause_service = [injection["injection_name"]]
+
+    assert root_cause_service, f"{injection}"
+
+    abnormal_traces = pl.scan_parquet(abnormal_traces_file).collect()
+    entry_service = find_entry_service(abnormal_traces)
+    if entry_service is None:
+        print(f"No entry service found in abnormal traces for {datapack_path}")
+        return None
+
+    baseline_traces1 = pl.scan_parquet(normal_traces_file1).collect()
+    baseline_traces2 = pl.scan_parquet(normal_traces_file2).collect()
+    assert baseline_traces1 is not None and baseline_traces2 is not None
+    combined_traces = pl.concat([baseline_traces1, baseline_traces2, abnormal_traces])
+    dependency_graph = build_service_dependency_graph(combined_traces)
+
+    try:
+        assert entry_service in dependency_graph
+
+        for rc_service in root_cause_service:
+            assert rc_service in dependency_graph
+
+        undirected_graph = dependency_graph.to_undirected()
+
+        path_lengths = []
+        for rc_service in root_cause_service:
+            try:
+                path_length = nx.shortest_path_length(undirected_graph, source=entry_service, target=rc_service)
+                path_lengths.append(path_length)
+                print(f"Found undirected path from {entry_service} to {rc_service}: length {path_length}")
+            except nx.NetworkXNoPath:
                 print(f"No path found between {entry_service} and {rc_service}")
                 continue
 
@@ -533,80 +709,141 @@ def calculate_fault_metrics(datapack_path: Path) -> FaultMetrics | None:
         else:
             raise nx.NetworkXNoPath("No paths found to any root cause service")
     except (nx.NetworkXNoPath, AssertionError) as e:
-        if isinstance(e, AssertionError):
-            print(f"Assertion failed: entry_service={entry_service}, root_cause_service={root_cause_service}")
-        else:
-            print(f"No path found between {entry_service} and {root_cause_service} in undirected graph.")
-
-        dot = graphviz.Digraph(comment="Service Dependency Graph")
-        dot.attr(rankdir="TB")  # Top to Bottom layout
-        dot.attr("node", shape="box", style="rounded,filled", fontname="Arial")
-        dot.attr("edge", fontname="Arial")
-
-        dot.attr(size="12,8")
-        dot.attr(dpi="300")
-        dot.attr(bgcolor="white")
-
-        for node in dependency_graph.nodes():
-            if node in root_cause_service:
-                dot.node(node, node, fillcolor="lightcoral", color="red", penwidth="3")
-            elif node == entry_service:
-                dot.node(node, node, fillcolor="lightgreen", color="green", penwidth="3")
-            else:
-                dot.node(node, node, fillcolor="lightblue", color="black")
-
-        for edge in dependency_graph.edges():
-            dot.edge(edge[0], edge[1])
-
-        # 添加图例节点
-        with dot.subgraph(name="cluster_legend") as legend:  # type: ignore
-            legend.attr(label="Legend", style="rounded", color="gray")
-            legend.node(
-                "legend_root",
-                f"Root Cause\n{', '.join(root_cause_service)}",
-                fillcolor="lightcoral",
-                color="red",
-                penwidth="3",
-            )
-            legend.node(
-                "legend_entry", f"Entry Service\n{entry_service}", fillcolor="lightgreen", color="green", penwidth="3"
-            )
-            legend.node("legend_other", "Other Services", fillcolor="lightblue", color="black")
-
-        debug_dir = Path("temp/debug_graphs")
-        debug_dir.mkdir(exist_ok=True)
-        output_file = debug_dir / f"{datapack_path.name}_no_path"
-
-        dot.render(str(output_file), format="png", cleanup=True)
-        print(f"Debug graph saved to: {output_file}.png")
-
+        handle_path_finding_error(e, entry_service, root_cause_service, dependency_graph, datapack_path)
         metrics.causal_path_length = -1
         return None
 
-    metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces)
-
+    # metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces1)
     betweenness = nx.betweenness_centrality(dependency_graph, normalized=True)
     centrality_scores = [betweenness.get(rc_service, 0.0) for rc_service in root_cause_service]
     metrics.centrality_stress = sum(centrality_scores) / len(centrality_scores) if centrality_scores else 0.0
+
+    cache_file = datapack_path / "fault_metrics_cache.json"
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(metrics.to_dict(), f, indent=2)
+        print(f"Cached fault metrics for {datapack_path}")
+    except Exception as e:
+        print(f"Failed to cache fault metrics for {datapack_path}: {e}")
+
+    return metrics
+
+
+def calculate_fault_metrics_eadro(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
+    cached_metrics = load_cached_fault_metrics(datapack_path, ignore_cache)
+    if cached_metrics is not None:
+        return cached_metrics
+
+    metrics = FaultMetrics()
+
+    injection_file = datapack_path / "fault_info.json"
+    abnormal_traces_file = datapack_path / "trace.parquet"
+
+    missing_files = []
+    if not injection_file.exists():
+        missing_files.append(f"injection.json: {injection_file}")
+    if not abnormal_traces_file.exists():
+        missing_files.append(f"abnormal_traces.parquet: {abnormal_traces_file}")
+
+    if missing_files:
+        print(f"Skipping {datapack_path} due to missing files:")
+        for missing_file in missing_files:
+            print(f"  - {missing_file}")
+        return None
+
+    with open(injection_file) as f:
+        injection = json.load(f)
+        if injection["injection_name"] == "":
+            return None
+        root_cause_service = [injection["injection_name"]]
+
+    assert root_cause_service, f"{injection}"
+
+    abnormal_traces = pl.scan_parquet(abnormal_traces_file).collect()
+    entry_service = find_entry_service(abnormal_traces)
+
+    if entry_service is None:
+        print(f"No entry service found in abnormal traces for {datapack_path}")
+        return None
+
+    combined_traces = pl.concat([abnormal_traces])
+    dependency_graph = build_service_dependency_graph(combined_traces)
+
+    try:
+        assert entry_service in dependency_graph
+
+        for rc_service in root_cause_service:
+            assert rc_service in dependency_graph
+
+        undirected_graph = dependency_graph.to_undirected()
+
+        path_lengths = []
+        for rc_service in root_cause_service:
+            try:
+                path_length = nx.shortest_path_length(undirected_graph, source=entry_service, target=rc_service)
+                path_lengths.append(path_length)
+                print(f"Found undirected path from {entry_service} to {rc_service}: length {path_length}")
+            except nx.NetworkXNoPath:
+                print(f"No path found between {entry_service} and {rc_service}")
+                continue
+
+        if path_lengths:
+            metrics.causal_path_length = min(path_lengths)
+            print(f"Minimum causal path length: {metrics.causal_path_length}")
+        else:
+            raise nx.NetworkXNoPath("No paths found to any root cause service")
+    except (nx.NetworkXNoPath, AssertionError) as e:
+        handle_path_finding_error(e, entry_service, root_cause_service, dependency_graph, datapack_path)
+        metrics.causal_path_length = -1
+        return None
+
+    # metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces1)
+    betweenness = nx.betweenness_centrality(dependency_graph, normalized=True)
+    centrality_scores = [betweenness.get(rc_service, 0.0) for rc_service in root_cause_service]
+    metrics.centrality_stress = sum(centrality_scores) / len(centrality_scores) if centrality_scores else 0.0
+
+    cache_file = datapack_path / "fault_metrics_cache.json"
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(metrics.to_dict(), f, indent=2)
+        print(f"Cached fault metrics for {datapack_path}")
+    except Exception as e:
+        print(f"Failed to cache fault metrics for {datapack_path}: {e}")
 
     return metrics
 
 
 @app.command()
-def dataset_metric(dataset: str):
-    folder = Path("data/rcabench-platform-v2/data") / dataset
-    datapacks = [f for f in folder.iterdir() if f.is_dir()]
-
+def dataset_metric(
+    dataset_name: str,
+    ignore_cache: bool = typer.Option(False, "--ignore-cache", help="omit cache files, force recalculation"),
+):
     dataset_metrics = DatasetMetrics()
+    datapacks = None
+    tasks = []
 
-    tasks = [functools.partial(calculate_fault_metrics, datapack) for datapack in datapacks]
+    if dataset_name == "rcabench":
+        from rcabench.openapi import InjectionApi
 
-    print(f"Processing {len(tasks)} datapacks in parallel...")
+        api = InjectionApi(get_rcabench_openapi_client(base_url="http://10.10.10.220:32080"))
+        with_issues_resp = api.api_v1_injections_analysis_with_issues_get()
+        assert with_issues_resp.data is not None
+        rows = set()
+        for item in with_issues_resp.data:
+            assert item.injection_name is not None
+            rows.add(item.injection_name)
+        datapacks = [Path("data/rcabench_dataset") / f / "converted" for f in list(rows)]
 
-    fault_metrics_results = fmap_processpool(
-        tasks,
-        parallel=16,
-    )
+        tasks = [functools.partial(calculate_fault_metrics_rcabench, datapack, ignore_cache) for datapack in datapacks]
+    if dataset_name.startswith("nezha"):
+        datapacks = [f for f in Path("data/rcabench-platform-v2/data/nezha_tt").iterdir() if f.is_dir()]
+        tasks = [functools.partial(calculate_fault_metrics_nezha, datapack, ignore_cache) for datapack in datapacks]
+    if dataset_name.startswith("eadro"):
+        datapacks = [f for f in Path(f"data/rcabench-platform-v2/data/{dataset_name}").iterdir() if f.is_dir()]
+        tasks = [functools.partial(calculate_fault_metrics_eadro, datapack, ignore_cache) for datapack in datapacks]
+
+    assert datapacks is not None
+    fault_metrics_results = fmap_processpool(tasks, parallel=31, cpu_limit_each=4)
 
     for fault_metrics_results in fault_metrics_results:
         if fault_metrics_results is not None:
@@ -614,12 +851,11 @@ def dataset_metric(dataset: str):
 
     dataset_metrics.calculate_averages()
 
-    output_file = f"temp/{dataset}_fault_metrics.json"
+    output_file = f"temp/{dataset_name}_fault_metrics.json"
     with open(output_file, "w") as f:
         json.dump(dataset_metrics.to_dict(), f, indent=4, default=str)
 
     print(f"Fault metrics saved to {output_file}")
-    print(f"Dataset: {dataset}")
     print(f"Total faults: {len(dataset_metrics.fault_metrics)}")
     print(f"Average CPL: {dataset_metrics.avg_cpl:.2f}")
     print(f"Average BR: {dataset_metrics.avg_br:.2f}")
@@ -629,10 +865,12 @@ def dataset_metric(dataset: str):
 
 
 @app.command()
-def local_test():
+def local_test(
+    ignore_cache: bool = typer.Option(False, "--ignore-cache", help="omit cache files, force recalculation"),
+):
     dataset_metrics = DatasetMetrics()
     path = Path("/mnt/jfs/rcabench_dataset/ts5-ts-verification-code-service-return-f62ks9/converted")
-    fault_metrics_results = calculate_fault_metrics(path)
+    fault_metrics_results = calculate_fault_metrics_rcabench(path, ignore_cache)
 
     if fault_metrics_results is not None:
         dataset_metrics.fault_metrics.append(fault_metrics_results)
