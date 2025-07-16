@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 import functools
 import re
+from zoneinfo import ZoneInfo
 
 import polars as pl
 import matplotlib.pyplot as plt
@@ -119,13 +120,19 @@ def concat_normal_ranges():
 
     # Convert to pandas for easier plotting with matplotlib
     df_pandas = df.to_pandas()
+
+    # Convert UTC timestamps to Beijing time (UTC+8) for display
+    df_pandas["time"] = df_pandas["time"].dt.tz_convert("Asia/Shanghai")
+
     del df
     # Plot duration over time
     plt.plot(df_pandas["time"], df_pandas["duration"], linewidth=0.8, alpha=0.7)
 
     # Format the plot
-    plt.title("Maximum Duration Over Time (1-second aggregation)", fontsize=14, fontweight="bold")
-    plt.xlabel("Time", fontsize=12)
+    plt.title(
+        "Maximum Duration Over Time (1-second aggregation) - Beijing Time (UTC+8)", fontsize=14, fontweight="bold"
+    )
+    plt.xlabel("Time (Beijing Time)", fontsize=12)
     plt.ylabel("Duration (seconds)", fontsize=12)
     plt.yscale("log")  # Set y-axis to logarithmic scale
     plt.grid(True, alpha=0.3)
@@ -161,8 +168,8 @@ def visualize_span_latency():
         FROM        otel_traces
         WHERE       ServiceName = 'loadgenerator-service' 
         AND ParentSpanId = '' 
-        AND Timestamp > toDateTime('2025-07-16 11:50:00') 
-        AND ResourceAttributes['service.namespace'] = 'ts'
+        AND Timestamp > toDateTime('2025-07-16 21:25:00') 
+        AND ResourceAttributes['service.namespace'] = 'ts1'
         ORDER BY    Timestamp
         """
         query_parquet_stream(client, query, save_path)
@@ -173,9 +180,11 @@ def visualize_span_latency():
     logger.info(f"Loaded {len(df)} trace records")
 
     if len(df) > 0:
-        min_time = df["Timestamp"].min()
-        max_time = df["Timestamp"].max()
-        logger.info(f"Time range: {min_time} to {max_time}")
+        # Convert entire Timestamp column to Beijing time first, then get min/max
+        beijing_timestamps = df["Timestamp"].dt.convert_time_zone("Asia/Shanghai")
+        min_time_beijing = beijing_timestamps.min()
+        max_time_beijing = beijing_timestamps.max()
+        logger.info(f"Time range (Beijing Time): {min_time_beijing} to {max_time_beijing}")
 
     df = df.with_columns(
         [
@@ -196,28 +205,12 @@ def visualize_span_latency():
         if len(span_df) < 10:
             continue
 
-        span_aggregated = (
-            span_df.group_by_dynamic(
-                "datetime",
-                every="1m",
-            )
-            .agg(
-                [
-                    pl.col("duration_seconds").mean().alias("avg_duration"),
-                    pl.col("duration_seconds").quantile(0.90).alias("p90_duration"),
-                    pl.col("duration_seconds").quantile(0.99).alias("p99_duration"),
-                    pl.col("duration_seconds").count().alias("count"),
-                ]
-            )
-            .sort("datetime")
-        )
+        span_data = span_df.select(["datetime", "duration_seconds"]).sort("datetime")
 
-        span_aggregated = span_aggregated.filter(pl.col("count") > 0)
-
-        if len(span_aggregated) < 2:
+        if len(span_data) < 2:
             continue
 
-        plot_data = span_aggregated.to_pandas()
+        plot_data = span_data.to_pandas()
         valid_spans.append((span_name, plot_data))
 
     if not valid_spans:
@@ -233,72 +226,43 @@ def visualize_span_latency():
 
     all_times = []
     for _, plot_data in valid_spans:
-        all_times.extend([plot_data["datetime"].min(), plot_data["datetime"].max()])
-
-    global_time_span = max(all_times) - min(all_times)
+        all_times.extend(
+            [
+                plot_data["datetime"].min().tz_convert("Asia/Shanghai"),
+                plot_data["datetime"].max().tz_convert("Asia/Shanghai"),
+            ]
+        )
 
     for i, (span_name, plot_data) in enumerate(valid_spans):
         ax = axes[i]
 
         ax.plot(
-            plot_data["datetime"],
-            plot_data["avg_duration"],
-            label="Average",
+            plot_data["datetime"].dt.tz_convert("Asia/Shanghai"),
+            plot_data["duration_seconds"],
             color="blue",
-            linewidth=2,
+            linewidth=0.8,
             marker="o",
-            markersize=3,
-        )
-
-        ax.plot(
-            plot_data["datetime"],
-            plot_data["p90_duration"],
-            label="P90",
-            color="green",
-            linewidth=2,
-            marker="s",
-            markersize=3,
-        )
-
-        ax.plot(
-            plot_data["datetime"],
-            plot_data["p99_duration"],
-            label="P99",
-            color="red",
-            linewidth=2,
-            marker="^",
-            markersize=3,
+            markersize=1,
+            alpha=0.7,
         )
 
         ax.set_ylabel("Duration (seconds)", fontsize=12)
-        ax.set_title(f"Latency Time Series - {span_name}", fontsize=14, fontweight="bold")
-        ax.legend()
+        ax.set_title(f"Request Latency - {span_name}", fontsize=14, fontweight="bold")
         ax.grid(True, alpha=0.3)
 
-    # 只在最后一个子图设置 x 轴标签和格式
     axes[-1].set_xlabel("Time", fontsize=12)
-
-    # 根据全局时间跨度设置时间格式
-    if global_time_span.total_seconds() < 3600:
-        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-        axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=2))
-    elif global_time_span.total_seconds() < 86400:
-        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
-        axes[-1].xaxis.set_major_locator(mdates.HourLocator(interval=1))
-    else:
-        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
-        axes[-1].xaxis.set_major_locator(mdates.HourLocator(interval=6))
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=2))
 
     plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45)
 
     plt.tight_layout()
 
-    # 保存合并后的图表
     output_file = temp / "combined_span_latency_timeseries.png"
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
     plt.close()
 
-    logger.info(f"Saved combined latency time series plot with {len(valid_spans)} spans to {output_file}")
+    logger.info(f"Saved individual request latency plot with {len(valid_spans)} spans to {output_file}")
 
 
 if __name__ == "__main__":
