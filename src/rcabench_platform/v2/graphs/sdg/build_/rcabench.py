@@ -103,11 +103,18 @@ def load_metrics(input_folder: Path) -> pl.LazyFrame:
 
 METRIC_PREFIX_PLACE_KIND: dict[str, PlaceKind] = {
     "k8s.pod.": PlaceKind.pod,
+    "jvm.cpu.recent_utilization": PlaceKind.pod,
+    "jvm.system.cpu.load_1m": PlaceKind.pod,
+    "jvm.system.cpu.utilization": PlaceKind.pod,
+    "queueSize": PlaceKind.pod,
+    #
     "k8s.container.": PlaceKind.container,
     "container.": PlaceKind.container,
+    #
     "k8s.replicaset.": PlaceKind.replica_set,
     "k8s.deployment.": PlaceKind.deployment,
     "k8s.statefulset.": PlaceKind.stateful_set,
+    #
     "hubble_": PlaceKind.service,
 }
 
