@@ -192,7 +192,7 @@ def __generate_statistics_report(df: pl.DataFrame, rule_columns: list[str]):
 
 
 @app.command()
-def analyze() -> None:
+def run() -> None:
     rules_check_file = get_dataset_meta_file("rcabench", "rules_check.parquet")
 
     if not Path(rules_check_file).exists():
@@ -212,8 +212,6 @@ def analyze() -> None:
     ]
 
     __create_visualizations(df, rule_columns)
-
-    __generate_statistics_report(df, rule_columns)
 
 
 if __name__ == "__main__":

@@ -156,7 +156,7 @@ def convert_metrics_histogram(src: Path) -> pl.LazyFrame:
     return lf
 
 
-def convert_traces(src: Path) -> pl.LazyFrame:
+def convert_traces(src: Path, filter: bool = False) -> pl.LazyFrame:
     lf = pl.scan_parquet(src).select(
         "Timestamp",
         "TraceId",
@@ -240,20 +240,9 @@ def convert_traces(src: Path) -> pl.LazyFrame:
         }
     )
 
-    # if p99:
-    #     root_spans_p99 = (
-    #         lf.filter(pl.col("parent_span_id").is_null())
-    #         .group_by("trace_id")
-    #         .agg(pl.col("duration").quantile(0.99).alias("p99_duration"))
-    #     )
-
-    #     global_p99_threshold = (
-    #         root_spans_p99.select(pl.col("p99_duration").quantile(0.99).alias("threshold")).collect().item()
-    #     )
-
-    #     filtered_trace_ids = root_spans_p99.filter(pl.col("p99_duration") <= global_p99_threshold).select("trace_id")
-
-    #     lf = lf.join(filtered_trace_ids, on="trace_id", how="inner")
+    if filter:
+        traces_with_long_spans = lf.filter(pl.col("duration") > 2_000_000_000).select("trace_id").unique()
+        lf = lf.join(traces_with_long_spans, on="trace_id", how="anti")
 
     lf = lf.sort("time")
 
@@ -378,6 +367,9 @@ class RcabenchDatapackLoader(DatapackLoader):
         for key, func in converters.items():
             for prefix in ("normal", "abnormal"):
                 name = f"{prefix}{key}.parquet"
+                if prefix == "normal" and key == "_traces":
+                    ans[name] = func(self._src_folder / name, True)
+                    continue
                 ans[name] = func(self._src_folder / name)
 
         return ans

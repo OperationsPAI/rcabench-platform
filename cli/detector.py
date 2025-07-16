@@ -443,7 +443,7 @@ def patch_detection():
             logger.warning(f"Skipping {datapack.name} due to missing trace files")
             continue
 
-        tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=False))
+        tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=True))
 
     cpu = os.cpu_count()
     assert cpu is not None
@@ -505,23 +505,15 @@ def process_datapack_confidence(datapack_path: Path, du: int) -> str | None:
 @timeit()
 def query_with_confidence(duration: int):
     input_path = Path("data") / "rcabench_dataset"
-
     datapack_paths = [datapack for datapack in input_path.iterdir() if datapack.is_dir()]
-
     tasks = [
         functools.partial(process_datapack_confidence, datapack_path, duration) for datapack_path in datapack_paths
     ]
-
-    # Process in parallel using thread pool (I/O bound operations)
     cpu = os.cpu_count()
     assert cpu is not None
     results = fmap_threadpool(tasks, parallel=min(cpu, 32))
-
-    # Filter out None results
     datapacks = [result for result in results if result is not None]
-
     logger.info(f"Found {len(datapacks)} datapacks with all durations < {duration}s")
-
     return datapacks
 
 

@@ -163,7 +163,7 @@ def visualize_span_latency():
         WHERE       ServiceName = 'loadgenerator-service' 
         AND ParentSpanId = '' 
         AND Timestamp > toDateTime('2025-07-16 11:50:00') 
-        AND ResourceAttributes['service.namespace'] = 'ts1'
+        AND ResourceAttributes['service.namespace'] = 'ts'
         ORDER BY    Timestamp
         """
         query_parquet_stream(client, query, save_path)
@@ -189,7 +189,6 @@ def visualize_span_latency():
     span_names = df["SpanName"].unique().to_list()
     logger.info(f"Found {len(span_names)} unique span names")
 
-    # 收集所有有效的 span 数据
     valid_spans = []
 
     for span_name in span_names:
@@ -228,14 +227,11 @@ def visualize_span_latency():
 
     logger.info(f"Found {len(valid_spans)} valid spans for plotting")
 
-    # 创建垂直堆叠的子图
     fig, axes = plt.subplots(len(valid_spans), 1, figsize=(15, 6 * len(valid_spans)), sharex=True)
 
-    # 如果只有一个子图，axes 不是数组，需要转换
     if len(valid_spans) == 1:
         axes = [axes]
 
-    # 确定全局时间范围用于 x 轴格式化
     all_times = []
     for _, plot_data in valid_spans:
         all_times.extend([plot_data["datetime"].min(), plot_data["datetime"].max()])
