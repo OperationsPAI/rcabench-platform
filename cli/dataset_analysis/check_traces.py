@@ -1,5 +1,4 @@
 #!/usr/bin/env -S uv run -s
-from collections import defaultdict
 from dataclasses import dataclass
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.clickhouse import get_clickhouse_client, query_parquet_stream
@@ -10,10 +9,6 @@ from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import load_json, save_parquet
 from rcabench_platform.v2.datasets.train_ticket import _normalize_op_name
 from datetime import datetime
-from pathlib import Path
-import functools
-import re
-from zoneinfo import ZoneInfo
 
 import polars as pl
 import matplotlib.pyplot as plt
@@ -228,8 +223,8 @@ def visualize_span_latency():
     for _, plot_data in valid_spans:
         all_times.extend(
             [
-                plot_data["datetime"].min().tz_convert("Asia/Shanghai"),
-                plot_data["datetime"].max().tz_convert("Asia/Shanghai"),
+                plot_data["datetime"].min(),
+                plot_data["datetime"].max(),
             ]
         )
 
@@ -237,7 +232,7 @@ def visualize_span_latency():
         ax = axes[i]
 
         ax.plot(
-            plot_data["datetime"].dt.tz_convert("Asia/Shanghai"),
+            plot_data["datetime"],
             plot_data["duration_seconds"],
             color="blue",
             linewidth=0.8,
@@ -251,7 +246,7 @@ def visualize_span_latency():
         ax.grid(True, alpha=0.3)
 
     axes[-1].set_xlabel("Time", fontsize=12)
-    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz="Asia/Shanghai"))
     axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=2))
 
     plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45)
