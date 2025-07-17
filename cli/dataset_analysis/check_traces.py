@@ -150,7 +150,7 @@ def concat_normal_ranges():
 
 @app.command()
 @timeit()
-def visualize_span_latency():
+def visualize_span_latency(ns: str, start_time: str = "2025-07-17 11:00:00"):
     temp = get_config().temp
 
     logger.info("Starting span latency visualization")
@@ -158,13 +158,13 @@ def visualize_span_latency():
     save_path = temp / "loadgenerator_traces_all.parquet"
 
     with get_clickhouse_client() as client:
-        query = """
+        query = f"""
         SELECT      TraceId, SpanName, Duration, Timestamp
         FROM        otel_traces
         WHERE       ServiceName = 'loadgenerator-service' 
         AND ParentSpanId = '' 
-        AND Timestamp > toDateTime('2025-07-16 21:25:00') 
-        AND ResourceAttributes['service.namespace'] = 'ts1'
+        AND Timestamp > toDateTime('{start_time}') 
+        AND ResourceAttributes['service.namespace'] = '{ns}'
         ORDER BY    Timestamp
         """
         query_parquet_stream(client, query, save_path)
@@ -228,6 +228,25 @@ def visualize_span_latency():
             ]
         )
 
+    if all_times:
+        time_span_hours = (max(all_times) - min(all_times)).total_seconds() / 3600
+
+        # Determine interval based on time span
+        if time_span_hours < 1:
+            interval_minutes = 2
+        elif time_span_hours <= 6:
+            interval_minutes = 5
+        elif time_span_hours <= 12:
+            interval_minutes = 10
+        elif time_span_hours <= 24:
+            interval_minutes = 20
+        else:
+            interval_minutes = 30
+
+        logger.info(f"Time span: {time_span_hours:.2f} hours, using {interval_minutes} minute intervals")
+    else:
+        interval_minutes = 2  # Default fallback
+
     for i, (span_name, plot_data) in enumerate(valid_spans):
         ax = axes[i]
 
@@ -247,13 +266,13 @@ def visualize_span_latency():
 
     axes[-1].set_xlabel("Time", fontsize=12)
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz="Asia/Shanghai"))
-    axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=2))
+    axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval_minutes))
 
     plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45)
 
     plt.tight_layout()
 
-    output_file = temp / "combined_span_latency_timeseries.png"
+    output_file = temp / f"{ns}_span_latency_timeseries.png"
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
     plt.close()
 
