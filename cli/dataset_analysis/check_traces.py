@@ -52,21 +52,6 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
     df = df.with_columns(_normalize_op_name(pl.col("SpanName")).alias("SpanName"))
 
 
-def duration_statistics(lf: pl.LazyFrame) -> pl.LazyFrame:
-    return lf.select(
-        pl.col("duration").mean().alias("duration:mean"),
-        pl.col("duration").std().alias("duration:std"),
-        pl.col("duration").min().alias("duration:min"),
-        pl.col("duration").median().alias("duration:median"),
-        pl.col("duration").max().alias("duration:max"),
-        pl.col("duration").quantile(0.90).alias("duration:P90"),
-        pl.col("duration").quantile(0.95).alias("duration:P95"),
-        pl.col("duration").quantile(0.99).alias("duration:P99"),
-        pl.col("duration").quantile(0.999).alias("duration:P999"),
-        pl.col("duration").quantile(0.9999).alias("duration:P9999"),
-    )
-
-
 @dataclass(kw_only=True, slots=True)
 class DatapackCheck:
     datapack: str
@@ -149,8 +134,15 @@ def concat_normal_ranges():
 
 
 @app.command()
-@timeit()
-def visualize_span_latency(ns: str, start_time: str = "2025-07-17 11:00:00"):
+def vis_all(start_time: str = "2025-07-18 11:00:00"):
+    visualize_span_latency("ts0", start_time)
+    visualize_span_latency("ts1", start_time)
+    visualize_span_latency("ts2", start_time)
+    visualize_span_latency("ts3", start_time)
+
+
+@app.command()
+def visualize_span_latency(ns: str, start_time: str = "2025-07-18 11:00:00"):
     temp = get_config().temp
 
     logger.info("Starting span latency visualization")
@@ -175,7 +167,6 @@ def visualize_span_latency(ns: str, start_time: str = "2025-07-17 11:00:00"):
     logger.info(f"Loaded {len(df)} trace records")
 
     if len(df) > 0:
-        # Convert entire Timestamp column to Beijing time first, then get min/max
         beijing_timestamps = df["Timestamp"].dt.convert_time_zone("Asia/Shanghai")
         min_time_beijing = beijing_timestamps.min()
         max_time_beijing = beijing_timestamps.max()
@@ -272,8 +263,9 @@ def visualize_span_latency(ns: str, start_time: str = "2025-07-17 11:00:00"):
 
     plt.tight_layout()
 
-    output_file = temp / f"{ns}_span_latency_timeseries.png"
-    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    output_file = temp / "vis_trace_all"
+    output_file.mkdir(exist_ok=True, parents=True)
+    plt.savefig(output_file / f"{ns}_span_latency_timeseries.png", dpi=300, bbox_inches="tight")
     plt.close()
 
     logger.info(f"Saved individual request latency plot with {len(valid_spans)} spans to {output_file}")
