@@ -362,9 +362,9 @@ class RcabenchDatapackLoader(DatapackLoader):
         for key, func in converters.items():
             for prefix in ("normal", "abnormal"):
                 name = f"{prefix}{key}.parquet"
-                if prefix == "normal" and key == "_traces":
-                    ans[name] = func(self._src_folder / name, True)
-                    continue
+                # if prefix == "normal" and key == "_traces":
+                # ans[name] = func(self._src_folder / name, True)
+                # continue
                 ans[name] = func(self._src_folder / name)
 
         return ans

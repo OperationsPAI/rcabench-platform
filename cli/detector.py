@@ -119,12 +119,12 @@ def read_dataframe(file: Path) -> pl.LazyFrame:
 def preprocess_trace(file: Path):
     df = read_dataframe(file)
 
-    entry_df = df.filter(pl.col("ServiceName") == "loadgenerator-service")
+    entry_df = df.filter((pl.col("ServiceName") == "loadgenerator-service") & (pl.col("ParentSpanId").is_null()))
 
     entry_count = entry_df.select(pl.count()).collect().item()
     if entry_count == 0:
         logger.error("loadgenerator-service not found in trace data, using ts-ui-dashboard as fallback")
-        entry_df = df.filter(pl.col("ServiceName") == "ts-ui-dashboard")
+        entry_df = df.filter((pl.col("ServiceName") == "ts-ui-dashboard") & (pl.col("ParentSpanId").is_null()))
         entry_count = entry_df.select(pl.count()).collect().item()
 
     if entry_count == 0:
@@ -484,7 +484,6 @@ def query_issues():
             continue
 
     logger.info(f"Found {len(datapacks)} datapacks with issues, skipping {len(errs)} with errors")
-    logger.info(datapacks[:2])
     return datapacks, no_issue_datapacks, errs
 
 
@@ -522,9 +521,10 @@ def query_with_confidence(duration: int):
     return datapacks
 
 
-def vis_call(datapack: Path):
+def vis_call(datapack: Path, skip_existing: bool = True):
     conclusion_file = datapack / "conclusion.csv"
     apis_with_issues = set()
+    apis_with_success_rate_issues = set()
 
     assert conclusion_file.exists()
     conclusion = pl.read_csv(conclusion_file)
@@ -533,30 +533,63 @@ def vis_call(datapack: Path):
     )
     apis_with_issues = set(non_empty_issues["SpanName"].to_list())
 
+    for row in non_empty_issues.iter_rows(named=True):
+        issues_json = row["Issues"]
+        if issues_json and "succ_rate" in issues_json:
+            apis_with_success_rate_issues.add(row["SpanName"])
+
     df1 = pl.scan_parquet(datapack / "normal_traces.parquet").collect()
     df2 = pl.scan_parquet(datapack / "abnormal_traces.parquet").collect()
+
+    start_time = df1.select(pl.col("Timestamp").min()).item()
+    last_normal_time = df1.select(pl.col("Timestamp").max()).item()
+    hour_key = start_time.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d_%H")
+
+    output_dir = Path("temp") / "vis_by_hour" / hour_key
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_file = output_dir / f"{datapack.name}.png"
+
+    if output_file.exists() and skip_existing:
+        return
 
     df1 = df1.with_columns(pl.lit("normal").alias("trace_type"))
     df2 = df2.with_columns(pl.lit("abnormal").alias("trace_type"))
 
     merged_df = pl.concat([df1, df2])
 
-    entry_df = merged_df.filter(pl.col("ServiceName") == "loadgenerator-service")
+    entry_df = merged_df.filter(
+        (pl.col("ServiceName") == "loadgenerator-service")
+        & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
+    )
 
     entry_count = len(entry_df)
     if entry_count == 0:
         logger.error("loadgenerator-service not found in trace data, using ts-ui-dashboard as fallback")
-        entry_df = merged_df.filter(pl.col("ServiceName") == "ts-ui-dashboard")
+        entry_df = merged_df.filter(
+            (pl.col("ServiceName") == "ts-ui-dashboard")
+            & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
+        )
         entry_count = len(entry_df)
 
     if entry_count == 0:
         logger.error("No valid entrypoint found in trace data")
         return
 
+    def extract_status_code(span_attributes):
+        try:
+            ra = json.loads(span_attributes) if span_attributes else {}
+            return ra["http.status_code"]
+        except Exception:
+            return "-1"
+
     entry_df = entry_df.with_columns(
         [
             pl.col("Timestamp").alias("datetime"),
             (pl.col("Duration") / 1e9).alias("duration"),
+            pl.struct(["SpanAttributes", "StatusCode"])
+            .map_elements(lambda x: extract_status_code(x["SpanAttributes"]), return_dtype=pl.Utf8)
+            .alias("status_code"),
         ]
     ).sort("Timestamp")
 
@@ -565,12 +598,6 @@ def vis_call(datapack: Path):
     )
 
     api_groups = entry_df.group_by("api_path")
-
-    start_time = df1.select(pl.col("Timestamp").min()).item()
-    hour_key = start_time.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d_%H")
-    output_dir = Path("temp") / "vis_by_hour" / hour_key
-
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     valid_apis = []
     for api_path, group_df in api_groups:
@@ -590,23 +617,31 @@ def vis_call(datapack: Path):
         if len(normal_data) == 0 and len(abnormal_data) == 0:
             continue
 
-        valid_apis.append((api_name, normal_data, abnormal_data))
+        has_success_rate_issue = api_name in apis_with_success_rate_issues
+
+        valid_apis.append((api_name, normal_data, abnormal_data, has_success_rate_issue))
 
     if not valid_apis:
         logger.warning("No valid APIs found for plotting")
         return
 
-    fig, axes = plt.subplots(len(valid_apis), 1, figsize=(15, 6 * len(valid_apis)), sharex=True)
+    total_subplots = len(valid_apis) + len([api for api in valid_apis if api[3]])  # api[3] 是 has_success_rate_issue
 
-    if len(valid_apis) == 1:
+    fig, axes = plt.subplots(total_subplots, 1, figsize=(15, 4 * total_subplots), sharex=True)
+
+    fig.suptitle(f"Datapack: {datapack.name}", fontsize=16, fontweight="bold")
+
+    if total_subplots == 1:
         axes = [axes]
 
     interval_minutes = 1
 
-    for i, (api_name, normal_data, abnormal_data) in enumerate(valid_apis):
-        ax = axes[i]
+    current_axis_idx = 0
 
-        # Plot normal data
+    for i, (api_name, normal_data, abnormal_data, has_success_rate_issue) in enumerate(valid_apis):
+        ax = axes[current_axis_idx]
+        current_axis_idx += 1
+
         if len(normal_data) > 0:
             normal_times = normal_data["datetime"].to_list()
             normal_durations = normal_data["duration"].to_list()
@@ -614,7 +649,7 @@ def vis_call(datapack: Path):
             ax.plot(
                 normal_times,
                 normal_durations,
-                label="Normal",
+                label="Normal Latency",
                 color="blue",
                 alpha=0.7,
                 linewidth=0.8,
@@ -629,7 +664,7 @@ def vis_call(datapack: Path):
             ax.plot(
                 abnormal_times,
                 abnormal_durations,
-                label="Abnormal",
+                label="Abnormal Latency",
                 color="red",
                 alpha=0.7,
                 linewidth=0.8,
@@ -640,7 +675,6 @@ def vis_call(datapack: Path):
         if len(normal_data) > 0 and len(abnormal_data) > 0:
             normal_times = normal_data["datetime"].to_list()
 
-            last_normal_time = max(normal_times)
             ax.axvline(
                 x=last_normal_time,
                 color="black",
@@ -651,9 +685,74 @@ def vis_call(datapack: Path):
             )
 
         ax.set_ylabel("Duration (seconds)", fontsize=12)
-        ax.set_title(f"Request Latency - {api_name}", fontsize=14, fontweight="bold")
+
+        # Add request count information to title
+        normal_count = len(normal_data)
+        abnormal_count = len(abnormal_data)
+        title_with_counts = (
+            f"Request Latency - {api_name}\n(Normal: {normal_count} requests, Abnormal: {abnormal_count} requests)"
+        )
+        ax.set_title(title_with_counts, fontsize=14, fontweight="bold")
         ax.legend()
         ax.grid(True, alpha=0.3)
+
+        if has_success_rate_issue:
+            status_ax = axes[current_axis_idx]
+            current_axis_idx += 1
+
+            if len(normal_data) > 0:
+                normal_times = normal_data["datetime"].to_list()
+                normal_status_codes = [
+                    int(code) if code.isdigit() else 0 for code in normal_data["status_code"].to_list()
+                ]
+
+                status_ax.scatter(
+                    normal_times,
+                    normal_status_codes,
+                    label="Normal Status Code",
+                    color="blue",
+                    alpha=0.7,
+                    s=10,
+                )
+
+            if len(abnormal_data) > 0:
+                abnormal_times = abnormal_data["datetime"].to_list()
+                abnormal_status_codes = [
+                    int(code) if code.isdigit() else 0 for code in abnormal_data["status_code"].to_list()
+                ]
+
+                status_ax.scatter(
+                    abnormal_times,
+                    abnormal_status_codes,
+                    label="Abnormal Status Code",
+                    color="red",
+                    alpha=0.7,
+                    s=10,
+                )
+
+            if len(normal_data) > 0 and len(abnormal_data) > 0:
+                normal_times = normal_data["datetime"].to_list()
+                status_ax.axvline(
+                    x=last_normal_time,
+                    color="black",
+                    linestyle="-",
+                    linewidth=2,
+                    alpha=0.8,
+                    label="Normal/Abnormal Boundary",
+                )
+
+            status_ax.set_ylabel("HTTP Status Code", fontsize=12)
+
+            # Add request count information to status code title
+            status_title_with_counts = (
+                f"Status Code - {api_name}\n(Normal: {normal_count} requests, Abnormal: {abnormal_count} requests)"
+            )
+            status_ax.set_title(status_title_with_counts, fontsize=14, fontweight="bold")
+            status_ax.legend()
+            status_ax.grid(True, alpha=0.3)
+
+            status_ax.set_yticks([200, 400, 500])
+            status_ax.set_ylim(150, 550)
 
     axes[-1].set_xlabel("Time", fontsize=12)
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M", tz="Asia/Shanghai"))
@@ -663,11 +762,6 @@ def vis_call(datapack: Path):
 
     plt.tight_layout()
 
-    # Save the combined plot
-    if start_time:
-        output_file = output_dir / f"{datapack.name}.png"
-    else:
-        output_file = output_dir / f"{datapack.name}.png"
     plt.savefig(output_file, dpi=300, bbox_inches="tight")
     plt.close()
 
@@ -697,10 +791,12 @@ def visualize_latency(datapack: str):
 
 @app.command()
 @timeit()
-def batch_visualize():
+def batch_visualize(skip_existing: bool = True):
+    from tqdm import tqdm
+
     issue, no_issue, _ = query_issues()
-    for datapack_path in issue:
-        vis_call(Path("data/rcabench_dataset") / datapack_path)
+    for datapack_path in tqdm(issue):
+        vis_call(Path("data/rcabench_dataset") / datapack_path, skip_existing=skip_existing)
 
     logger.info("Batch visualization completed")
 
