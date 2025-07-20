@@ -364,7 +364,7 @@ def distribution(dataset: str):
 
     metadata = merge_metadata(results)
 
-    with open(f"intermediate_results/{dataset}_metadata.json", "w") as f:
+    with open(f"temp/{dataset}_metadata.json", "w") as f:
         json.dump(metadata.to_dict(), f, indent=4, default=str)
 
 

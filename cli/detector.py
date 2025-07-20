@@ -29,17 +29,23 @@ def calculate_anomaly_score(normal_data: list, abnormal_value: float) -> dict:
     normal_mean = np.mean(normal_array)
     normal_std = np.std(normal_array)
 
+    # Only consider it anomalous if abnormal_value is HIGHER than normal (worse performance)
+    if abnormal_value <= normal_mean:
+        return {"total_score": 0, "is_anomaly": False, "change_rate": 0}
+
     # Calculate Z-score to measure how many standard deviations the value deviates from normal
-    z_score = abs(abnormal_value - normal_mean) / normal_std if normal_std > 0 else 0
+    # Use signed difference since we only care about increases
+    z_score = (abnormal_value - normal_mean) / normal_std if normal_std > 0 else 0
 
-    # Calculate relative change as percentage deviation from normal mean
-    relative_change = abs(abnormal_value - normal_mean) / normal_mean if normal_mean > 0 else 0
+    # Calculate relative change as percentage increase from normal mean
+    relative_change = (abnormal_value - normal_mean) / normal_mean if normal_mean > 0 else 0
 
-    # Calculate absolute change in original units
-    absolute_change = abs(abnormal_value - normal_mean)
+    # Calculate absolute change in original units (always positive since abnormal_value > normal_mean)
+    absolute_change = abnormal_value - normal_mean
 
     # Normalize Z-score to [0,1] range, treating 3 standard deviations as maximum
-    z_score_norm = min(float(z_score / 3), 1.0)
+    # Since we already ensured abnormal_value > normal_mean, z_score should be positive
+    z_score_norm = min(float(z_score / 3), 1.0) if z_score > 0 else 0.0
 
     # Normalize relative change to [0,1] range, treating 100% change as maximum
     relative_change_norm = min(float(relative_change / 1.0), 1.0)
@@ -117,18 +123,32 @@ def read_dataframe(file: Path) -> pl.LazyFrame:
 
 
 def preprocess_trace(file: Path):
+    if not file.exists():
+        logger.error(f"Trace file does not exist: {file}")
+        return {}
+
     df = read_dataframe(file)
 
-    entry_df = df.filter((pl.col("ServiceName") == "loadgenerator-service") & (pl.col("ParentSpanId").is_null()))
+    entry_df = df.filter(
+        (pl.col("ServiceName") == "loadgenerator-service")
+        & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
+    )
 
-    entry_count = entry_df.select(pl.count()).collect().item()
+    entry_count = entry_df.select(pl.len()).collect().item()
     if entry_count == 0:
         logger.error("loadgenerator-service not found in trace data, using ts-ui-dashboard as fallback")
-        entry_df = df.filter((pl.col("ServiceName") == "ts-ui-dashboard") & (pl.col("ParentSpanId").is_null()))
-        entry_count = entry_df.select(pl.count()).collect().item()
+        entry_df = df.filter(
+            (pl.col("ServiceName") == "ts-ui-dashboard")
+            & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
+        )
+        entry_count = entry_df.select(pl.len()).collect().item()
 
     if entry_count == 0:
         logger.error("No valid entrypoint found in trace data, aborting")
+
+        available_services = df.select(pl.col("ServiceName")).unique().collect()["ServiceName"].to_list()
+        logger.error(f"Available services in trace data: {available_services}")
+
         return {}
 
     entry_df_collected = entry_df.with_columns(pl.col("Timestamp").alias("ts")).sort("ts").collect()
@@ -180,6 +200,7 @@ def preprocess_trace(file: Path):
     for k, v in stat.items():
         durations = v["duration"]
         if not durations:
+            logger.warning(f"No duration data found for endpoint: {k}")
             continue
 
         durations_array = np.array(durations)
@@ -200,6 +221,7 @@ def preprocess_trace(file: Path):
         v["request_content_length"] = request_content_length
         v["response_content_length"] = response_content_length
 
+    logger.info(f"Successfully processed {len(stat)} endpoints from trace file")
     return stat
 
 
@@ -214,7 +236,7 @@ def run(in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True
         ou_p = Path(os.environ.get("OUTPUT_PATH", ""))
 
     input_path = Path(in_p)
-    assert input_path.exists()
+    assert input_path.exists(), f"Input path does not exist: {input_path}"
 
     output_path = Path(ou_p)
     if not os.path.exists(output_path):
@@ -224,20 +246,51 @@ def run(in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True
     normal_trace = Path(input_path) / "normal_traces.parquet"
     abnormal_trace = Path(input_path) / "abnormal_traces.parquet"
 
+    assert normal_trace.exists(), f"Normal trace file does not exist: {normal_trace}"
+    assert abnormal_trace.exists(), f"Abnormal trace file does not exist: {abnormal_trace}"
+
     logger.info(f"Processing normal trace file: {normal_trace}")
     normal_stat = preprocess_trace(normal_trace)
+    logger.info(f"Normal trace processing result: {len(normal_stat)} endpoints found")
+
     logger.info(f"Processing abnormal trace file: {abnormal_trace}")
     abnormal_stat = preprocess_trace(abnormal_trace)
+    logger.info(f"Abnormal trace processing result: {len(abnormal_stat)} endpoints found")
+
+    # Assert we have data to work with
+    assert normal_stat, f"No endpoints found in normal trace data: {normal_trace}"
+    assert abnormal_stat, f"No endpoints found in abnormal trace data: {abnormal_trace}"
 
     conclusion_data = []
 
     anomaly_count = 0
+    processed_endpoints = 0
+    skipped_endpoints = 0
+
     for k, v in abnormal_stat.items():
+        processed_endpoints += 1
         if k not in normal_stat:
             logger.warning(f"New endpoint found: {k} - skipping comparison")
+            skipped_endpoints += 1
+            new_endpoint_issues = {"new_endpoint": {"slo_violated": True, "reason": "endpoint_not_in_normal_data"}}
+            conclusion_data.append(
+                {
+                    "SpanName": k,
+                    "Issues": json.dumps(new_endpoint_issues),
+                    "AbnormalAvgDuration": v["avg_duration"],
+                    "NormalAvgDuration": 0.0,  # No normal data available
+                    "AbnormalSuccRate": 0.0,  # Will be calculated below if possible
+                    "NormalSuccRate": 0.0,
+                    "AbnormalP90": v["p90_duration"],
+                    "NormalP90": 0.0,
+                    "AbnormalP95": v["p95_duration"],
+                    "NormalP95": 0.0,
+                    "AbnormalP99": v["p99_duration"],
+                    "NormalP99": 0.0,
+                }
+            )
             continue
 
-        logger.debug(f"Analyzing endpoint: {k}")
         abnormal_tag = {}
 
         avg_duration_result = {"total_score": 0, "is_anomaly": False, "change_rate": 0}
@@ -375,17 +428,34 @@ def run(in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True
         )
 
     logger.info(f"Analysis complete. Found {anomaly_count} endpoints with anomalies")
+    logger.info(f"Processed {processed_endpoints} endpoints, skipped {skipped_endpoints} endpoints")
+    logger.info(f"Total conclusion data entries: {len(conclusion_data)}")
+
+    # Debug information for empty conclusion data
+    if not conclusion_data:
+        logger.error("No conclusion data generated!")
+        logger.error(f"Normal stat keys: {list(normal_stat.keys())[:10]}...")  # Show first 10
+        logger.error(f"Abnormal stat keys: {list(abnormal_stat.keys())[:10]}...")  # Show first 10
+        logger.error(f"Normal stat count: {len(normal_stat)}")
+        logger.error(f"Abnormal stat count: {len(abnormal_stat)}")
+
+        # Check for key overlap
+        normal_keys = set(normal_stat.keys())
+        abnormal_keys = set(abnormal_stat.keys())
+        common_keys = normal_keys.intersection(abnormal_keys)
+        logger.error(f"Common keys count: {len(common_keys)}")
+        if common_keys:
+            logger.error(f"Sample common keys: {list(common_keys)[:5]}")
+
+    # Assert we have conclusion data
+    assert conclusion_data, f"No conclusion data generated! {input_path}, data: {conclusion_data}"
 
     conclusion = pl.DataFrame(conclusion_data)
     conclusion.write_csv(Path(output_path) / "conclusion.csv")
     logger.info(f"Results saved to {Path(output_path) / 'conclusion.csv'}")
 
     if convert:
-        try:
-            platform_convert(in_p, ou_p)
-        except Exception as e:
-            logger.error(f"Error during platform conversion: {e}")
-            raise
+        platform_convert(in_p, ou_p)
 
 
 def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
@@ -399,13 +469,37 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
 
     input_path = in_p
     output_path = ou_p
-    assert input_path.exists()
-    assert output_path.exists()
+    assert input_path.exists(), f"Input path does not exist: {input_path}"
+    assert output_path.exists(), f"Output path does not exist: {output_path}"
 
-    with open(input_path / "injection.json") as f:
+    # Assert injection.json exists and is valid
+    injection_file = input_path / "injection.json"
+    assert injection_file.exists(), f"injection.json not found in {input_path}"
+
+    with open(injection_file) as f:
         injection = json.load(f)
-        injection_name = injection["injection_name"]
-        assert isinstance(injection_name, str) and injection_name
+        injection_name = injection.get("injection_name")
+        assert injection_name and isinstance(injection_name, str), (
+            f"Invalid injection_name in {injection_file}: {injection_name}"
+        )
+
+    # Assert essential trace files exist and are not empty
+    normal_traces = input_path / "normal_traces.parquet"
+    abnormal_traces = input_path / "abnormal_traces.parquet"
+
+    assert normal_traces.exists(), f"normal_traces.parquet not found in {input_path}"
+    assert abnormal_traces.exists(), f"abnormal_traces.parquet not found in {input_path}"
+
+    # Assert trace files are not empty
+    normal_df = pl.scan_parquet(normal_traces)
+    normal_count = normal_df.select(pl.len()).collect().item()
+    assert normal_count > 0, f"normal_traces.parquet is empty in {input_path}"
+
+    abnormal_df = pl.scan_parquet(abnormal_traces)
+    abnormal_count = abnormal_df.select(pl.len()).collect().item()
+    assert abnormal_count > 0, f"abnormal_traces.parquet is empty in {input_path}"
+
+    logger.info(f"Trace files validated: normal={normal_count} records, abnormal={abnormal_count} records")
 
     converted_input_path = output_path / "converted"
 
@@ -414,6 +508,7 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
         dst_folder=converted_input_path,
         skip_finished=True,
     )
+    logger.info(f"Successfully converted datapack for {injection_name}")
 
 
 @app.command()
@@ -433,6 +528,7 @@ def local_test(datapack: str):
 @timeit()
 def patch_detection():
     input_path = Path("data") / "rcabench_dataset"
+    assert input_path.exists(), f"Dataset path does not exist: {input_path}"
 
     tasks = []
 
@@ -440,15 +536,37 @@ def patch_detection():
         if not datapack.is_dir():
             continue
 
-        trace_file = [datapack / "abnormal_traces.parquet", datapack / "normal_traces.parquet"]
-        if not all(f.exists() for f in trace_file):
-            logger.warning(f"Skipping {datapack.name} due to missing trace files")
-            continue
+        trace_files = [datapack / "abnormal_traces.parquet", datapack / "normal_traces.parquet"]
+        missing_files = [f.name for f in trace_files if not f.exists()]
+        assert all(f.exists() for f in trace_files), f"Missing trace files in {datapack.name}: {missing_files}"
+
+        # Assert injection.json exists
+        injection_file = datapack / "injection.json"
+        assert injection_file.exists(), f"Missing injection.json in {str(datapack)}"
+
+        # Validate injection.json content
+        with open(injection_file) as f:
+            injection = json.load(f)
+            injection_name = injection.get("injection_name")
+            assert injection_name and isinstance(injection_name, str), (
+                f"Invalid injection_name in {datapack.name}/injection.json: {injection_name}"
+            )
+
+        # Validate trace files are not empty
+        for trace_file in trace_files:
+            df = pl.scan_parquet(trace_file)
+            count = df.select(pl.len()).collect().item()
+            assert count > 0, f"Empty trace file: {trace_file}"
 
         tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=True))
 
+    logger.info(f"Found {len(tasks)} valid datapacks to process")
+    assert len(tasks) > 0, "No valid datapacks found to process"
+
     cpu = os.cpu_count()
-    assert cpu is not None
+    assert cpu is not None, "Cannot determine CPU count"
+
+    # Remove ignore_exceptions=True to fail fast on any error
     fmap_processpool(tasks, parallel=cpu // 4, cpu_limit_each=4)
 
 
