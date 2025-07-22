@@ -67,6 +67,7 @@ def run():
         "rule_4_single_point_no_calls",
         "rule_5_duplicated_spans",
         "rule_6_large_latency_normal",
+        "rule_7_absolute_abnormal",
     ]
 
     # Create a boolean mask for datapacks that failed any rule
@@ -226,7 +227,7 @@ def scan_absolute_abnormal(datapack_folder: Path) -> bool:
     with open(datapack_folder / "notations.json", encoding="utf-8") as f:
         data = json.load(f)
         data["absolute_anomaly"] = data.get("absolute_anomaly", None)
-        return data["absolute_anomaly"]
+        return not data["absolute_anomaly"]
 
 
 def is_single_point_failure(fault_type: str) -> bool:
@@ -312,11 +313,11 @@ def scan_duplicated_spans(datapack_folder: Path) -> bool:
 @timeit()
 def scan_large_latency_in_normal_range(datapack_folder: Path) -> bool:
     lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
-    lf = lf.select(pl.col("duration").max())
-    max_duration = lf.collect().item()
-    if max_duration is None:
+    lf = lf.select(pl.col("duration").quantile(0.99))
+    p99_duration = lf.collect().item()
+    if p99_duration is None:
         return False
-    return max_duration > 6 * 1e9
+    return p99_duration > 6 * 1e9
 
 
 def _build_service_graph(datapack_folder: Path) -> nx.Graph:

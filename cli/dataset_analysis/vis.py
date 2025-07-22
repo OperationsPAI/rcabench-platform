@@ -23,6 +23,7 @@ RULE_COLUMNS = [
     "rule_4_single_point_no_calls",
     "rule_5_duplicated_spans",
     "rule_6_large_latency_normal",
+    "rule_7_absolute_abnormal",
 ]
 CATEGORY_CONFIG = {
     "categories": [
@@ -533,7 +534,7 @@ def visualize_annotations():
     from tqdm import tqdm
 
     input_path = Path("data") / "rcabench_dataset"
-    # 新增 absolute_anomaly 独立计数
+
     datapack_categories = {cat: [] for cat in CATEGORY_CONFIG["categories"]}
     absolute_anomaly_datapacks = []
     valid_datapacks = 0
@@ -587,7 +588,7 @@ def visualize_annotations():
         for autotext in autotexts:
             autotext.set_color("white")
             autotext.set_fontweight("bold")
-    ax1.set_title("Datapack Category Proportions (不含绝对异常)")
+    ax1.set_title("Datapack Category Proportions")
 
     bars = ax2.bar(display_labels, counts, color=colors)
     ax2.set_title("Datapack Category Statistics")
