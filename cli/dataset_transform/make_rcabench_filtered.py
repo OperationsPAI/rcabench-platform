@@ -18,6 +18,7 @@ import shutil
 import json
 
 import polars as pl
+import networkx as nx
 
 
 @app.command()
@@ -59,7 +60,6 @@ def run():
 
     save_parquet(rules_df, path=get_dataset_meta_file("rcabench", "rules_check.parquet"))
 
-    # Filter out datapacks that failed any rule
     rule_columns = [
         "rule_1_network_no_direct_calls",
         "rule_2_http_method_same",
@@ -116,6 +116,7 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any]:
         "rule_4_single_point_no_calls": False,
         "rule_5_duplicated_spans": False,
         "rule_6_large_latency_normal": False,
+        "rule_7_absolute_abnormal": False,
     }
 
     if not injection_point:
@@ -214,11 +215,40 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any]:
         logger.debug(f"datapack `{datapack}`: large_latency_in_normal_range")
         result["rule_6_large_latency_normal"] = True
 
+    # Rule 7: Absolute abnormal
+    if scan_absolute_abnormal(datapack_folder):
+        logger.debug(f"datapack `{datapack}`: absolute abnormal")
+        result["rule_7_absolute_abnormal"] = True
     return result
 
 
+def scan_absolute_abnormal(datapack_folder: Path) -> bool:
+    with open(datapack_folder / "notations.json", encoding="utf-8") as f:
+        data = json.load(f)
+        data["absolute_anomaly"] = data.get("absolute_anomaly", None)
+        return data["absolute_anomaly"]
+
+
 def is_single_point_failure(fault_type: str) -> bool:
-    return fault_type.startswith("JVM") or fault_type in ("PodFailure", "CPUStress", "MemoryStress")
+    return True
+    # return fault_type.startswith("JVM") or fault_type in ("PodFailure", "CPUStress", "MemoryStress")
+
+
+@timeit()
+def scan_path_from_traces(
+    datapack_folder: Path,
+    source_service: str | None,
+    target_service: str,
+) -> bool:
+    assert datapack_folder.exists()
+    service_graph = _build_service_graph(datapack_folder)
+    if source_service is None:
+        return target_service in service_graph
+    if source_service == target_service:
+        return True
+    if source_service not in service_graph or target_service not in service_graph:
+        return False
+    return nx.has_path(service_graph, source_service, target_service)
 
 
 @timeit()
@@ -286,7 +316,42 @@ def scan_large_latency_in_normal_range(datapack_folder: Path) -> bool:
     max_duration = lf.collect().item()
     if max_duration is None:
         return False
-    return max_duration > 5 * 1e9
+    return max_duration > 6 * 1e9
+
+
+def _build_service_graph(datapack_folder: Path) -> nx.Graph:
+    normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
+    traces = pl.concat([normal_traces, anomal_traces])
+
+    lf = traces.select(
+        "span_id",
+        "parent_span_id",
+        "service_name",
+    ).filter(pl.col("parent_span_id").is_not_null())
+
+    lf = lf.join(
+        lf.select("span_id", pl.col("service_name").alias("parent_service_name")),
+        left_on="parent_span_id",
+        right_on="span_id",
+        how="inner",
+    )
+
+    edges_df = (
+        lf.select("parent_service_name", "service_name")
+        .filter(
+            pl.col("parent_service_name") != pl.col("service_name")  # 排除自调用
+        )
+        .unique()
+        .collect()
+    )
+
+    graph = nx.Graph()
+
+    for parent_service, child_service in edges_df.iter_rows():
+        graph.add_edge(parent_service, child_service)
+
+    return graph
 
 
 if __name__ == "__main__":

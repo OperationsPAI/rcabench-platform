@@ -65,6 +65,8 @@ def convert_dataset(
     validate_dataset_name(dataset)
 
     data_folder = root / "data" / dataset
+    for i in range(len(loader)):
+        functools.partial(_convert_datapack, loader, i, data_folder, skip_finished)
     tasks = [functools.partial(_convert_datapack, loader, i, data_folder, skip_finished) for i in range(len(loader))]
 
     results = fmap_processpool(

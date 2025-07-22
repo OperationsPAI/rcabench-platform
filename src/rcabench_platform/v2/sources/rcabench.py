@@ -2,7 +2,7 @@ from ..datasets.rcabench import rcabench_get_service_name, FAULT_TYPES
 from ..logging import timeit, logger
 from .convert import DatasetLoader, DatapackLoader, Label
 from ..utils.serde import load_json
-
+import pandas as pd
 from pathlib import Path
 from typing import Any
 import json
@@ -348,6 +348,7 @@ class RcabenchDatapackLoader(DatapackLoader):
         ans: dict[str, Any] = {
             "env.json": self._src_folder / "env.json",
             "injection.json": self._src_folder / "injection.json",
+            "notations.json": self._src_folder / "notations.json",
             "conclusion.parquet": convert_conclusion(self._src_folder / "conclusion.csv"),
         }
 
@@ -378,6 +379,15 @@ def scan_datapacks(src_root: Path) -> list[str]:
             continue
 
         if not (path / "injection.json").exists():
+            continue
+
+        if not (path / "conclusion.csv").exists():
+            continue
+
+        df = pd.read_csv(path / "conclusion.csv")
+
+        if "Issues" in df.columns and (df["Issues"] == "{}").all():
+            logger.warning(f"Skipping datapack `{path}` - all Issues are empty")
             continue
 
         total_size = 0
