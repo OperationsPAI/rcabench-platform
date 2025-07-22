@@ -750,13 +750,16 @@ def apply_detector_conclusion(sdg: SDG, input_folder: Path) -> None:
     for span_name, issues in df.select("SpanName", "Issues").iter_rows():
         assert isinstance(span_name, str) and span_name
         assert isinstance(issues, str) and issues
+        if issues == "{}":
+            continue  # skip useless urls
         span_names[span_name] = json.loads(issues)
-
     sli_nodes: list[dict[str, Any]] = []
     for span_name, issues in span_names.items():
         assert isinstance(span_name, str) and span_name
         for node in ts_ui_dashboard_functions:
-            if span_name in node.self_name:
+            format_span_name = span_name.split()[-1]
+            format_node_self_name = node.self_name.split()[-1]
+            if format_node_self_name in format_span_name:
                 sli_nodes.append({"node.id": node.id, "node.self_name": node.self_name, "issues": issues})
                 break
 
