@@ -1,13 +1,17 @@
 #!/usr/bin/env -S uv run -s
 
 import datetime
+import functools
 from pathlib import Path
 from typing import Any
 
 import polars as pl
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.datasets.spec import get_datapack_folder, get_datapack_list, get_dataset_meta_file
 from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label
+from rcabench_platform.v2.utils.fmap import fmap_threadpool
+from rcabench_platform.v2.utils.serde import save_parquet
 
 """single path overview
     nn@debian ~/w/r/d/a/a/A/aiops2021-2> pwd
@@ -44,13 +48,25 @@ def convert_traces(src: Path) -> pl.LazyFrame:
     1614787199635,dockerA2,21030300016145905763,21030300016145905768,gw0120210304000517192504,1
     """
     assert src.exists(), f"Source file does not exist: {src}"
+    sample_df = pl.read_csv(src, n_rows=10)
 
+    # Get the first timestamp to determine unit
+    first_timestamp = sample_df["timestamp"][0]
+
+    # Heuristic: if timestamp > 1e12, it's likely milliseconds; otherwise seconds
+    # 1e12 corresponds to ~2001-09-09 in milliseconds or ~33658 years in seconds
+    if first_timestamp > 1e12:
+        time_unit = "ms"
+        logger.info(f"Detected millisecond timestamps in {src}")
+    else:
+        time_unit = "s"
+        logger.info(f"Detected second timestamps in {src}")
     lf = pl.scan_csv(src, infer_schema_length=50000)
 
     # Convert to standard format
     lf = lf.select(
         # Convert timestamp from milliseconds to datetime UTC
-        pl.from_epoch("timestamp", time_unit="ms").dt.replace_time_zone("UTC").alias("time"),
+        pl.from_epoch("timestamp", time_unit=time_unit).dt.offset_by("8h").alias("time"),
         pl.col("trace_id").cast(pl.String).alias("trace_id"),
         pl.col("span_id").cast(pl.String).alias("span_id"),
         pl.col("parent_id").cast(pl.String).alias("parent_span_id"),
@@ -93,7 +109,7 @@ def convert_metrics(src: Path) -> pl.LazyFrame:
     # Convert to standard format
     lf = lf.select(
         # Convert timestamp from seconds to datetime UTC
-        pl.from_epoch("timestamp", time_unit="s").dt.replace_time_zone("UTC").alias("time"),
+        pl.from_epoch("timestamp", time_unit="s").dt.offset_by("8h").alias("time"),
         pl.col("kpi_name").cast(pl.String).alias("metric"),
         pl.col("value").cast(pl.Float64).alias("value"),
         pl.col("cmdb_id").cast(pl.String).alias("service_name"),
@@ -135,11 +151,11 @@ def convert_logs(src_folder: Path) -> pl.LazyFrame:
         # Convert to standard format
         lf = lf.select(
             # Convert timestamp from seconds to datetime UTC
-            pl.from_epoch("timestamp", time_unit="s").dt.replace_time_zone("UTC").alias("time"),
+            pl.from_epoch("timestamp", time_unit="s").dt.offset_by("8h").alias("time"),
             pl.lit("").alias("trace_id"),  # AIOps21 logs don't have trace_id
             pl.lit("").alias("span_id"),  # AIOps21 logs don't have span_id
             pl.col("cmdb_id").cast(pl.String).alias("service_name"),
-            pl.lit("INFO").alias("level"),  # Default level since not provided
+            pl.lit("").alias("level"),  # not provided
             pl.col("value").cast(pl.String).alias("message"),
         )
 
@@ -215,31 +231,35 @@ class AIops21DatapackLoader(DatapackLoader):
             return str(time_obj)
 
     def _calculate_time_windows(self) -> tuple[Any, Any, Any, Any]:
-        """Calculate normal and fault time windows.
+        """Get pre-calculated time windows from fault case data.
 
         Returns:
             tuple: (normal_start_time, normal_end_time, fault_start_time, fault_end_time)
         """
-        # Get fault injection time window
-        fault_start_time = self._fault_case["start_time"]
-        fault_end_time = self._fault_case["end_time"]
+        # Use pre-calculated time windows from groundtruth data
+        return (
+            self._fault_case["normal_start_time"],
+            self._fault_case["normal_end_time"],
+            self._fault_case["fault_start_time"],
+            self._fault_case["fault_end_time"],
+        )
 
-        # Get full data time range for the day
-        data_start_time, data_end_time = self._get_data_time_range()
+    def _validate_dataframes(self, data_dict: dict[str, Any]) -> None:
+        """Validate that critical dataframes are not empty before saving."""
+        # Check traces
+        traces_df = data_dict["traces.parquet"].collect()
+        if traces_df.is_empty():
+            raise ValueError(f"Traces dataframe is empty for datapack {self.name()}")
 
-        # Calculate normal time window: before fault injection with 15-minute limit
-        normal_end_time = fault_start_time
-        max_normal_duration = datetime.timedelta(minutes=15)
-        earliest_normal_start = fault_start_time - max_normal_duration
+        # Check metrics
+        metrics_df = data_dict["metrics.parquet"].collect()
+        if metrics_df.is_empty():
+            raise ValueError(f"Metrics dataframe is empty for datapack {self.name()}")
 
-        # Take the later time: either data starts or 15 minutes before fault
-        # This implements: min(15 minutes, time available before fault)
-        if data_start_time > earliest_normal_start:
-            normal_start_time = data_start_time
-        else:
-            normal_start_time = earliest_normal_start
-
-        return normal_start_time, normal_end_time, fault_start_time, fault_end_time
+        # Logs can be empty, so we'll just log a warning
+        logs_df = data_dict["logs.parquet"].collect()
+        if logs_df.is_empty():
+            logger.warning(f"Logs dataframe is empty for datapack {self.name()}")
 
     def data(self) -> dict[str, Any]:
         # Calculate time windows: [normal_start, normal_end, fault_start, fault_end]
@@ -256,10 +276,13 @@ class AIops21DatapackLoader(DatapackLoader):
             "logs.parquet": self._filter_logs_by_time(overall_start_time, overall_end_time),
         }
 
+        # Validate dataframes before proceeding
+        self._validate_dataframes(data_dict)
+
         # Add fault case metadata with both normal and fault time periods
         metadata = {
             "injection_name": self._fault_case["service"],
-            "fault_type": self._fault_case["anomaly_type"],
+            "fault_type": self._fault_case["fault_type"],
             "fault_start_time": self._to_iso_string(fault_start_time),
             "fault_end_time": self._to_iso_string(fault_end_time),
             "normal_start_time": self._to_iso_string(normal_start_time),
@@ -331,10 +354,11 @@ class AIops21DatasetLoader(DatasetLoader):
 
         datapack_loaders = []
 
-        # Get fault cases grouped by date
-        fault_cases_by_date = get_fault_cases_by_date()
+        # Load groundtruth data and group by date
+        gt_df = load_groundtruth()
 
-        for date_str, fault_cases in fault_cases_by_date.items():
+        # Group fault cases by date_str
+        for date_str in gt_df["date_str"].unique():
             date_path = src_folder / date_str
 
             if not date_path.exists() or not date_path.is_dir():
@@ -349,14 +373,33 @@ class AIops21DatasetLoader(DatasetLoader):
                 logger.warning(f"Skipping {date_str}: missing required files")
                 continue
 
+            # Get all fault cases for this date
+            date_cases = gt_df.filter(pl.col("date_str") == date_str)
+
             # Create a datapack for each fault case in this date
-            for i, fault_case in enumerate(fault_cases):
-                datapack = f"aiops21_{date_str}_case_{i + 1:02d}_{fault_case['row_idx']:03d}"
+            for row in date_cases.iter_rows(named=True):
+                fault_case = {
+                    "id": row["id"],
+                    "service": row["service"],
+                    "fault_type": row["fault_type_combined"],
+                    "fault_category": row["故障类别"],
+                    "fault_content": row["故障内容"],
+                    "fault_time": row["fault_time"],
+                    "start_time": row["start_time"],
+                    "end_time": row["end_time"],
+                    "data_type": row["data_type"],
+                    "datapack": row["datapack"],
+                    # Add pre-calculated time windows
+                    "normal_start_time": row["normal_start_time"],
+                    "normal_end_time": row["normal_end_time"],
+                    "fault_start_time": row["fault_start_time"],
+                    "fault_end_time": row["fault_end_time"],
+                }
 
                 loader = AIops21DatapackLoader(
                     src_folder=date_path,
                     dataset=dataset,
-                    datapack=datapack,
+                    datapack=fault_case["datapack"],
                     fault_case=fault_case,
                     date_str=date_str,
                 )
@@ -378,70 +421,208 @@ class AIops21DatasetLoader(DatasetLoader):
 def load_groundtruth():
     """
     Load and process groundtruth data for fault injection times.
-
-    CSV structure:
-    ,id,service,anomaly_type,故障类别,故障内容,time,st_time,ed_time,data_type
-    0,1479,apache01,MEMORY,资源故障,内存使用率过高,1614829800000,
-        2021-03-04 11:50:00.000000,2021-03-04 11:55:00.000000,train
+    Returns a DataFrame with all case information and generated datapack names.
     """
-    df = pl.read_csv("data/aiops/aiops2021-main/AIOps2021/aiops21_groundtruth.csv")
+    df = pl.read_csv("data/aiops_challenge/aiops2021-main/AIOps2021/aiops21_groundtruth.csv")
 
     # Convert time from milliseconds to datetime and sort by time
     df = df.with_columns(
         [
-            pl.from_epoch("time", time_unit="ms").dt.replace_time_zone("UTC").alias("fault_time"),
-            pl.col("st_time")
-            .str.to_datetime("%Y-%m-%d %H:%M:%S%.f")
-            .dt.replace_time_zone("Asia/Shanghai")
-            .dt.convert_time_zone("UTC")
-            .alias("start_time"),
-            pl.col("ed_time")
-            .str.to_datetime("%Y-%m-%d %H:%M:%S%.f")
-            .dt.replace_time_zone("Asia/Shanghai")
-            .dt.convert_time_zone("UTC")
-            .alias("end_time"),
+            pl.from_epoch("time", time_unit="ms").dt.offset_by("8h").alias("fault_time"),
+            pl.col("st_time").str.to_datetime("%Y-%m-%d %H:%M:%S%.f").alias("start_time"),
+            pl.col("ed_time").str.to_datetime("%Y-%m-%d %H:%M:%S%.f").alias("end_time"),
+            # Clean up anomaly_type
+            pl.col("anomaly_type").str.replace(";", "").str.replace("\n", "").alias("anomaly_type"),
+            # Map fault content to standard names
+            pl.col("故障内容")
+            .replace_strict(
+                {
+                    "网络延迟": "delay",
+                    "内存使用率过高": "stress",
+                    "JVM CPU负载高": "stress",
+                    "JVM OOM Heap": "OOM",
+                    "磁盘IO读使用率过高": "payload",
+                    "CPU使用率高": "stress",
+                    "网络丢包": "loss",
+                    "磁盘空间使用率过高": "usage",
+                },
+                default=pl.col("故障内容"),
+            )
+            .alias("fault_content_mapped"),
         ]
     ).sort("fault_time")
+
+    # Generate additional columns
+    df = df.with_columns(
+        [
+            # Extract date string (MMDD format)
+            pl.col("fault_time").dt.strftime("%m%d").alias("date_str"),
+            # Extract time string (HHMM format)
+            pl.col("fault_time").dt.strftime("%H%M").alias("time_str"),
+            # Generate combined fault type using mapped content
+            (pl.col("anomaly_type") + "_" + pl.col("fault_content_mapped")).alias("fault_type_combined"),
+        ]
+    )
+
+    # Generate datapack names
+    df = df.with_columns(
+        [
+            (
+                pl.lit("aiops21_")
+                + pl.col("fault_type_combined")
+                + "_"
+                + pl.col("service")
+                + "_"
+                + pl.col("date_str")
+                + "_"
+                + pl.col("time_str")
+            ).alias("datapack")
+        ]
+    )
+
+    # Calculate time windows for each date
+    df = _calculate_time_windows_for_groundtruth(df)
 
     return df
 
 
-def get_fault_cases_by_date():
-    """
-    Group fault injection cases by date based on groundtruth data.
-    Returns a dictionary mapping date strings to lists of fault cases.
-    """
-    gt_df = load_groundtruth()
+def _calculate_time_windows_for_groundtruth(df: pl.DataFrame) -> pl.DataFrame:
+    """Calculate normal and fault time windows for all cases, grouped by date."""
+    src_folder = Path("data/aiops_challenge/aiops2021-main/AIOps2021/aiops2021-2")
 
-    # Extract date from fault_time and group cases
-    cases_by_date = {}
+    # Get data time ranges for each date
+    date_time_ranges = {}
+    for date_str in df["date_str"].unique():
+        date_path = src_folder / date_str
+        if not date_path.exists():
+            continue
 
-    for row_idx, row in enumerate(gt_df.iter_rows(named=True)):
-        fault_time = row["fault_time"]
-        date_str = fault_time.strftime("%m%d")  # Format as "0304", "0305", etc.
+        # Check traces file first
+        trace_file = date_path / "trace" / f"trace_{date_str}.csv"
+        if trace_file.exists():
+            sample_df = pl.read_csv(trace_file, n_rows=10)
+            first_timestamp = sample_df["timestamp"][0]
+            time_unit = "ms" if first_timestamp > 1e12 else "s"
 
-        case_info = {
-            "id": row["id"],
-            "row_idx": row_idx,  # Add unique row index to handle duplicate IDs
-            "service": row["service"],
-            "anomaly_type": row["anomaly_type"],
-            "fault_category": row["故障类别"],
-            "fault_content": row["故障内容"],
-            "fault_time": fault_time,
-            "start_time": row["start_time"],
-            "end_time": row["end_time"],
-            "data_type": row["data_type"],
-        }
+            times_df = (
+                pl.scan_csv(trace_file)
+                .select(
+                    [
+                        pl.from_epoch(pl.col("timestamp").min(), time_unit=time_unit)
+                        .dt.offset_by("8h")
+                        .alias("min_time"),
+                        pl.from_epoch(pl.col("timestamp").max(), time_unit=time_unit)
+                        .dt.offset_by("8h")
+                        .alias("max_time"),
+                    ]
+                )
+                .collect()
+            )
+            date_time_ranges[date_str] = (times_df["min_time"][0], times_df["max_time"][0])
+            continue
 
-        if date_str not in cases_by_date:
-            cases_by_date[date_str] = []
-        cases_by_date[date_str].append(case_info)
+        # Fallback to metrics file
+        metric_file = date_path / "metric" / f"metric_{date_str}.csv"
+        if metric_file.exists():
+            times_df = (
+                pl.scan_csv(metric_file)
+                .select(
+                    [
+                        pl.from_epoch(pl.col("timestamp").min(), time_unit="s").dt.offset_by("8h").alias("min_time"),
+                        pl.from_epoch(pl.col("timestamp").max(), time_unit="s").dt.offset_by("8h").alias("max_time"),
+                    ]
+                )
+                .collect()
+            )
+            date_time_ranges[date_str] = (times_df["min_time"][0], times_df["max_time"][0])
 
-    # Sort cases within each date by fault_time
-    for date_str in cases_by_date:
-        cases_by_date[date_str].sort(key=lambda x: x["fault_time"])
+    # Calculate time windows for each row
+    result_rows = []
+    for row in df.iter_rows(named=True):
+        date_str = row["date_str"]
+        fault_start_time = row["start_time"]
+        fault_end_time = row["end_time"]
 
-    return cases_by_date
+        data_start_time, data_end_time = date_time_ranges[date_str]
+
+        # Calculate normal time window: before fault injection with 15-minute limit
+        normal_end_time = fault_start_time
+        max_normal_duration = datetime.timedelta(minutes=15)
+        earliest_normal_start = fault_start_time - max_normal_duration
+
+        # Take the later time: either data starts or 15 minutes before fault
+        if data_start_time > earliest_normal_start:
+            normal_start_time = data_start_time
+        else:
+            normal_start_time = earliest_normal_start
+
+        # Add calculated time windows to row
+        row_dict = dict(row)
+        row_dict["normal_start_time"] = normal_start_time
+        row_dict["normal_end_time"] = normal_end_time
+        row_dict["fault_start_time"] = fault_start_time
+        row_dict["fault_end_time"] = fault_end_time
+
+        result_rows.append(row_dict)
+
+    return pl.DataFrame(result_rows)
+
+
+def generate_attributes_from_groundtruth(dataset: str, gt_df: pl.DataFrame):
+    """Generate attributes dataframe directly from groundtruth data."""
+    # Get list of actually converted datapacks
+    datapacks = get_datapack_list(dataset)
+    datapack_set = set(datapacks)
+
+    # Filter groundtruth to only include converted datapacks
+    converted_gt = gt_df.filter(pl.col("datapack").is_in(datapack_set))
+
+    if converted_gt.is_empty():
+        logger.warning(f"No converted datapacks found for dataset {dataset}")
+        return
+
+    # Convert to attributes format using calculated time windows
+    attrs_df = converted_gt.select(
+        [
+            pl.lit(dataset).alias("dataset"),
+            pl.col("datapack"),
+            pl.col("fault_time").alias("inject_time"),
+            pl.col("fault_type_combined").alias("injection.fault_type"),
+            pl.col("service").alias("injection.service"),
+            pl.col("故障类别").alias("injection.fault_category"),
+            pl.col("故障内容").alias("injection.fault_content"),
+            # Use calculated time windows
+            pl.col("normal_start_time").alias("env.normal_start"),
+            pl.col("normal_end_time").alias("env.normal_end"),
+            pl.col("fault_start_time").alias("env.abnormal_start"),
+            pl.col("fault_end_time").alias("env.abnormal_end"),
+        ]
+    )
+
+    # Add file sizes by scanning converted datapacks
+    attrs_list = []
+    for row in attrs_df.iter_rows(named=True):
+        attrs = dict(row)
+
+        # Calculate file size for this datapack
+        input_folder = get_datapack_folder(dataset, row["datapack"])
+        if input_folder.exists():
+            total_size = 0
+            for file in input_folder.iterdir():
+                if file.is_file() and not file.name.startswith("."):
+                    total_size += file.stat().st_size
+            attrs["files.total_size:MiB"] = round(total_size / (1024 * 1024), 6)
+        else:
+            attrs["files.total_size:MiB"] = 0.0
+
+        attrs_list.append(attrs)
+
+    # Convert back to DataFrame and sort
+    result_df = pl.DataFrame(attrs_list).sort("inject_time", descending=True)
+
+    # Save to parquet
+    save_parquet(result_df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
+    logger.info(f"Generated attributes for {len(result_df)} datapacks")
 
 
 @app.command()
@@ -473,18 +654,24 @@ def run():
     """Convert AIOps21 dataset to RCABench format."""
     from rcabench_platform.v2.sources.convert import convert_dataset
 
-    src_folder = Path("data/aiops/aiops2021-main/AIOps2021/aiops2021-2")
+    src_folder = Path("data/aiops_challenge/aiops2021-main/AIOps2021/aiops2021-2")
     dataset_name = "aiops21"
 
     if not src_folder.exists():
         logger.error(f"Source folder not found: {src_folder}")
         return
 
+    gt_df = load_groundtruth()
+
     loader = AIops21DatasetLoader(src_folder, dataset_name)
     logger.info(f"Found {len(loader)} datapacks in {src_folder}")
 
     convert_dataset(loader, parallel=4, skip_finished=True)
     logger.info(f"Conversion completed for dataset: {dataset_name}")
+
+    logger.info("Generating attributes from groundtruth data...")
+    generate_attributes_from_groundtruth(dataset_name, gt_df)
+    logger.info("Attributes generation completed")
 
 
 if __name__ == "__main__":

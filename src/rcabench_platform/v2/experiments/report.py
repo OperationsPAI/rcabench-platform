@@ -49,6 +49,14 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False):
             attr_df = output_df.join(attr_df, on="datapack", how="left")
             perf_df = calc_all_perf_by_datapack_attr(attr_df, dataset, attr_col)
             save_parquet(perf_df, path=output_meta_folder / "fault_types.perf.parquet")
+    elif dataset.startswith("aiops21"):
+        attributes_df_path = get_dataset_meta_folder(dataset) / "attributes.parquet"
+        if attributes_df_path.exists():
+            attr_col = "injection.fault_type"
+            attr_df = pl.read_parquet(attributes_df_path, columns=["datapack", attr_col])
+            attr_df = output_df.join(attr_df, on="datapack", how="left")
+            perf_df = calc_all_perf_by_datapack_attr(attr_df, dataset, attr_col)
+            save_parquet(perf_df, path=output_meta_folder / "fault_types.perf.parquet")
 
     perf_df = calc_all_perf(output_df, agg_level="datapack")
     save_parquet(perf_df, path=output_meta_folder / "datapack.perf.parquet")
