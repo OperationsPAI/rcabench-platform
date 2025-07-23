@@ -242,7 +242,7 @@ class AIops21DatapackLoader(DatapackLoader):
         # Add fault case metadata with both normal and fault time periods
         metadata = {
             "injection_name": self._fault_case["service"],
-            "fault_type": self._fault_case["anomaly_type"],
+            "fault_type": self._fault_case["fault_type"],
             "fault_start_time": self._to_iso_string(fault_start_time),
             "fault_end_time": self._to_iso_string(fault_end_time),
             "normal_start_time": self._to_iso_string(normal_start_time),
@@ -341,7 +341,7 @@ class AIops21DatasetLoader(DatasetLoader):
                 fault_case = {
                     "id": row["id"],
                     "service": row["service"],
-                    "anomaly_type": row["anomaly_type"],
+                    "fault_type": row["fault_type_combined"],
                     "fault_category": row["故障类别"],
                     "fault_content": row["故障内容"],
                     "fault_time": row["fault_time"],
