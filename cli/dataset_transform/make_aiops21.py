@@ -1,12 +1,13 @@
 #!/usr/bin/env -S uv run -s
 
-from rcabench_platform.v2.sources.convert import DatasetLoader, DatapackLoader, Label
+import datetime
 from pathlib import Path
 from typing import Any
-import datetime
-import polars as pl
-from rcabench_platform.v2.cli.main import app, logger, timeit
 
+import polars as pl
+
+from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label
 
 """single path overview
     nn@debian ~/w/r/d/a/a/A/aiops2021-2> pwd
@@ -43,13 +44,25 @@ def convert_traces(src: Path) -> pl.LazyFrame:
     1614787199635,dockerA2,21030300016145905763,21030300016145905768,gw0120210304000517192504,1
     """
     assert src.exists(), f"Source file does not exist: {src}"
-
+    sample_df = pl.read_csv(src, n_rows=10)
+    
+    # Get the first timestamp to determine unit
+    first_timestamp = sample_df["timestamp"][0]
+    
+    # Heuristic: if timestamp > 1e12, it's likely milliseconds; otherwise seconds
+    # 1e12 corresponds to ~2001-09-09 in milliseconds or ~33658 years in seconds
+    if first_timestamp > 1e12:
+        time_unit = "ms"
+        logger.info(f"Detected millisecond timestamps in {src}")
+    else:
+        time_unit = "s"
+        logger.info(f"Detected second timestamps in {src}")
     lf = pl.scan_csv(src, infer_schema_length=50000)
 
     # Convert to standard format
     lf = lf.select(
         # Convert timestamp from milliseconds to datetime UTC
-        pl.from_epoch("timestamp", time_unit="ms").dt.replace_time_zone("UTC").alias("time"),
+        pl.from_epoch("timestamp", time_unit=time_unit).dt.offset_by("8h").alias("time"),
         pl.col("trace_id").cast(pl.String).alias("trace_id"),
         pl.col("span_id").cast(pl.String).alias("span_id"),
         pl.col("parent_id").cast(pl.String).alias("parent_span_id"),
@@ -92,7 +105,7 @@ def convert_metrics(src: Path) -> pl.LazyFrame:
     # Convert to standard format
     lf = lf.select(
         # Convert timestamp from seconds to datetime UTC
-        pl.from_epoch("timestamp", time_unit="s").dt.replace_time_zone("UTC").alias("time"),
+        pl.from_epoch("timestamp", time_unit="s").dt.offset_by("8h").alias("time"),
         pl.col("kpi_name").cast(pl.String).alias("metric"),
         pl.col("value").cast(pl.Float64).alias("value"),
         pl.col("cmdb_id").cast(pl.String).alias("service_name"),
@@ -134,11 +147,11 @@ def convert_logs(src_folder: Path) -> pl.LazyFrame:
         # Convert to standard format
         lf = lf.select(
             # Convert timestamp from seconds to datetime UTC
-            pl.from_epoch("timestamp", time_unit="s").dt.replace_time_zone("UTC").alias("time"),
+            pl.from_epoch("timestamp", time_unit="s").dt.offset_by("8h").alias("time"),
             pl.lit("").alias("trace_id"),  # AIOps21 logs don't have trace_id
             pl.lit("").alias("span_id"),  # AIOps21 logs don't have span_id
             pl.col("cmdb_id").cast(pl.String).alias("service_name"),
-            pl.lit("INFO").alias("level"),  # Default level since not provided
+            pl.lit("").alias("level"),  # not provided
             pl.col("value").cast(pl.String).alias("message"),
         )
 
@@ -170,24 +183,40 @@ class AIops21DatapackLoader(DatapackLoader):
         # Check traces file first
         trace_file = self._src_folder / "trace" / f"trace_{self._date_str}.csv"
         if trace_file.exists():
-            trace_lf = convert_traces(trace_file)
-            trace_times = trace_lf.select(
-                [pl.col("time").min().alias("min_time"), pl.col("time").max().alias("max_time")]
-            ).collect()
-            min_time = trace_times["min_time"][0]
-            max_time = trace_times["max_time"][0]
-            return min_time, max_time
+            sample_df = pl.read_csv(trace_file, n_rows=10)
+            first_timestamp = sample_df["timestamp"][0]
+            
+            # Determine time unit
+            time_unit = "ms" if first_timestamp > 1e12 else "s"
+            times_df = (
+                pl.scan_csv(trace_file)
+                .select(
+                    [
+                        pl.from_epoch(pl.col("timestamp").min(), time_unit=time_unit).dt.offset_by("8h").alias("min_time"),
+                        pl.from_epoch(pl.col("timestamp").max(), time_unit=time_unit).dt.offset_by("8h").alias("max_time"),
+                    ]
+                )
+                .collect()
+            )
+
+            return times_df["min_time"][0], times_df["max_time"][0]
 
         # Fallback to metrics file
         metric_file = self._src_folder / "metric" / f"metric_{self._date_str}.csv"
         if metric_file.exists():
-            metric_lf = convert_metrics(metric_file)
-            metric_times = metric_lf.select(
-                [pl.col("time").min().alias("min_time"), pl.col("time").max().alias("max_time")]
-            ).collect()
-            min_time = metric_times["min_time"][0]
-            max_time = metric_times["max_time"][0]
-            return min_time, max_time
+            # Get min/max timestamps and convert directly in DataFrame
+            times_df = (
+                pl.scan_csv(metric_file)
+                .select(
+                    [
+                        pl.from_epoch(pl.col("timestamp").min(), time_unit="s").dt.offset_by("8h").alias("min_time"),
+                        pl.from_epoch(pl.col("timestamp").max(), time_unit="s").dt.offset_by("8h").alias("max_time"),
+                    ]
+                )
+                .collect()
+            )
+
+            return times_df["min_time"][0], times_df["max_time"][0]
 
         # If no data files available, use fault injection times as fallback
         return self._fault_case["start_time"], self._fault_case["end_time"]
@@ -395,22 +424,14 @@ def load_groundtruth():
     0,1479,apache01,MEMORY,资源故障,内存使用率过高,1614829800000,
         2021-03-04 11:50:00.000000,2021-03-04 11:55:00.000000,train
     """
-    df = pl.read_csv("data/aiops/aiops2021-main/AIOps2021/aiops21_groundtruth.csv")
+    df = pl.read_csv("data/aiops_challenge/aiops2021-main/AIOps2021/aiops21_groundtruth.csv")
 
     # Convert time from milliseconds to datetime and sort by time
     df = df.with_columns(
         [
-            pl.from_epoch("time", time_unit="ms").dt.replace_time_zone("UTC").alias("fault_time"),
-            pl.col("st_time")
-            .str.to_datetime("%Y-%m-%d %H:%M:%S%.f")
-            .dt.replace_time_zone("Asia/Shanghai")
-            .dt.convert_time_zone("UTC")
-            .alias("start_time"),
-            pl.col("ed_time")
-            .str.to_datetime("%Y-%m-%d %H:%M:%S%.f")
-            .dt.replace_time_zone("Asia/Shanghai")
-            .dt.convert_time_zone("UTC")
-            .alias("end_time"),
+            pl.from_epoch("time", time_unit="ms").dt.offset_by("8h").alias("fault_time"),
+            pl.col("st_time").str.to_datetime("%Y-%m-%d %H:%M:%S%.f").alias("start_time"),
+            pl.col("ed_time").str.to_datetime("%Y-%m-%d %H:%M:%S%.f").alias("end_time"),
         ]
     ).sort("fault_time")
 
@@ -484,7 +505,7 @@ def run():
     """Convert AIOps21 dataset to RCABench format."""
     from rcabench_platform.v2.sources.convert import convert_dataset
 
-    src_folder = Path("data/aiops/aiops2021-main/AIOps2021/aiops2021-2")
+    src_folder = Path("data/aiops_challenge/aiops2021-main/AIOps2021/aiops2021-2")
     dataset_name = "aiops21"
 
     if not src_folder.exists():
