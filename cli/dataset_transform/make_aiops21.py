@@ -227,6 +227,23 @@ class AIops21DatapackLoader(DatapackLoader):
 
         return normal_start_time, normal_end_time, fault_start_time, fault_end_time
 
+    def _validate_dataframes(self, data_dict: dict[str, Any]) -> None:
+        """Validate that critical dataframes are not empty before saving."""
+        # Check traces
+        traces_df = data_dict["traces.parquet"].collect()
+        if traces_df.is_empty():
+            raise ValueError(f"Traces dataframe is empty for datapack {self.name()}")
+
+        # Check metrics
+        metrics_df = data_dict["metrics.parquet"].collect()
+        if metrics_df.is_empty():
+            raise ValueError(f"Metrics dataframe is empty for datapack {self.name()}")
+
+        # Logs can be empty, so we'll just log a warning
+        logs_df = data_dict["logs.parquet"].collect()
+        if logs_df.is_empty():
+            logger.warning(f"Logs dataframe is empty for datapack {self.name()}")
+
     def data(self) -> dict[str, Any]:
         # Calculate time windows: [normal_start, normal_end, fault_start, fault_end]
         normal_start_time, normal_end_time, fault_start_time, fault_end_time = self._calculate_time_windows()
@@ -241,6 +258,9 @@ class AIops21DatapackLoader(DatapackLoader):
             "metrics.parquet": self._filter_metrics_by_time(overall_start_time, overall_end_time),
             "logs.parquet": self._filter_logs_by_time(overall_start_time, overall_end_time),
         }
+
+        # Validate dataframes before proceeding
+        self._validate_dataframes(data_dict)
 
         # Add fault case metadata with both normal and fault time periods
         metadata = {
