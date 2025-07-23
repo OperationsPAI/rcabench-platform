@@ -393,6 +393,22 @@ def load_groundtruth():
             pl.col("ed_time").str.to_datetime("%Y-%m-%d %H:%M:%S%.f").alias("end_time"),
             # Clean up anomaly_type
             pl.col("anomaly_type").str.replace(";", "").str.replace("\n", "").alias("anomaly_type"),
+            # Map fault content to standard names
+            pl.col("故障内容")
+            .replace_strict(
+                {
+                    "网络延迟": "delay",
+                    "内存使用率过高": "stress",
+                    "JVM CPU负载高": "stress",
+                    "JVM OOM Heap": "OOM",
+                    "磁盘IO读使用率过高": "payload",
+                    "CPU使用率高": "stress",
+                    "网络丢包": "loss",
+                    "磁盘空间使用率过高": "usage",
+                },
+                default=pl.col("故障内容"),
+            )
+            .alias("fault_content_mapped"),
         ]
     ).sort("fault_time")
 
@@ -403,8 +419,8 @@ def load_groundtruth():
             pl.col("fault_time").dt.strftime("%m%d").alias("date_str"),
             # Extract time string (HHMM format)
             pl.col("fault_time").dt.strftime("%H%M").alias("time_str"),
-            # Generate combined fault type
-            (pl.col("anomaly_type") + "_" + pl.col("故障内容")).alias("fault_type_combined"),
+            # Generate combined fault type using mapped content
+            (pl.col("anomaly_type") + "_" + pl.col("fault_content_mapped")).alias("fault_type_combined"),
         ]
     )
 
@@ -413,9 +429,9 @@ def load_groundtruth():
         [
             (
                 pl.lit("aiops21_")
-                + pl.col("service")
+                + pl.col("fault_type_combined")
                 + "_"
-                + pl.col("anomaly_type")
+                + pl.col("service")
                 + "_"
                 + pl.col("date_str")
                 + "_"
