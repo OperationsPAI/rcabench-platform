@@ -357,7 +357,12 @@ class AIops21DatasetLoader(DatasetLoader):
 
             # Create a datapack for each fault case in this date
             for i, fault_case in enumerate(fault_cases):
-                datapack = f"aiops21_{date_str}_case_{i + 1:02d}_{fault_case['row_idx']:03d}"
+                # Format fault time as HHMM
+                fault_time = fault_case["fault_time"]
+                time_str = fault_time.strftime("%H%M")
+
+                # Create datapack name: aiops21_{service}_{anomaly_type}_{mmdd}_{HHMM}
+                datapack = f"aiops21_{fault_case['service']}_{fault_case['anomaly_type']}_{date_str}_{time_str}"
 
                 loader = AIops21DatapackLoader(
                     src_folder=date_path,
@@ -430,7 +435,7 @@ def get_fault_cases_by_date():
             "id": row["id"],
             "row_idx": row_idx,  # Add unique row index to handle duplicate IDs
             "service": row["service"],
-            "anomaly_type": row["anomaly_type"],
+            "anomaly_type": row["anomaly_type"].replace(";", "").replace("\n", ""),
             "fault_category": row["故障类别"],
             "fault_content": row["故障内容"],
             "fault_time": fault_time,
