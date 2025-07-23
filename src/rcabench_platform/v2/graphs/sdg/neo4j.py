@@ -2,7 +2,7 @@ from .defintion import SDG
 
 from ...logging import logger, timeit
 from ...clients.neo4j import get_neo4j_driver
-
+import json
 import neo4j
 
 
@@ -23,6 +23,16 @@ def export_sdg_to_neo4j(sdg: SDG, *, clear: bool = True, driver: neo4j.Driver | 
         if clear:
             session.run("MATCH (n) DETACH DELETE n")
             logger.info("Cleared Neo4j database")
+        
+        def safe_prop(prop):
+            if isinstance(prop, (str, int, float, bool, list)):
+                return prop
+            elif isinstance(prop, set):
+                return list(prop)
+            elif isinstance(prop, dict):
+                return json.dumps({k: safe_prop(v) for k, v in prop.items()})
+            else:
+                return str(prop)
 
         for node in sdg.iter_nodes():
             node_kind = str(node.kind)
@@ -32,6 +42,7 @@ def export_sdg_to_neo4j(sdg: SDG, *, clear: bool = True, driver: neo4j.Driver | 
                 "kind": node_kind,
                 "self_name": node.self_name,
                 "uniq_name": node.uniq_name,
+                "stat_data": safe_prop(node.data),
             }
 
             if (created_by := node.data.get("created_by")) is not None:
@@ -57,6 +68,7 @@ def export_sdg_to_neo4j(sdg: SDG, *, clear: bool = True, driver: neo4j.Driver | 
 
             props = {
                 "kind": edge_kind,
+                "stat_data": safe_prop(edge.data),
             }
 
             cypher = """
