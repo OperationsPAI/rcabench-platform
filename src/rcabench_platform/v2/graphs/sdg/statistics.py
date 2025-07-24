@@ -269,6 +269,7 @@ def calc_stat_for_function_node(node: PlaceNode):
             error_rate = [calc_error_rate(value_list[i]) for i in range(2)]
             node.data[f"{STAT_PREFIX[0]}.{stat_name}"] = error_rate[0]
             node.data[f"{STAT_PREFIX[1]}.{stat_name}"] = error_rate[1]
+            # TODO add http status code、get/post、span.kind
 
 
 def calc_regular_stat(

@@ -74,6 +74,7 @@ class MCPWrapper:
 
     def mcp_get_suspicious_nodes(self, attribute: str, fn: Callable[[float, float], bool]):
         """
+        NEVER USED
         fn 传入的是函数，左边是正常 node 值，右边是异常 node 值。值均为数字，llm 可以自定义阈值来定义什么是异常
         """
         ans = []
@@ -89,4 +90,7 @@ class MCPWrapper:
         return info
 
     def mcp_get_avail_attributes(self):
+        """
+        NEVER USED
+        """
         return self._sdg.data["node_stat_names"]
