@@ -88,11 +88,6 @@ exclude = [ #
     "vendor/",
     "output/",
 ]
-reportUnknownArgumentType = false
-reportUnknownVariableType = false
-reportUnknownMemberType = false
-reportUnusedCallResult = false
-reportAny = false
 
 [tool.marimo.runtime]
 output_max_bytes = 50_000_000
