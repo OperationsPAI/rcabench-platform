@@ -1,21 +1,23 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import (
-    convert_dataset,
-    DatasetLoader,
-    DatapackLoader,
-    Label,
-)
-from rcabench_platform.v2.utils.serde import load_json
-from datetime import datetime, timedelta
-from typing import Any
-from pathlib import Path
 import os
 import re
-import typer
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import polars as pl
+import typer
+
+from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.sources.convert import (
+    DatapackLoader,
+    DatasetLoader,
+    Label,
+    convert_dataset,
+)
+from rcabench_platform.v2.utils.serde import load_json
 
 
 def trace_process(filepath: Path) -> pd.DataFrame:

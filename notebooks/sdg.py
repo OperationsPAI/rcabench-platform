@@ -8,11 +8,10 @@ app = marimo.App(width="full", app_title="SDG Visualization")
 
 @app.cell
 def _():
-    import marimo as mo
-
-    import polars as pl
-
     import json
+
+    import marimo as mo
+    import polars as pl
 
     return json, mo, pl
 
@@ -20,17 +19,16 @@ def _():
 @app.cell
 def _():
     from rcabench_platform.v2.datasets.spec import (
-        read_dataset_index,
-        get_dataset_meta_file,
         get_datapack_folder,
+        get_dataset_meta_file,
+        read_dataset_index,
     )
-
     from rcabench_platform.v2.graphs.sdg.defintion import (
         SDG,
+        DepEdge,
+        DepKind,
         PlaceKind,
         PlaceNode,
-        DepKind,
-        DepEdge,
     )
 
     return get_datapack_folder, get_dataset_meta_file, read_dataset_index

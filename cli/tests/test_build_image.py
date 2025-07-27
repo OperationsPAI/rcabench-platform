@@ -1,24 +1,23 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app, logger
-from rcabench_platform.v2.logging import timeit
-from rcabench_platform.v2.config import get_config
-
+import os
 from collections.abc import Generator
 from pathlib import Path
-import dotenv
-import os
 
-from rcabench.openapi.api import AlgorithmApi, ContainerApi, DatasetApi
-from rcabench.const import EventType
+import dotenv
+from rcabench.const import EventType, TaskStatus
 from rcabench.model.error import ModelHTTPError
-from rcabench.const import TaskStatus
 from rcabench.model.trace import AlgorithmItem, ExecutionOptions, InfoPayload, StreamEvent
+from rcabench.openapi.api import AlgorithmApi, ContainerApi, DatasetApi
 from rcabench.openapi.api_client import ApiClient, Configuration
 from rcabench.openapi.models.dto_algorithm_item import DtoAlgorithmItem
 from rcabench.openapi.models.dto_dataset_build_payload import DtoDatasetBuildPayload
 from rcabench.openapi.models.dto_execution_payload import DtoExecutionPayload
 from rcabench.openapi.models.dto_generic_response_dto_submit_resp import DtoGenericResponseDtoSubmitResp
 from rcabench.rcabench import RCABenchSDK
+
+from rcabench_platform.v2.cli.main import app, logger
+from rcabench_platform.v2.config import get_config
+from rcabench_platform.v2.logging import timeit
 
 ENV_PATH = ".env"
 TOKEN_KEY = "GITHUB_TOKEN"

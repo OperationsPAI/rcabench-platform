@@ -1,7 +1,6 @@
-from ._common import SimpleMetricsAdapter
-from ...algorithms.spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
-
 from ....vendor.RCAEval.nsigma import nsigma
+from ...algorithms.spec import Algorithm, AlgorithmAnswer, AlgorithmArgs
+from ._common import SimpleMetricsAdapter
 
 
 class NSigma(Algorithm):

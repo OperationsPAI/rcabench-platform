@@ -1,12 +1,11 @@
-from ..algorithms.spec import global_algorithm_registry
-from ..utils.env import getenv_bool
-from ..logging import logger, timeit
-
 import multiprocessing
 
-from tqdm.auto import tqdm
 import typer
+from tqdm.auto import tqdm
 
+from ..algorithms.spec import global_algorithm_registry
+from ..logging import logger, timeit
+from ..utils.env import getenv_bool
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -23,7 +22,7 @@ def _():
 
 
 def main(*, enable_builtin_algorithms: bool = True) -> None:
-    from . import self_, tools, sdg, eval, container, online
+    from . import container, eval, online, sdg, self_, tools
 
     app.add_typer(self_.app, name="self")
     app.add_typer(tools.app, name="tools")
@@ -39,12 +38,10 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
 
 def register_builtin_algorithms():
     from ..algorithms.random_ import Random
-
-    from ..algorithms.traceback.A7 import TraceBackA7
-    from ..algorithms.traceback.A8 import TraceBackA8
-
     from ..algorithms.rcaeval.baro import Baro
     from ..algorithms.rcaeval.nsigma import NSigma
+    from ..algorithms.traceback.A7 import TraceBackA7
+    from ..algorithms.traceback.A8 import TraceBackA8
 
     getters = {
         "random": Random,

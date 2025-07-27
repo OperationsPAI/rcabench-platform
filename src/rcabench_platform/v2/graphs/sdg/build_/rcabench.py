@@ -1,21 +1,18 @@
-from .common import calc_metric_min_max, is_constant_metric, replace_enum_values, add_node_opt
+import datetime
+import json
+import math
+from pathlib import Path
+from typing import Any
 
-from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+import dateutil.tz
+import polars as pl
 
 from ....datasets.rcabench import get_parent_resource_from_pod_name
 from ....datasets.train_ticket import tt_add_op_name, tt_fix_client_spans
-
 from ....logging import logger, timeit
 from ....utils.serde import load_json
-
-from pathlib import Path
-from typing import Any
-import datetime
-import math
-import json
-
-import polars as pl
-import dateutil.tz
+from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+from .common import add_node_opt, calc_metric_min_max, is_constant_metric, replace_enum_values
 
 
 @timeit()

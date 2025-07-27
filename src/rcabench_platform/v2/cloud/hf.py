@@ -1,11 +1,11 @@
-from .spec import Storage
-from ..logging import timeit
-from ..utils.fmap import fmap_threadpool
-
-from pathlib import Path
 import functools
+from pathlib import Path
 
 from huggingface_hub import HfApi
+
+from ..logging import timeit
+from ..utils.fmap import fmap_threadpool
+from .spec import Storage
 
 
 class HuggingFaceStorage(Storage):

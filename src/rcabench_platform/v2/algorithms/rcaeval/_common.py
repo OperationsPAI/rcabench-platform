@@ -1,19 +1,16 @@
-from ...algorithms.spec import AlgorithmArgs, AlgorithmAnswer
-from ...logging import timeit
-
-from ...graphs.sdg.build_.rcaeval import load_inject_time as rcaeval_load_inject_time
-from ...graphs.sdg.build_.rcabench import load_inject_time as rcabench_load_inject_time
-
-from ...utils.env import debug
-from ...utils.serde import save_parquet
-
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-
-import polars as pl
 import pandas as pd
+import polars as pl
+
+from ...algorithms.spec import AlgorithmAnswer, AlgorithmArgs
+from ...graphs.sdg.build_.rcabench import load_inject_time as rcabench_load_inject_time
+from ...graphs.sdg.build_.rcaeval import load_inject_time as rcaeval_load_inject_time
+from ...logging import timeit
+from ...utils.env import debug
+from ...utils.serde import save_parquet
 
 
 class SimpleMetricsAdapter:

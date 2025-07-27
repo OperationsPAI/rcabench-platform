@@ -4,15 +4,16 @@ Provide ready-to-use detection configurations for different types of metrics
 """
 
 from collections.abc import Callable
-from .types import MetricType, DetectionMethod
+
 from .configs import (
-    MetricDetectionConfig,
-    ThresholdConfig,
-    StatisticalConfig,
-    TrendConfig,
     EnhancedLatencyConfig,
+    MetricDetectionConfig,
+    StatisticalConfig,
     SuccessRateConfig,
+    ThresholdConfig,
+    TrendConfig,
 )
+from .types import DetectionMethod, MetricType
 
 
 # ===== Latency Metric Preset Configurations =====

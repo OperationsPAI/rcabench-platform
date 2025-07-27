@@ -1,20 +1,22 @@
 #!/usr/bin/env -S uv run -s
 
+import json
+import os
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+import polars as pl
+import typer
+
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.sources.convert import (
-    convert_dataset,
-    DatasetLoader,
     DatapackLoader,
+    DatasetLoader,
     Label,
+    convert_dataset,
 )
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
-from pathlib import Path
-import polars as pl
-import json
-import re
-import os
-import typer
 
 
 def to_utc_time(time_str: str) -> datetime:

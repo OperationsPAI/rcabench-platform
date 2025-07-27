@@ -1,7 +1,9 @@
-import polars as pl
 import json
-import networkx as nx
 from typing import Any, Union
+
+import networkx as nx
+import polars as pl
+
 from ..datasets.spec import get_datapack_folder
 
 

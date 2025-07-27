@@ -1,28 +1,23 @@
-from ._common import build_sdg_with_cache
-
-from ..spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
-
-from ...logging import logger, timeit
-
-from ...datasets.rcabench import rcabench_fix_injection
-
-from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, PlaceKind, PlaceNode
-from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
-from ...graphs.networkx.neo4j import export_networkx_to_neo4j
-
-from ...utils.serde import load_json
-from ...utils.env import debug
-from ....compat import StrEnum
-
+from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
-from collections import defaultdict
 from enum import auto
 from pprint import pformat
 from queue import Queue
 
 import networkx as nx
 import polars as pl
+
+from ....compat import StrEnum
+from ...datasets.rcabench import rcabench_fix_injection
+from ...graphs.networkx.neo4j import export_networkx_to_neo4j
+from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, PlaceKind, PlaceNode
+from ...graphs.sdg.statistics import STAT_PREFIX, calc_statistics
+from ...logging import logger, timeit
+from ...utils.env import debug
+from ...utils.serde import load_json
+from ..spec import Algorithm, AlgorithmAnswer, AlgorithmArgs
+from ._common import build_sdg_with_cache
 
 
 class TraceBackA8(Algorithm):

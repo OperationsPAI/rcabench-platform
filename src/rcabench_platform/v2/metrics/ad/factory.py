@@ -5,15 +5,15 @@ Provides detector instance retrieval and unified anomaly detection entry point
 
 from typing import Any
 
-from .types import AnomalyResult, AnomalyType, AnomalySeverity, DetectionMethod, HistoricalData
 from .configs import MetricDetectionConfig
 from .detectors import (
-    ThresholdDetector,
-    StatisticalDetector,
-    TrendDetector,
     EnhancedLatencyDetector,
+    StatisticalDetector,
     SuccessRateDetector,
+    ThresholdDetector,
+    TrendDetector,
 )
+from .types import AnomalyResult, AnomalySeverity, AnomalyType, DetectionMethod, HistoricalData
 
 
 # ===== Detector Factory =====

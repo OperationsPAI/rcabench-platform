@@ -1,13 +1,12 @@
-from ..sources.convert import link_subset
-from ..logging import logger, timeit
-
+import json
+import math
+import random
+import re
 from collections import defaultdict
 from typing import Any
-import random
-import math
-import json
-import re
 
+from ..logging import logger, timeit
+from ..sources.convert import link_subset
 
 DATAPACK_PATTERN = (
     r"(ts|ts\d)-(mysql|ts-rabbitmq|ts-ui-dashboard|ts-\w+-service|ts-\w+-\w+-service|ts-\w+-\w+-\w+-service)-(.+)-[^-]+"

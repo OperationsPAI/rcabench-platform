@@ -1,15 +1,14 @@
-from .defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+import datetime
+import functools
+import math
+import traceback
+
+import numpy as np
+import polars as pl
+import scipy.stats
 
 from ...logging import logger, timeit
-
-import traceback
-import functools
-import datetime
-import math
-
-import polars as pl
-import numpy as np
-import scipy.stats
+from .defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 
 
 @timeit(log_args=False)

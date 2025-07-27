@@ -1,19 +1,15 @@
-from ..logging import timeit
-from ..config import get_config
-
-from ..algorithms.spec import global_algorithm_registry
-from ..algorithms.spec import AlgorithmArgs
-
-from ..sources.rcabench import RcabenchDatapackLoader
-from ..sources.convert import convert_datapack
-
-from ..utils.serde import save_csv, load_json
-
-from typing import Annotated
 from pathlib import Path
+from typing import Annotated
 
 import polars as pl
 import typer
+
+from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
+from ..config import get_config
+from ..logging import timeit
+from ..sources.convert import convert_datapack
+from ..sources.rcabench import RcabenchDatapackLoader
+from ..utils.serde import load_json, save_csv
 
 app = typer.Typer()
 

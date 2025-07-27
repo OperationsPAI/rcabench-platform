@@ -1,6 +1,8 @@
-import networkx as nx
-from .dataset_loader import DatasetLoader
 import statistics
+
+import networkx as nx
+
+from .dataset_loader import DatasetLoader
 
 
 class MetricsCalculator:

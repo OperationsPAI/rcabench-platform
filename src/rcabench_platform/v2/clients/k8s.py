@@ -1,12 +1,12 @@
-from ..logging import timeit, logger
-
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 # https://github.com/kubernetes-client/python/issues/225
 import kubernetes
 import kubernetes.client
 import kubernetes.config
+
+from ..logging import logger, timeit
 
 
 @dataclass(kw_only=True)

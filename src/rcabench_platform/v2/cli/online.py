@@ -1,16 +1,15 @@
-from ..config import get_config
-from ..utils.serde import save_json
-from ..clients.k8s import download_kube_info
-from ..clients.rcabench_ import get_rcabench_openapi_client
-from ..logging import logger, timeit
-
+import json
 from pathlib import Path
 from typing import Annotated, Any
-import json
-
-from rcabench.openapi import InjectionApi, AlgorithmApi
 
 import typer
+from rcabench.openapi import AlgorithmApi, InjectionApi
+
+from ..clients.k8s import download_kube_info
+from ..clients.rcabench_ import get_rcabench_openapi_client
+from ..config import get_config
+from ..logging import logger, timeit
+from ..utils.serde import save_json
 
 app = typer.Typer()
 
@@ -74,7 +73,7 @@ def submit_execution(
     datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
     envs: Annotated[list[str] | None, typer.Option("--env")] = None,
 ):
-    from rcabench.openapi.models import DtoExecutionPayload, DtoAlgorithmItem
+    from rcabench.openapi.models import DtoAlgorithmItem, DtoExecutionPayload
 
     assert algorithms, "At least one algorithm must be specified."
     assert datasets, "At least one dataset must be specified."

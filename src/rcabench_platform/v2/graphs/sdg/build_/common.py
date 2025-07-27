@@ -1,6 +1,6 @@
-from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
-
 import polars as pl
+
+from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 
 
 def calc_metric_min_max(df: pl.DataFrame) -> tuple[float, float]:

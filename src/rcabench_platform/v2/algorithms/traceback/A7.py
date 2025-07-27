@@ -1,20 +1,18 @@
-from ._common import build_sdg_with_cache
-
-from ..spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
-
-from ...logging import logger, timeit
-
-from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode, GraphPath, ExpandedGraphPath
-from ...graphs.sdg.statistics import calc_statistics, STAT_PREFIX
-from ...utils.env import debug
-from ....compat import StrEnum
-
+import json
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from pprint import pformat
 from enum import auto
+from pprint import pformat
+
 import numpy as np
-import json
+
+from ....compat import StrEnum
+from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, ExpandedGraphPath, GraphPath, Indicator, PlaceKind, PlaceNode
+from ...graphs.sdg.statistics import STAT_PREFIX, calc_statistics
+from ...logging import logger, timeit
+from ...utils.env import debug
+from ..spec import Algorithm, AlgorithmAnswer, AlgorithmArgs
+from ._common import build_sdg_with_cache
 
 
 class AnomalyKind(StrEnum):

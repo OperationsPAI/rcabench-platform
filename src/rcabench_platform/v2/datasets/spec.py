@@ -1,11 +1,11 @@
-from ..config import get_config
-from ..logging import timeit
-
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 
 import polars as pl
+
+from ..config import get_config
+from ..logging import timeit
 
 
 @dataclass(kw_only=True, slots=True, frozen=True)

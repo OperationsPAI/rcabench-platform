@@ -1,8 +1,7 @@
-from ..config import get_config
-
 import rcabench.rcabench
-
 from rcabench.openapi import ApiClient, Configuration
+
+from ..config import get_config
 
 
 def get_rcabench_sdk(*, base_url: str | None = None) -> rcabench.rcabench.RCABenchSDK:

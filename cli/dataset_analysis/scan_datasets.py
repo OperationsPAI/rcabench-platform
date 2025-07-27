@@ -1,4 +1,12 @@
 #!/usr/bin/env -S uv run -s
+import functools
+from typing import Any
+
+import matplotlib.pyplot as plt
+import polars as pl
+from matplotlib.axes import Axes
+from tqdm.auto import tqdm
+
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.datasets.spec import (
     get_datapack_folder,
@@ -8,14 +16,6 @@ from rcabench_platform.v2.datasets.spec import (
 )
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
-
-from typing import Any
-import functools
-
-import matplotlib.pyplot as plt
-from matplotlib.axes import Axes
-import polars as pl
-from tqdm.auto import tqdm
 
 
 @app.command()

@@ -1,26 +1,27 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app
-from rcabench_platform.v2.logging import logger, timeit
-from rcabench_platform.v2.utils.fmap import fmap_processpool
-from rcabench_platform.v2.datasets.train_ticket import extract_path
+import functools
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any, Literal, TypedDict
 
-from rcabench_platform.v2.metrics.ad.detectors import (
-    EnhancedLatencyDetector,
-    SuccessRateDetector,
-)
+import numpy as np
+import polars as pl
+
+from rcabench_platform.v2.cli.main import app
+from rcabench_platform.v2.datasets.train_ticket import extract_path
+from rcabench_platform.v2.logging import logger, timeit
 from rcabench_platform.v2.metrics.ad.configs import (
     EnhancedLatencyConfig,
     SuccessRateConfig,
 )
+from rcabench_platform.v2.metrics.ad.detectors import (
+    EnhancedLatencyDetector,
+    SuccessRateDetector,
+)
 from rcabench_platform.v2.metrics.ad.types import HistoricalData
-from pathlib import Path
-import json
-import os
-import polars as pl
-import numpy as np
-import functools
-from typing import Literal, Any, TypedDict
-import sys
+from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 
 # TypedDict definitions

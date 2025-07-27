@@ -1,11 +1,12 @@
-from ..config import get_config
-from ..logging import timeit, logger
-from ..utils.serde import save_parquet
-from ..utils.env import debug
 import re
 from collections import defaultdict
 
 import polars as pl
+
+from ..config import get_config
+from ..logging import logger, timeit
+from ..utils.env import debug
+from ..utils.serde import save_parquet
 
 PATTERN_REPLACEMENTS = [
     (

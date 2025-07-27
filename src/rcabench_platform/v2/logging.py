@@ -1,8 +1,8 @@
-from functools import wraps
-from pprint import pformat
 import datetime
 import inspect
 import sys
+from functools import wraps
+from pprint import pformat
 
 from loguru import logger as global_logger
 from loguru._logger import Logger  # type:ignore

@@ -5,7 +5,8 @@ for each detection method
 """
 
 from dataclasses import dataclass, field
-from .types import MetricType, DetectionMethod
+
+from .types import DetectionMethod, MetricType
 
 
 # ===== Base Configuration Class =====

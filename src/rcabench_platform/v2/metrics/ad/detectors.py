@@ -1,19 +1,21 @@
+from typing import Any, Protocol, runtime_checkable
+
 import numpy as np
-from typing import Protocol, runtime_checkable, Any
 import scipy.stats as stats
+
+from .configs import (
+    EnhancedLatencyConfig,
+    StatisticalConfig,
+    SuccessRateConfig,
+    ThresholdConfig,
+    TrendConfig,
+)
 from .types import (
     AnomalyResult,
-    AnomalyType,
     AnomalySeverity,
+    AnomalyType,
     DetectionMethod,
     HistoricalData,
-)
-from .configs import (
-    ThresholdConfig,
-    StatisticalConfig,
-    TrendConfig,
-    EnhancedLatencyConfig,
-    SuccessRateConfig,
 )
 
 

@@ -3,8 +3,8 @@ Core type definitions for the anomaly detection system
 Includes all enums, TypedDicts, and basic data structures
 """
 
-from typing import TypedDict, Any
 from enum import Enum
+from typing import Any, TypedDict
 
 # ===== Basic Type Aliases =====
 NumericList = list[float | int]

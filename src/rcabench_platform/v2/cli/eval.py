@@ -1,14 +1,14 @@
-from ..datasets.spec import get_dataset_index_path, get_dataset_list
-from ..algorithms.spec import global_algorithm_registry
-from ..logging import logger, timeit
-from ..experiments.single import run_single
-from ..experiments.batch import run_batch
-from ..experiments.report import generate_perf_report
-
 from typing import Annotated
 
 import polars as pl
 import typer
+
+from ..algorithms.spec import global_algorithm_registry
+from ..datasets.spec import get_dataset_index_path, get_dataset_list
+from ..experiments.batch import run_batch
+from ..experiments.report import generate_perf_report
+from ..experiments.single import run_single
+from ..logging import logger, timeit
 
 app = typer.Typer()
 

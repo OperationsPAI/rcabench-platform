@@ -1,11 +1,11 @@
-from ..config import get_config
-from ..clients.rcabench_ import get_rcabench_openapi_client
-from ..clients.clickhouse import get_clickhouse_client
-from ..logging import logger, timeit
-
 import traceback
 
 import typer
+
+from ..clients.clickhouse import get_clickhouse_client
+from ..clients.rcabench_ import get_rcabench_openapi_client
+from ..config import get_config
+from ..logging import logger, timeit
 
 app = typer.Typer()
 

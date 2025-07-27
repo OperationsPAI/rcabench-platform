@@ -1,6 +1,6 @@
-from ..config import get_config
-
 from pathlib import Path
+
+from ..config import get_config
 
 
 def get_output_folder(dataset: str, datapack: str, algorithm: str) -> Path:

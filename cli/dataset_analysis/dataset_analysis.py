@@ -1,21 +1,23 @@
 #!/usr/bin/env -S uv run -s
 # function: analyze the static distribution of datasets, including service names,
 # log lines, entry traces, metric names, span names, trace length distribution, time slices, QPM, and total duration
-from typing import Any
-from rcabench_platform.v2.cli.main import app
-from pathlib import Path
-import json
 import functools
-import polars as pl
-from rcabench_platform.v2.utils.fmap import fmap_processpool
-from dataclasses import dataclass, field
+import json
 import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
 import matplotlib
+import polars as pl
+
+from rcabench_platform.v2.cli.main import app
+from rcabench_platform.v2.datasets.spec import get_datapack_folder
 from rcabench_platform.v2.datasets.train_ticket import extract_path
+from rcabench_platform.v2.logging import logger
 from rcabench_platform.v2.metrics.dataset_loader import DatasetLoader
 from rcabench_platform.v2.metrics.metrics_calculator import MetricsCalculator
-from rcabench_platform.v2.datasets.spec import get_datapack_folder
-from rcabench_platform.v2.logging import logger
+from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 matplotlib.use("Agg")
 

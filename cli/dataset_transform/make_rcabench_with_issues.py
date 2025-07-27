@@ -1,23 +1,24 @@
 #!/usr/bin/env -S uv run -s
+import shutil
+from fractions import Fraction
+
+import polars as pl
+
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import link_subset
-from rcabench_platform.v2.utils.serde import save_parquet
+from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
 from rcabench_platform.v2.datasets.spec import (
     get_dataset_folder,
     get_dataset_meta_file,
     read_dataset_index,
 )
-from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
-
-from fractions import Fraction
-import shutil
-
-import polars as pl
+from rcabench_platform.v2.sources.convert import link_subset
+from rcabench_platform.v2.utils.serde import save_parquet
 
 
 def get_analysis_with_issues():
-    from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
     from rcabench.openapi import InjectionApi
+
+    from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
 
     api = InjectionApi(get_rcabench_openapi_client())
     resp = api.api_v1_injections_analysis_with_issues_get()

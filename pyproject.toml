@@ -31,10 +31,7 @@ dependencies = [ #
 ]
 
 [project.optional-dependencies]
-analysis = [
-    "graphviz>=0.20.3",
-    "matplotlib>=3.10.3",
-]
+analysis = ["graphviz>=0.20.3", "matplotlib>=3.10.3"]
 
 [dependency-groups]
 dev = [ #
@@ -68,6 +65,7 @@ line-length = 120
 select = [
     "E",  # https://docs.astral.sh/ruff/rules/#error-e
     "F",  # https://docs.astral.sh/ruff/rules/#pyflakes-f
+    "I",  # https://docs.astral.sh/ruff/rules/#isort-i
     "UP", # https://docs.astral.sh/ruff/rules/#pyupgrade-up
 ]
 ignore = ["F401", "UP038"]

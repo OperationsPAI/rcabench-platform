@@ -1,13 +1,13 @@
 #!/usr/bin/env -S uv run -s
+from pathlib import Path
+
+import polars as pl
+
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.datasets.spec import get_dataset_meta_file, read_dataset_index
 from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset
 from rcabench_platform.v2.sources.rcaeval import RcaevalDatapackLoader, RcaevalDatasetLoader
 from rcabench_platform.v2.utils.serde import save_parquet
-
-from pathlib import Path
-
-import polars as pl
 
 
 @app.command()

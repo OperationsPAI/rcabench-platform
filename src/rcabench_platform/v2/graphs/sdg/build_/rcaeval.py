@@ -1,12 +1,12 @@
-from .common import is_constant_metric
-from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
-from ....datasets.train_ticket import tt_add_op_name, tt_fix_client_spans
-from ....logging import logger, timeit
-
-from pathlib import Path
 import datetime
+from pathlib import Path
 
 import polars as pl
+
+from ....datasets.train_ticket import tt_add_op_name, tt_fix_client_spans
+from ....logging import logger, timeit
+from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
+from .common import is_constant_metric
 
 
 @timeit()

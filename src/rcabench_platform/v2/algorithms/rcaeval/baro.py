@@ -1,7 +1,6 @@
-from ._common import SimpleMetricsAdapter
-from ...algorithms.spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
-
 from ....vendor.RCAEval.baro import baro
+from ...algorithms.spec import Algorithm, AlgorithmAnswer, AlgorithmArgs
+from ._common import SimpleMetricsAdapter
 
 
 class Baro(Algorithm):

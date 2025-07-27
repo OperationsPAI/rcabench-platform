@@ -1,16 +1,15 @@
-from .single import run_single
-
-from ..utils.fmap import fmap_processpool
-from ..datasets.spec import get_datapack_list
-from ..algorithms.spec import global_algorithm_registry
-from ..logging import logger, timeit
-
-import multiprocessing
 import functools
-import random
-import time
-import sys
+import multiprocessing
 import os
+import random
+import sys
+import time
+
+from ..algorithms.spec import global_algorithm_registry
+from ..datasets.spec import get_datapack_list
+from ..logging import logger, timeit
+from ..utils.fmap import fmap_processpool
+from .single import run_single
 
 
 @timeit(log_level="INFO")

@@ -1,18 +1,17 @@
-from .spec import get_output_folder
-
-from ..datasets.spec import get_datapack_labels, get_datapack_folder
-from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
-from ..logging import logger, timeit
-from ..utils.serde import save_parquet
-from ..utils.fs import running_mark
-from ..evaluation.ranking import calc_all_perf
-
-from pathlib import Path
 import dataclasses
-import traceback
 import time
+import traceback
+from pathlib import Path
 
 import polars as pl
+
+from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
+from ..datasets.spec import get_datapack_folder, get_datapack_labels
+from ..evaluation.ranking import calc_all_perf
+from ..logging import logger, timeit
+from ..utils.fs import running_mark
+from ..utils.serde import save_parquet
+from .spec import get_output_folder
 
 
 @timeit(log_level="INFO")

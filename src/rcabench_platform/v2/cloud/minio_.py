@@ -1,14 +1,14 @@
-from .spec import Storage, zipped_folder, unzipped_folder
-from ..utils.fmap import fmap_threadpool
-from ..logging import timeit
-
-from pathlib import Path
-import subprocess
 import functools
-import tempfile
 import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 import minio
+
+from ..logging import timeit
+from ..utils.fmap import fmap_threadpool
+from .spec import Storage, unzipped_folder, zipped_folder
 
 
 class MinioStorage(Storage):

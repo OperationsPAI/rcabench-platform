@@ -4,16 +4,17 @@ Includes basic calculation functions and logic for the four golden signals
 """
 
 import numpy as np
+
 from .types import (
-    NumericList,
-    LatencyData,
-    LatencySignals,
-    TrafficData,
-    TrafficSignals,
     ErrorData,
     ErrorSignals,
+    LatencyData,
+    LatencySignals,
+    NumericList,
     SaturationData,
     SaturationSignals,
+    TrafficData,
+    TrafficSignals,
 )
 
 

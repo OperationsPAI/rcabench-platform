@@ -1,8 +1,8 @@
-from ..utils.dataframe import assert_columns
-
 from typing import Literal
 
 import polars as pl
+
+from ..utils.dataframe import assert_columns
 
 INDEX_COLUMNS = ["algorithm", "dataset", "datapack"]
 AGG_LEVEL = Literal["algorithm", "dataset", "datapack"]

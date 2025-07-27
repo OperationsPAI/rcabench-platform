@@ -1,7 +1,7 @@
+from pathlib import Path
+
 from .rcabench import build_sdg_from_rcabench
 from .rcaeval import build_sdg_from_rcaeval
-
-from pathlib import Path
 
 
 def build_sdg(dataset: str, datapack: str, input_folder: Path):

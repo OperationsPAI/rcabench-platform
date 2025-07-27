@@ -1,9 +1,9 @@
 # type:ignore
 
-from .time_series import preprocess
-
-from sklearn.preprocessing import RobustScaler, StandardScaler
 import pandas as pd
+from sklearn.preprocessing import RobustScaler, StandardScaler
+
+from .time_series import preprocess
 
 
 def nsigma(

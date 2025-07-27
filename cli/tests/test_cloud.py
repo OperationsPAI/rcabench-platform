@@ -1,15 +1,15 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app, logger
-from rcabench_platform.v2.logging import timeit
-from rcabench_platform.v2.cloud.spec import Storage
-from rcabench_platform.v2.cloud.minio_ import MinioStorage
-from rcabench_platform.v2.cloud.hf import HuggingFaceStorage
-
-from typing import Literal
 from pathlib import Path
+from typing import Literal
 
-from huggingface_hub import HfApi
 import minio
+from huggingface_hub import HfApi
+
+from rcabench_platform.v2.cli.main import app, logger
+from rcabench_platform.v2.cloud.hf import HuggingFaceStorage
+from rcabench_platform.v2.cloud.minio_ import MinioStorage
+from rcabench_platform.v2.cloud.spec import Storage
+from rcabench_platform.v2.logging import timeit
 
 
 def get_minio_client() -> minio.Minio:

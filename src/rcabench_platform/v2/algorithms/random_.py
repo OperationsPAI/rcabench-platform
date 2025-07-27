@@ -1,10 +1,10 @@
-from .spec import Algorithm, AlgorithmArgs, AlgorithmAnswer
-from ..logging import timeit, logger
-
-from pathlib import Path
 import random
+from pathlib import Path
 
 import polars as pl
+
+from ..logging import logger, timeit
+from .spec import Algorithm, AlgorithmAnswer, AlgorithmArgs
 
 
 def find_service_names(dataset: str, input_folder: Path) -> list[str]:

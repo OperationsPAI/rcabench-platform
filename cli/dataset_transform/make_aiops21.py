@@ -1,12 +1,13 @@
 #!/usr/bin/env -S uv run -s
 
-from rcabench_platform.v2.sources.convert import DatasetLoader, DatapackLoader, Label
+import datetime
 from pathlib import Path
 from typing import Any
-import datetime
-import polars as pl
-from rcabench_platform.v2.cli.main import app, logger, timeit
 
+import polars as pl
+
+from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label
 
 """single path overview
     nn@debian ~/w/r/d/a/a/A/aiops2021-2> pwd

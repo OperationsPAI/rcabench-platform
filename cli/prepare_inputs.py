@@ -1,26 +1,24 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app, logger, timeit
+import functools
+import os
+import shutil
+import subprocess
+import tempfile
+import traceback
+from pathlib import Path
+from typing import Any
 
+import pandas as pd
+
+from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.clickhouse import (
     get_clickhouse_client,
     query_parquet_stream,
 )
 from rcabench_platform.v2.clients.k8s import download_kube_info
 from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
-
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
-
-from pathlib import Path
-from typing import Any
-import subprocess
-import traceback
-import functools
-import tempfile
-import shutil
-import os
-
-import pandas as pd
 
 
 @app.command()

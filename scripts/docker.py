@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.cli.main import app, timeit
-
-from pathlib import Path
-import subprocess
-import shutil
 import os
+import shutil
+import subprocess
+from pathlib import Path
+
+from rcabench_platform.v2.cli.main import app, timeit
 
 CONTEXTS: dict[str, Path] = {
     "rcabench-platform": Path.cwd(),

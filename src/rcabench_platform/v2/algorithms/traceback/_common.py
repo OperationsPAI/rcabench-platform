@@ -1,11 +1,9 @@
-from ..spec import AlgorithmArgs
-
 from ...graphs.sdg.build_ import build_sdg
 from ...graphs.sdg.defintion import SDG
-
-from ...utils.serde import load_pickle, save_pickle
+from ...utils.env import debug, getenv_int
 from ...utils.fs import has_recent_file
-from ...utils.env import getenv_int, debug
+from ...utils.serde import load_pickle, save_pickle
+from ..spec import AlgorithmArgs
 
 if debug():
     _DEFAULT_SDG_CACHE_TIME = 600

@@ -1,8 +1,8 @@
-from typing import TypeAlias
 from pathlib import Path
+from typing import TypeAlias
 
-import clickhouse_connect.driver.client
 import clickhouse_connect
+import clickhouse_connect.driver.client
 
 ClickHouseClient: TypeAlias = clickhouse_connect.driver.client.Client
 

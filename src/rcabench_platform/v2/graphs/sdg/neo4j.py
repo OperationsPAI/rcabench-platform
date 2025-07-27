@@ -1,9 +1,8 @@
-from .defintion import SDG
-
-from ...logging import logger, timeit
-from ...clients.neo4j import get_neo4j_driver
-
 import neo4j
+
+from ...clients.neo4j import get_neo4j_driver
+from ...logging import logger, timeit
+from .defintion import SDG
 
 
 @timeit(log_args={"clear"})

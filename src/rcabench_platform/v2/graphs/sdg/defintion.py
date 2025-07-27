@@ -1,18 +1,16 @@
-from ...logging import logger
-
-from ....compat import StrEnum
-
-from dataclasses import dataclass, field
+import itertools
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from enum import auto
 from typing import Any, TypeAlias
-from typing_extensions import Self
-import itertools
-
 
 import networkx as nx
 import polars as pl
+from typing_extensions import Self
+
+from ....compat import StrEnum
+from ...logging import logger
 
 
 class PlaceKind(StrEnum):

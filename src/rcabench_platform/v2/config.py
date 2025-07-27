@@ -1,7 +1,7 @@
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from contextlib import contextmanager
-import os
 
 
 @dataclass(kw_only=True)

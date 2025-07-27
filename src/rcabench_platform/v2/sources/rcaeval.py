@@ -1,9 +1,9 @@
-from .convert import DatasetLoader, DatapackLoader, Label
-
 from pathlib import Path
 from typing import Any
 
 import polars as pl
+
+from .convert import DatapackLoader, DatasetLoader, Label
 
 
 def convert_traces(src: Path):

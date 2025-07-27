@@ -1,10 +1,9 @@
+from collections.abc import Callable, Iterable
+from itertools import chain
+from typing import Any, Literal
+
 from .defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 from .statistics import STAT_PREFIX
-
-from typing import Any, Literal
-from collections.abc import Callable
-from collections.abc import Iterable
-from itertools import chain
 
 
 class MCPWrapper:

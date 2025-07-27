@@ -1,35 +1,35 @@
 #!/usr/bin/env -S uv run -s
+import datetime
+import functools
+import json
+import shutil
+from pathlib import Path
+from typing import Any
+
+import dateutil.tz
+import polars as pl
+from tqdm.auto import tqdm
+
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
-from rcabench_platform.v2.sources.rcabench import (
-    RcabenchDatapackLoader,
-    RcabenchDatasetLoader,
+from rcabench_platform.v2.datasets.spec import (
+    get_datapack_folder,
+    get_datapack_list,
+    get_dataset_meta_file,
 )
 from rcabench_platform.v2.sources.convert import (
     convert_datapack,
     convert_dataset,
     link_subset,
 )
+from rcabench_platform.v2.sources.rcabench import (
+    RcabenchDatapackLoader,
+    RcabenchDatasetLoader,
+)
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.dict_ import flatten_dict
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import load_json, save_parquet
-from rcabench_platform.v2.datasets.spec import (
-    get_datapack_folder,
-    get_dataset_meta_file,
-    get_datapack_list,
-)
-
-from pathlib import Path
-from typing import Any
-import functools
-import datetime
-import shutil
-import json
-
-from tqdm.auto import tqdm
-import polars as pl
-import dateutil.tz
 
 
 @app.command()

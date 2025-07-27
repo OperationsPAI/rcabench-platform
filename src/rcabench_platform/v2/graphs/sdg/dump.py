@@ -1,11 +1,10 @@
-from .defintion import SDG, DepEdge, PlaceKind, PlaceNode
-
-from ...logging import logger
-
 from dataclasses import asdict
 from typing import Any
 
 import polars as pl
+
+from ...logging import logger
+from .defintion import SDG, DepEdge, PlaceKind, PlaceNode
 
 
 def dump_place_indicators(sdg: SDG) -> pl.DataFrame:

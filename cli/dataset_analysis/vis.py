@@ -1,26 +1,28 @@
 #!/usr/bin/env -S uv run -s
-from rcabench_platform.v2.datasets.spec import get_dataset_meta_file
-import polars as pl
-
 # Configure matplotlib backend early for multi-processing safety
 import matplotlib
+import polars as pl
+
+from rcabench_platform.v2.datasets.spec import get_dataset_meta_file
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
-from pathlib import Path
-from zoneinfo import ZoneInfo
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
-from rcabench_platform.v2.datasets.train_ticket import extract_path
+import functools
 import json
 import os
-import functools
-import matplotlib.dates as mdates
-from typing import Any, cast
 from collections.abc import Generator
+from pathlib import Path
+from typing import Any, cast
+from zoneinfo import ZoneInfo
+
+import matplotlib.dates as mdates
 import matplotlib.figure
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.figure import Figure
+
+from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v2.datasets.train_ticket import extract_path
+from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 
 # ================== Constants and Configuration ==================
 

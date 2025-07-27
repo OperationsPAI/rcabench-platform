@@ -1,5 +1,11 @@
 #!/usr/bin/env -S uv run -s
 from dataclasses import dataclass
+from datetime import datetime
+
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import polars as pl
+
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.clickhouse import (
     get_clickhouse_client,
@@ -10,15 +16,10 @@ from rcabench_platform.v2.datasets.spec import (
     get_datapack_folder,
     get_dataset_meta_file,
 )
+from rcabench_platform.v2.datasets.train_ticket import _normalize_op_name
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import load_json, save_parquet
-from rcabench_platform.v2.datasets.train_ticket import _normalize_op_name
-from datetime import datetime
-
-import polars as pl
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 
 
 @app.command()

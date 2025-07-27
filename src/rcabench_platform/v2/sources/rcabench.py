@@ -1,13 +1,14 @@
-from ..datasets.rcabench import rcabench_get_service_name, FAULT_TYPES
-from ..logging import timeit, logger
-from .convert import DatasetLoader, DatapackLoader, Label
-from ..utils.serde import load_json
-import pandas as pd
+import json
 from pathlib import Path
 from typing import Any
-import json
 
+import pandas as pd
 import polars as pl
+
+from ..datasets.rcabench import FAULT_TYPES, rcabench_get_service_name
+from ..logging import logger, timeit
+from ..utils.serde import load_json
+from .convert import DatapackLoader, DatasetLoader, Label
 
 
 def replace_time_col(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
