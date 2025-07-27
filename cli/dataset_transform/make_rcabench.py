@@ -1,8 +1,15 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
-from rcabench_platform.v2.sources.rcabench import RcabenchDatapackLoader, RcabenchDatasetLoader
-from rcabench_platform.v2.sources.convert import convert_datapack, convert_dataset, link_subset
+from rcabench_platform.v2.sources.rcabench import (
+    RcabenchDatapackLoader,
+    RcabenchDatasetLoader,
+)
+from rcabench_platform.v2.sources.convert import (
+    convert_datapack,
+    convert_dataset,
+    link_subset,
+)
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.dict_ import flatten_dict
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
@@ -71,7 +78,28 @@ def scan_datapack_attributes():
 
     results = fmap_threadpool(tasks, parallel=32)
 
-    df = pl.DataFrame(results).sort("inject_time", descending=True)
+    # Explicitly specify schema to avoid type inference issues
+    schema = {
+        "dataset": pl.String,
+        "datapack": pl.String,
+        "inject_time": pl.Datetime,
+        "injection.fault_type": pl.String,
+        "injection.display_config": pl.String,
+        "injection.duration": pl.Int64,
+        "injection.injection_point.class_name": pl.String,
+        "injection.rate": pl.Int64,
+        "injection.mem_worker": pl.Int64,
+        "injection.memory_size": pl.Int64,
+        "env.normal_start": pl.Datetime,
+        "env.normal_end": pl.Datetime,
+        "env.abnormal_start": pl.Datetime,
+        "env.abnormal_end": pl.Datetime,
+        "files.total_size:MiB": pl.Float64,
+        "detector.conclusion.rows": pl.Int64,
+        "detector.issues.rows": pl.Int64,
+    }
+
+    df = pl.DataFrame(results, schema=schema).sort("inject_time", descending=True)
 
     save_parquet(df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
 
@@ -99,14 +127,24 @@ def _task_scan_datapack_attributes(dataset: str, datapack: str, input_folder: Pa
     attrs["injection.display_config"] = injection["display_config"]
     attrs["injection.duration"] = display_config["duration"]
 
+    # Ensure data type consistency, avoid type conflicts when creating Polars DataFrame
     configs = [
-        "injection_point.class_name",
-        "rate",
-        "mem_worker",
-        "memory_size",
+        ("injection_point.class_name", str, None),
+        ("rate", int, None),
+        ("mem_worker", int, None),
+        ("memory_size", int, None),
     ]
-    for config in configs:
-        attrs[f"injection.{config}"] = display_config.get(config)
+    for config_name, expected_type, default_value in configs:
+        value = display_config.get(config_name)
+        if value is None:
+            attrs[f"injection.{config_name}"] = default_value
+        else:
+            try:
+                # Try to convert to expected type
+                attrs[f"injection.{config_name}"] = expected_type(value) if expected_type is not str else str(value)
+            except (ValueError, TypeError):
+                # If conversion fails, use default value
+                attrs[f"injection.{config_name}"] = default_value
 
     attrs["env.normal_start"] = normal_start
     attrs["env.normal_end"] = normal_end
@@ -172,7 +210,10 @@ def query_fault_types(dataset: str):
         raise NotImplementedError
 
     fault_types_count = df[col].value_counts().sort("count", descending=True)
-    save_parquet(fault_types_count, path=get_dataset_meta_file(dataset, "fault_types.count.parquet"))
+    save_parquet(
+        fault_types_count,
+        path=get_dataset_meta_file(dataset, "fault_types.count.parquet"),
+    )
 
     print_dataframe(fault_types_count)
 

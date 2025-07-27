@@ -1,9 +1,15 @@
 #!/usr/bin/env -S uv run -s
 from dataclasses import dataclass
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.clients.clickhouse import get_clickhouse_client, query_parquet_stream
+from rcabench_platform.v2.clients.clickhouse import (
+    get_clickhouse_client,
+    query_parquet_stream,
+)
 from rcabench_platform.v2.config import get_config
-from rcabench_platform.v2.datasets.spec import get_datapack_folder, get_dataset_meta_file
+from rcabench_platform.v2.datasets.spec import (
+    get_datapack_folder,
+    get_dataset_meta_file,
+)
 from rcabench_platform.v2.utils.dataframe import print_dataframe
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import load_json, save_parquet
@@ -29,7 +35,7 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
         WITH target_traces AS (
             SELECT      TraceId
             FROM        otel_traces
-            WHERE       ServiceName = 'loadgenerator-service' 
+            WHERE       ServiceName = 'loadgenerator' 
                       AND ParentSpanId = '' 
                       AND Timestamp > toDateTime('2025-07-16 00:00:00')
             ORDER BY    Timestamp DESC
@@ -110,7 +116,9 @@ def concat_normal_ranges():
 
     # Format the plot
     plt.title(
-        "Maximum Duration Over Time (1-second aggregation) - Beijing Time (UTC+8)", fontsize=14, fontweight="bold"
+        "Maximum Duration Over Time (1-second aggregation) - Beijing Time (UTC+8)",
+        fontsize=14,
+        fontweight="bold",
     )
     plt.xlabel("Time (Beijing Time)", fontsize=12)
     plt.ylabel("Duration (seconds)", fontsize=12)
@@ -153,7 +161,7 @@ def visualize_span_latency(ns: str, start_time: str = "2025-07-18 11:00:00"):
         query = f"""
         SELECT      TraceId, SpanName, Duration, Timestamp
         FROM        otel_traces
-        WHERE       ServiceName = 'loadgenerator-service' 
+        WHERE       ServiceName = 'loadgenerator' 
         AND ParentSpanId = '' 
         AND Timestamp > toDateTime('{start_time}') 
         AND ResourceAttributes['service.namespace'] = '{ns}'

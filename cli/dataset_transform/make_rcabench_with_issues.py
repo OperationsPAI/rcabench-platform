@@ -2,7 +2,11 @@
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.sources.convert import link_subset
 from rcabench_platform.v2.utils.serde import save_parquet
-from rcabench_platform.v2.datasets.spec import get_dataset_folder, get_dataset_meta_file, read_dataset_index
+from rcabench_platform.v2.datasets.spec import (
+    get_dataset_folder,
+    get_dataset_meta_file,
+    read_dataset_index,
+)
 from rcabench_platform.v2.datasets.rcabench import FAULT_TYPES
 
 from fractions import Fraction

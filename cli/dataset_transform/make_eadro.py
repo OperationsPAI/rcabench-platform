@@ -1,6 +1,11 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import convert_dataset, DatasetLoader, DatapackLoader, Label
+from rcabench_platform.v2.sources.convert import (
+    convert_dataset,
+    DatasetLoader,
+    DatapackLoader,
+    Label,
+)
 from rcabench_platform.v2.utils.serde import load_json
 from datetime import datetime, timedelta
 from typing import Any
@@ -27,7 +32,7 @@ def trace_process(filepath: Path) -> pd.DataFrame:
                 "time": span["startTime"],
                 "duration": np.uint64(span["duration"]),
                 "span_name": str(span["operationName"]),
-                "parent_span_id": str(span["references"][0]["spanID"]) if span["references"] else "",
+                "parent_span_id": (str(span["references"][0]["spanID"]) if span["references"] else ""),
                 "service_name": str(service_name_dict[span["processID"]]),
             }
             all_span_list.append(span_data)
@@ -110,7 +115,7 @@ def log_process_TT(filepath: Path) -> pd.DataFrame:
                     raise ValueError("Time pattern not found")
                 time_str = time_match.group(1)
                 dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
-                time_utc = pd.to_datetime(dt, utc=True)  # 强制转成 pandas UTC 类型
+                time_utc = pd.to_datetime(dt, utc=True)  # Force convert to pandas UTC type
                 temp = log_line.split(time_str)[-1]
                 level = temp[2:].split(" ")[0]
                 message_match = re.search(message_pattern, log_line)
@@ -432,7 +437,10 @@ def create_link(
         help="Source path where the Eadro dataset is located (default: /mnt/jfs/Eadro/)",
     ),
     target_path: str = typer.Option(
-        "data/eadro", "--target-path", "-t", help="Target path where the symbolic link will be created (default: data)"
+        "data/eadro",
+        "--target-path",
+        "-t",
+        help="Target path where the symbolic link will be created (default: data)",
     ),
 ):
     """We suposse the file layout as:

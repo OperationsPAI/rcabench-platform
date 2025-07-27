@@ -1,7 +1,10 @@
 #!/usr/bin/env -S uv run -s
 from rcabench_platform.v2.cli.main import app, logger, timeit
 
-from rcabench_platform.v2.clients.clickhouse import get_clickhouse_client, query_parquet_stream
+from rcabench_platform.v2.clients.clickhouse import (
+    get_clickhouse_client,
+    query_parquet_stream,
+)
 from rcabench_platform.v2.clients.k8s import download_kube_info
 from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
 
@@ -29,7 +32,7 @@ def ping_clickhouse() -> None:
 
 
 def convert_to_clickhouse_time(unix_timestamp: int, tz: str) -> str:
-    """将 UNIX 时间戳转换为 ClickHouse 支持的时间格式"""
+    """Convert UNIX timestamp to ClickHouse supported time format"""
     return (
         pd.to_datetime(unix_timestamp, utc=True, unit="s")
         .astimezone(tz)  # type:ignore
@@ -395,7 +398,10 @@ def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
         if injection:
             dataset_path = Path("/mnt/jfs/rcabench_dataset") / dataset_name
             save_json(injection.model_dump(), path=dataset_path / "injection.json")
-            save_json(injection.model_dump(), path=dataset_path / "converted" / "injection.json")
+            save_json(
+                injection.model_dump(),
+                path=dataset_path / "converted" / "injection.json",
+            )
 
             platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / dataset_name
             if platform_path.exists():

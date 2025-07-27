@@ -152,7 +152,14 @@ def convert_logs(src_folder: Path) -> pl.LazyFrame:
 
 
 class AIops21DatapackLoader(DatapackLoader):
-    def __init__(self, src_folder: Path, dataset: str, datapack: str, fault_case: dict, date_str: str) -> None:
+    def __init__(
+        self,
+        src_folder: Path,
+        dataset: str,
+        datapack: str,
+        fault_case: dict,
+        date_str: str,
+    ) -> None:
         self._src_folder = src_folder
         self._dataset = dataset
         self._datapack = datapack
@@ -172,7 +179,10 @@ class AIops21DatapackLoader(DatapackLoader):
         if trace_file.exists():
             trace_lf = convert_traces(trace_file)
             trace_times = trace_lf.select(
-                [pl.col("time").min().alias("min_time"), pl.col("time").max().alias("max_time")]
+                [
+                    pl.col("time").min().alias("min_time"),
+                    pl.col("time").max().alias("max_time"),
+                ]
             ).collect()
             min_time = trace_times["min_time"][0]
             max_time = trace_times["max_time"][0]
@@ -183,7 +193,10 @@ class AIops21DatapackLoader(DatapackLoader):
         if metric_file.exists():
             metric_lf = convert_metrics(metric_file)
             metric_times = metric_lf.select(
-                [pl.col("time").min().alias("min_time"), pl.col("time").max().alias("max_time")]
+                [
+                    pl.col("time").min().alias("min_time"),
+                    pl.col("time").max().alias("max_time"),
+                ]
             ).collect()
             min_time = metric_times["min_time"][0]
             max_time = metric_times["max_time"][0]

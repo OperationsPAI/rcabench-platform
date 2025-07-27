@@ -5,23 +5,19 @@ from typing import Any
 from rcabench_platform.v2.cli.main import app
 from pathlib import Path
 import json
-import re
 import functools
 import polars as pl
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 from dataclasses import dataclass, field
 import os
-import networkx as nx
-from collections import defaultdict
 import matplotlib
-import typer
-from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
 from rcabench_platform.v2.datasets.train_ticket import extract_path
+from rcabench_platform.v2.metrics.dataset_loader import DatasetLoader
+from rcabench_platform.v2.metrics.metrics_calculator import MetricsCalculator
+from rcabench_platform.v2.datasets.spec import get_datapack_folder
+from rcabench_platform.v2.logging import logger
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import graphviz
 
 
 def get_files(dataset: str) -> dict[str, list[str]]:
@@ -34,6 +30,8 @@ def get_files(dataset: str) -> dict[str, list[str]]:
                 "normal_metrics.parquet",
                 "abnormal_metrics_sum.parquet",
                 "normal_metrics_sum.parquet",
+                "abnormal_metrics_histogram.parquet",
+                "normal_metrics_histogram.parquet",
             ],
         }
 
@@ -69,15 +67,15 @@ def get_files(dataset: str) -> dict[str, list[str]]:
 
 @dataclass
 class Metadata:
-    ServiceNames: set = field(default_factory=set)
+    ServiceNames: set[str] = field(default_factory=set)
     LogLines: int = 0
     EntryTrace: int = 0
-    MetricNames: set = field(default_factory=set)
-    SpanNames: set = field(default_factory=set)
+    MetricNames: set[str] = field(default_factory=set)
+    SpanNames: set[str] = field(default_factory=set)
     TraceLengthDistribution: dict[str, int] = field(default_factory=dict)
     TimeSlices: list[tuple[Any, Any]] = field(default_factory=list)
     QPM: float = 0.0
-    TotalDurationSeconds: float = 0.0  # 新增字段
+    TotalDurationSeconds: float = 0.0  # New field
 
     def to_dict(self):
         return {
@@ -89,46 +87,7 @@ class Metadata:
             "TraceLengthDistribution": self.TraceLengthDistribution,
             "TimeSlices": self.TimeSlices,
             "QPM": self.QPM,
-            "TotalDurationSeconds": self.TotalDurationSeconds,  # 新增输出
-        }
-
-
-@dataclass
-class FaultMetrics:
-    causal_path_length: int = 0  # CPL: 从根因服务到症状服务的最短路径长度
-    blast_radius: float = 0.0  # BR: 受影响服务的比例
-    centrality_stress: float = 0.0  # CS: 根因服务的介数中心性
-
-    def to_dict(self):
-        return {
-            "causal_path_length": self.causal_path_length,
-            "blast_radius": self.blast_radius,
-            "centrality_stress": self.centrality_stress,
-        }
-
-
-@dataclass
-class DatasetMetrics:
-    fault_metrics: list[FaultMetrics] = field(default_factory=list)
-    avg_cpl: float = 0.0
-    avg_br: float = 0.0
-    avg_cs: float = 0.0
-
-    def calculate_averages(self):
-        if not self.fault_metrics:
-            return
-
-        self.avg_cpl = sum(m.causal_path_length for m in self.fault_metrics) / len(self.fault_metrics)
-        self.avg_br = sum(m.blast_radius for m in self.fault_metrics) / len(self.fault_metrics)
-        self.avg_cs = sum(m.centrality_stress for m in self.fault_metrics) / len(self.fault_metrics)
-
-    def to_dict(self):
-        return {
-            "fault_metrics": [m.to_dict() for m in self.fault_metrics],
-            "avg_cpl": self.avg_cpl,
-            "avg_br": self.avg_br,
-            "avg_cs": self.avg_cs,
-            "total_faults": len(self.fault_metrics),
+            "TotalDurationSeconds": self.TotalDurationSeconds,  # New output
         }
 
 
@@ -145,7 +104,7 @@ def _scan_metric(file: Path) -> Metadata:
     if len(time_data) > 0:
         min_time = time_data.min()
         max_time = time_data.max()
-        assert min_time is not None and max_time is not None, "时间数据不能为空"
+        assert min_time is not None and max_time is not None, "Time data cannot be empty"
         metadata.TimeSlices = [(min_time, max_time)]
 
     return metadata
@@ -163,7 +122,7 @@ def _scan_log(file: Path) -> Metadata:
     if len(time_data) > 0:
         min_time = time_data.min()
         max_time = time_data.max()
-        assert min_time is not None and max_time is not None, "时间数据不能为空"
+        assert min_time is not None and max_time is not None, "Time data cannot be empty"
         metadata.TimeSlices = [(min_time, max_time)]
 
     return metadata
@@ -310,7 +269,7 @@ def merge_metadata(metadata_list: list[Metadata]) -> Metadata:
                 duration_seconds = end - start
             total_time_seconds += duration_seconds
 
-        merged.TotalDurationSeconds = total_time_seconds  # 赋值
+        merged.TotalDurationSeconds = total_time_seconds  # Assign value
 
         total_time_minutes = total_time_seconds / 60.0
         if total_time_minutes > 0:
@@ -329,19 +288,6 @@ def process_datapack(datapack: Path, files):
     metric_tasks = [functools.partial(_scan_metric, datapack / f) for f in files["metrics"]]
     total_tasks = trace_tasks + log_tasks + metric_tasks
     return total_tasks
-
-
-def patch_service_name(datapack: Path, files):
-    for file_group in files.values():
-        for file in file_group:
-            file_path = datapack / file
-            assert file_path.exists()
-            df = pl.scan_parquet(file_path)
-            assert "service_name" in df.collect_schema().names(), f"File {file_path} does not have service_name column"
-            df = df.with_columns(
-                pl.col("service_name").str.replace(r"^ts[0-5]-", "", literal=False).alias("service_name")
-            )
-            df.collect().write_parquet(file_path)
 
 
 @app.command()
@@ -369,520 +315,168 @@ def distribution(dataset: str):
 
 
 @app.command()
+def metrics(dataset: str, datapack: str):
+    """
+    Calculate 4 metrics for a specified datapack in the dataset:
+    - SDD: Service Distance to root cause
+    - AC: Anomaly Cardinality
+    - CPL: Causal Path Length
+    - Root Service Degree: Maximum degree of root cause services
+    """
+    # Validate if datapack exists
+    datapack_folder = get_datapack_folder(dataset, datapack)
+    if not datapack_folder.exists():
+        logger.error(f"Error: Datapack {datapack} does not exist in dataset {dataset}")
+        return
+
+    # Initialize DatasetLoader and MetricsCalculator
+    try:
+        loader = DatasetLoader(dataset, datapack)
+        calculator = MetricsCalculator(loader)
+
+        results = {}
+
+        # 1. Service Distance to root cause (SDD@1, SDD@3, SDD@5)
+        sdd_1 = calculator.compute_sdd(k=1)
+        sdd_3 = calculator.compute_sdd(k=3)
+        sdd_5 = calculator.compute_sdd(k=5)
+
+        results["SDD@1"] = sdd_1
+        results["SDD@3"] = sdd_3[:3] if isinstance(sdd_3, list) else [sdd_3]
+        results["SDD@5"] = sdd_5[:5] if isinstance(sdd_5, list) else [sdd_5]
+
+        # 2. Anomaly Cardinality (AC) - all services
+        ac_results = calculator.compute_ac()
+        results["AC"] = ac_results
+
+        # 3. Causal Path Length (CPL)
+        cpl = calculator.compute_cpl()
+        results["CPL"] = cpl
+
+        # 4. Root Service Degree
+        root_service_degree = calculator.get_root_service_degree()
+        results["RootServiceDegree"] = root_service_degree
+
+        # Output results
+        logger.info(f"\n=== Metrics Calculation Results for Dataset {dataset} - Datapack {datapack} ===")
+        logger.info(f"SDD@1 (Service Distance to root cause): {sdd_1}")
+        logger.info(f"SDD@3: {results['SDD@3']}")
+        logger.info(f"SDD@5: {results['SDD@5']}")
+        logger.info(f"CPL (Causal Path Length): {cpl}")
+        logger.info(f"Root Service Degree: {root_service_degree}")
+        logger.info("AC (Anomaly Cardinality) per service:")
+        for service, count in ac_results.items():
+            logger.info(f"  {service}: {count}")
+
+        # Save results to file
+        output_file = f"temp/{dataset}_{datapack}_metrics.json"
+        Path("temp").mkdir(exist_ok=True)
+
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=4, ensure_ascii=False, default=str)
+
+        logger.info(f"\nResults saved to: {output_file}")
+
+    except Exception as e:
+        logger.error(f"Error occurred while calculating metrics: {str(e)}")
+        import traceback
+
+        traceback.print_exc()
+
+
+def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, dict[str, Any]]:
+    """
+    Process metrics for a single datapack and return (datapack_name, results)
+    """
+    loader = DatasetLoader(dataset, datapack)
+    calculator = MetricsCalculator(loader)
+
+    # Calculate metrics
+    results = {}
+    results["SDD@1"] = calculator.compute_sdd(k=1)
+    results["SDD@3"] = calculator.compute_sdd(k=3)
+    results["SDD@5"] = calculator.compute_sdd(k=5)
+    results["AC"] = calculator.compute_ac()
+    results["CPL"] = calculator.compute_cpl()
+    results["RootServiceDegree"] = calculator.get_root_service_degree()
+
+    return datapack, results
+
+
+@app.command()
+def batch_metrics(dataset: str):
+    folder = Path("data/rcabench-platform-v2/data") / dataset
+    if not folder.exists():
+        logger.error(f"Error: Dataset {dataset} does not exist")
+        return
+
+    datapacks = [f.name for f in folder.iterdir() if f.is_dir()]
+
+    if not datapacks:
+        logger.error(f"Error: No datapacks found in dataset {dataset}")
+        return
+
+    logger.info(f"Found {len(datapacks)} datapacks: {datapacks}")
+
+    # Create tasks for parallel processing
+    tasks = [functools.partial(_process_single_datapack_metrics, dataset, datapack) for datapack in datapacks]
+
+    cpu = os.cpu_count()
+    assert cpu is not None, "CPU count is not available"
+
+    results_list = fmap_processpool(
+        tasks,
+        parallel=cpu // 4,
+        cpu_limit_each=4,
+    )
+
+    # Convert results list to dictionary
+    all_results = {datapack: results for datapack, results in results_list}
+
+    logger.info(f"✓ Completed processing all {len(datapacks)} datapacks")
+
+    # Save batch results
+    output_file = f"temp/{dataset}_batch_metrics.json"
+    Path("temp").mkdir(exist_ok=True)
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(all_results, f, indent=4, ensure_ascii=False, default=str)
+
+    logger.info(f"\nBatch results saved to: {output_file}")
+
+
+def patch_service_name(datapack: Path, files):
+    for file_group in files.values():
+        for file in file_group:
+            file_path = datapack / file
+            assert file_path.exists(), f"File {file_path} does not exist"
+            df = pl.scan_parquet(file_path)
+            assert "ServiceName" in df.collect_schema().names(), f"File {file_path} does not have service_name column"
+            df = df.with_columns(
+                pl.when(pl.col("ServiceName") == "loadgenerator-service")
+                .then(pl.lit("loadgenerator"))
+                .otherwise(pl.col("ServiceName"))
+                .alias("ServiceName")
+            )
+            df.collect().write_parquet(file_path)
+
+
+@app.command()
 def patch(dataset: str):
     files = get_files(dataset)
-    folder = Path("data/rcabench-platform-v2/data") / dataset
+    folder = Path("data/rcabench_dataset")
     datapacks = [f for f in folder.iterdir() if f.is_dir()]
 
     tasks = [functools.partial(patch_service_name, datapack, files) for datapack in datapacks]
 
+    cpu = os.cpu_count()
+    assert cpu is not None, "CPU count is not available"
     fmap_processpool(
         tasks,
-        parallel=4,
+        parallel=cpu // 4,
+        cpu_limit_each=4,
+        ignore_exceptions=True,
     )
-
-
-def extract_deployment_name(service_name: str) -> str:
-    pattern = r"^(.+)-[a-z0-9]{8,10}-[a-z0-9]{5}$"
-    match = re.match(pattern, service_name)
-    if match:
-        return match.group(1)
-    return service_name
-
-
-def build_service_dependency_graph(traces_df: pl.DataFrame) -> nx.DiGraph:
-    graph = nx.DiGraph()
-
-    for trace_group in traces_df.group_by("trace_id", maintain_order=False):
-        trace_data = trace_group[1]
-        spans = {}
-        for row in trace_data.iter_rows(named=True):
-            span_id = row["span_id"]
-            parent_span_id = row["parent_span_id"]
-            service_name = row["service_name"]
-            service_name = extract_deployment_name(service_name)
-
-            spans[span_id] = {"service": service_name, "parent": parent_span_id if parent_span_id else None}
-
-        for span_id, span_info in spans.items():
-            if span_info["parent"]:
-                parent_span = spans.get(span_info["parent"])
-                if parent_span and parent_span["service"] != span_info["service"]:
-                    graph.add_edge(parent_span["service"], span_info["service"])
-
-    return graph
-
-
-def find_entry_service(traces_df: pl.DataFrame) -> str | None:
-    root_spans = traces_df.filter((pl.col("parent_span_id") == "") | pl.col("parent_span_id").is_null())
-    entry_service_counts = (
-        root_spans.group_by("service_name").agg(pl.len().alias("count")).sort("count", descending=True)
-    )
-
-    if entry_service_counts.height > 0:
-        return extract_deployment_name(entry_service_counts.row(0)[0])
-
-    return None
-
-
-def calculate_blast_radius(traces_df: pl.DataFrame, baseline_traces_df: pl.DataFrame) -> float:
-    abnormal_df = traces_df
-    normal_df = baseline_traces_df
-
-    def calculate_service_metrics(df: pl.DataFrame) -> pl.DataFrame:
-        return df.group_by("service_name").agg(
-            [
-                pl.col("duration").mean().alias("avg_duration"),
-                pl.col("duration").median().alias("median_duration"),
-                pl.col("duration").quantile(0.95).alias("p95_duration"),
-                pl.when(pl.col("attr.status_code").is_in(["OK", "Unset", ""]))
-                .then(1)
-                .otherwise(0)
-                .mean()
-                .alias("success_rate"),
-                pl.len().alias("request_count"),
-            ]
-        )
-
-    normal_metrics = calculate_service_metrics(normal_df)
-    abnormal_metrics = calculate_service_metrics(abnormal_df)
-
-    comparison = normal_metrics.join(abnormal_metrics, on="service_name", how="inner", suffix="_abnormal").with_columns(
-        [
-            (pl.col("avg_duration_abnormal") / pl.col("avg_duration")).alias("avg_duration_ratio"),
-            (pl.col("median_duration_abnormal") / pl.col("median_duration")).alias("median_duration_ratio"),
-            (pl.col("p95_duration_abnormal") / pl.col("p95_duration")).alias("p95_duration_ratio"),
-            (pl.col("success_rate") - pl.col("success_rate_abnormal")).alias("success_rate_drop"),
-        ]
-    )
-
-    LATENCY_THRESHOLD = 1.5
-    SUCCESS_RATE_THRESHOLD = 0.05
-
-    affected_services = comparison.filter(
-        (pl.col("avg_duration_ratio") > LATENCY_THRESHOLD)  # 平均延迟显著增加
-        | (pl.col("p95_duration_ratio") > LATENCY_THRESHOLD)  # P95延迟显著增加
-        | (pl.col("success_rate_drop") > SUCCESS_RATE_THRESHOLD)  # 成功率显著下降
-    )
-
-    all_comparable_services = comparison.height
-
-    if all_comparable_services == 0:
-        return 0.0
-
-    affected_count = affected_services.height
-    return affected_count / all_comparable_services
-
-
-def load_cached_fault_metrics(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
-    if ignore_cache:
-        return None
-
-    cache_file = datapack_path / "fault_metrics_cache.json"
-
-    if not cache_file.exists():
-        return None
-
-    try:
-        with open(cache_file) as f:
-            cached_data = json.load(f)
-            metrics = FaultMetrics(
-                causal_path_length=cached_data["causal_path_length"],
-                blast_radius=cached_data["blast_radius"],
-                centrality_stress=cached_data["centrality_stress"],
-            )
-            print(f"Loaded cached fault metrics for {datapack_path}")
-            return metrics
-    except (json.JSONDecodeError, KeyError) as e:
-        print(f"Cache file corrupted for {datapack_path}, recalculating: {e}")
-        return None
-
-
-def generate_debug_graph(
-    dependency_graph: nx.DiGraph,
-    entry_service: str,
-    root_cause_service: list[str],
-    datapack_path: Path,
-):
-    dot = graphviz.Digraph(comment="Service Dependency Graph")
-    dot.attr(rankdir="TB")  # Top to Bottom layout
-    dot.attr("node", shape="box", style="rounded,filled", fontname="Arial")
-    dot.attr("edge", fontname="Arial")
-
-    dot.attr(size="12,8")
-    dot.attr(dpi="300")
-    dot.attr(bgcolor="white")
-
-    for node in dependency_graph.nodes():
-        if node in root_cause_service:
-            dot.node(node, node, fillcolor="lightcoral", color="red", penwidth="3")
-        elif node == entry_service:
-            dot.node(node, node, fillcolor="lightgreen", color="green", penwidth="3")
-        else:
-            dot.node(node, node, fillcolor="lightblue", color="black")
-
-    for edge in dependency_graph.edges():
-        dot.edge(edge[0], edge[1])
-
-    with dot.subgraph(name="cluster_legend") as legend:  # type: ignore
-        legend.attr(label="Legend", style="rounded", color="gray")
-        legend.node(
-            "legend_root",
-            f"Root Cause\n{', '.join(root_cause_service)}",
-            fillcolor="lightcoral",
-            color="red",
-            penwidth="3",
-        )
-        legend.node(
-            "legend_entry", f"Entry Service\n{entry_service}", fillcolor="lightgreen", color="green", penwidth="3"
-        )
-        legend.node("legend_other", "Other Services", fillcolor="lightblue", color="black")
-
-    debug_dir = Path("temp/debug_graphs")
-    debug_dir.mkdir(exist_ok=True)
-    output_file = debug_dir / f"{datapack_path.name}"
-
-    dot.render(str(output_file), format="png", cleanup=True)
-    print(f"Debug graph saved to: {output_file}.png")
-
-
-def handle_path_finding_error(
-    e: Exception, entry_service: str, root_cause_service: list[str], dependency_graph: nx.DiGraph, datapack_path: Path
-) -> None:
-    if isinstance(e, AssertionError):
-        print(f"Assertion failed: entry_service={entry_service}, root_cause_service={root_cause_service}")
-    else:
-        print(f"No path found between {entry_service} and {root_cause_service} in undirected graph.")
-
-    generate_debug_graph(dependency_graph, entry_service, root_cause_service, datapack_path)
-
-
-def calculate_fault_metrics_rcabench(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
-    cached_metrics = load_cached_fault_metrics(datapack_path, ignore_cache)
-    if cached_metrics is not None:
-        return cached_metrics
-
-    metrics = FaultMetrics()
-
-    injection_file = datapack_path / "injection.json"
-    abnormal_traces_file = datapack_path / "abnormal_traces.parquet"
-    normal_traces_file = datapack_path / "normal_traces.parquet"
-
-    if not injection_file.exists() or not abnormal_traces_file.exists() or not normal_traces_file.exists():
-        print(f"Skipping {datapack_path} due to missing files.")
-        return None
-
-    with open(injection_file) as f:
-        injection = json.load(f)
-        root_cause_service = injection["ground_truth"]["service"]
-
-    assert root_cause_service, f"{injection}"
-
-    abnormal_traces = pl.scan_parquet(abnormal_traces_file).collect()
-    entry_service = find_entry_service(abnormal_traces)
-    if entry_service is None:
-        print(f"No entry service found in abnormal traces for {datapack_path}")
-        return None
-    baseline_traces = pl.scan_parquet(normal_traces_file).collect()
-    assert baseline_traces is not None, "Baseline traces must be provided"
-    combined_traces = pl.concat([baseline_traces, abnormal_traces])
-    dependency_graph = build_service_dependency_graph(combined_traces)
-
-    try:
-        assert entry_service in dependency_graph
-
-        for rc_service in root_cause_service:
-            if rc_service == "mysql":
-                continue
-            assert rc_service in dependency_graph
-
-        undirected_graph = dependency_graph.to_undirected()
-
-        path_lengths = []
-        for rc_service in root_cause_service:
-            try:
-                if rc_service == "mysql":
-                    continue
-                path_length = nx.shortest_path_length(undirected_graph, source=entry_service, target=rc_service)
-                path_lengths.append(path_length)
-                print(f"Found undirected path from {entry_service} to {rc_service}: length {path_length}")
-            except nx.NetworkXNoPath:
-                continue
-
-        if path_lengths:
-            metrics.causal_path_length = min(path_lengths)
-            print(f"Minimum causal path length: {metrics.causal_path_length}")
-        else:
-            raise nx.NetworkXNoPath("No paths found to any root cause service")
-    except (nx.NetworkXNoPath, AssertionError) as e:
-        handle_path_finding_error(e, entry_service, root_cause_service, dependency_graph, datapack_path.parent)
-        metrics.causal_path_length = -1
-        return None
-
-    metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces)
-    betweenness = nx.betweenness_centrality(dependency_graph, normalized=True)
-    centrality_scores = [betweenness.get(rc_service, 0.0) for rc_service in root_cause_service]
-    metrics.centrality_stress = sum(centrality_scores) / len(centrality_scores) if centrality_scores else 0.0
-
-    # Cache the results
-    cache_file = datapack_path / "fault_metrics_cache.json"
-    try:
-        with open(cache_file, "w") as f:
-            json.dump(metrics.to_dict(), f, indent=2)
-        print(f"Cached fault metrics for {datapack_path}")
-    except Exception as e:
-        print(f"Failed to cache fault metrics for {datapack_path}: {e}")
-
-    return metrics
-
-
-def calculate_fault_metrics_nezha(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
-    if "normal" in str(datapack_path):
-        return None
-    cached_metrics = load_cached_fault_metrics(datapack_path, ignore_cache)
-    if cached_metrics is not None:
-        return cached_metrics
-
-    metrics = FaultMetrics()
-
-    injection_file = datapack_path / "fault_info.json"
-    abnormal_traces_file = datapack_path / "trace.parquet"
-
-    normal_traces_file1 = Path("data/rcabench-platform-v2/data/nezha_tt/2023-01-29_08-50_normal_case/trace.parquet")
-    normal_traces_file2 = Path("data/rcabench-platform-v2/data/nezha_tt/2023-01-30_11-39_normal_case/trace.parquet")
-
-    missing_files = []
-    if not injection_file.exists():
-        missing_files.append(f"injection.json: {injection_file}")
-    if not abnormal_traces_file.exists():
-        missing_files.append(f"abnormal_traces.parquet: {abnormal_traces_file}")
-    if not normal_traces_file1.exists():
-        missing_files.append(f"normal_traces_file1: {normal_traces_file1}")
-    if not normal_traces_file2.exists():
-        missing_files.append(f"normal_traces_file2: {normal_traces_file2}")
-
-    if missing_files:
-        print(f"Skipping {datapack_path} due to missing files:")
-        for missing_file in missing_files:
-            print(f"  - {missing_file}")
-        return None
-
-    with open(injection_file) as f:
-        injection = json.load(f)
-        root_cause_service = [injection["injection_name"]]
-
-    assert root_cause_service, f"{injection}"
-
-    abnormal_traces = pl.scan_parquet(abnormal_traces_file).collect()
-    entry_service = find_entry_service(abnormal_traces)
-    if entry_service is None:
-        print(f"No entry service found in abnormal traces for {datapack_path}")
-        return None
-
-    baseline_traces1 = pl.scan_parquet(normal_traces_file1).collect()
-    baseline_traces2 = pl.scan_parquet(normal_traces_file2).collect()
-    assert baseline_traces1 is not None and baseline_traces2 is not None
-    combined_traces = pl.concat([baseline_traces1, baseline_traces2, abnormal_traces])
-    dependency_graph = build_service_dependency_graph(combined_traces)
-
-    try:
-        assert entry_service in dependency_graph
-
-        for rc_service in root_cause_service:
-            assert rc_service in dependency_graph
-
-        undirected_graph = dependency_graph.to_undirected()
-
-        path_lengths = []
-        for rc_service in root_cause_service:
-            try:
-                path_length = nx.shortest_path_length(undirected_graph, source=entry_service, target=rc_service)
-                path_lengths.append(path_length)
-                print(f"Found undirected path from {entry_service} to {rc_service}: length {path_length}")
-            except nx.NetworkXNoPath:
-                print(f"No path found between {entry_service} and {rc_service}")
-                continue
-
-        if path_lengths:
-            metrics.causal_path_length = min(path_lengths)
-            print(f"Minimum causal path length: {metrics.causal_path_length}")
-        else:
-            raise nx.NetworkXNoPath("No paths found to any root cause service")
-    except (nx.NetworkXNoPath, AssertionError) as e:
-        handle_path_finding_error(e, entry_service, root_cause_service, dependency_graph, datapack_path)
-        metrics.causal_path_length = -1
-        return None
-
-    # metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces1)
-    betweenness = nx.betweenness_centrality(dependency_graph, normalized=True)
-    centrality_scores = [betweenness.get(rc_service, 0.0) for rc_service in root_cause_service]
-    metrics.centrality_stress = sum(centrality_scores) / len(centrality_scores) if centrality_scores else 0.0
-
-    cache_file = datapack_path / "fault_metrics_cache.json"
-    try:
-        with open(cache_file, "w") as f:
-            json.dump(metrics.to_dict(), f, indent=2)
-        print(f"Cached fault metrics for {datapack_path}")
-    except Exception as e:
-        print(f"Failed to cache fault metrics for {datapack_path}: {e}")
-
-    return metrics
-
-
-def calculate_fault_metrics_eadro(datapack_path: Path, ignore_cache: bool = False) -> FaultMetrics | None:
-    cached_metrics = load_cached_fault_metrics(datapack_path, ignore_cache)
-    if cached_metrics is not None:
-        return cached_metrics
-
-    metrics = FaultMetrics()
-
-    injection_file = datapack_path / "fault_info.json"
-    abnormal_traces_file = datapack_path / "trace.parquet"
-
-    missing_files = []
-    if not injection_file.exists():
-        missing_files.append(f"injection.json: {injection_file}")
-    if not abnormal_traces_file.exists():
-        missing_files.append(f"abnormal_traces.parquet: {abnormal_traces_file}")
-
-    if missing_files:
-        print(f"Skipping {datapack_path} due to missing files:")
-        for missing_file in missing_files:
-            print(f"  - {missing_file}")
-        return None
-
-    with open(injection_file) as f:
-        injection = json.load(f)
-        if injection["injection_name"] == "":
-            return None
-        root_cause_service = [injection["injection_name"]]
-
-    assert root_cause_service, f"{injection}"
-
-    abnormal_traces = pl.scan_parquet(abnormal_traces_file).collect()
-    entry_service = find_entry_service(abnormal_traces)
-
-    if entry_service is None:
-        print(f"No entry service found in abnormal traces for {datapack_path}")
-        return None
-
-    combined_traces = pl.concat([abnormal_traces])
-    dependency_graph = build_service_dependency_graph(combined_traces)
-
-    try:
-        assert entry_service in dependency_graph
-
-        for rc_service in root_cause_service:
-            assert rc_service in dependency_graph
-
-        undirected_graph = dependency_graph.to_undirected()
-
-        path_lengths = []
-        for rc_service in root_cause_service:
-            try:
-                path_length = nx.shortest_path_length(undirected_graph, source=entry_service, target=rc_service)
-                path_lengths.append(path_length)
-                print(f"Found undirected path from {entry_service} to {rc_service}: length {path_length}")
-            except nx.NetworkXNoPath:
-                print(f"No path found between {entry_service} and {rc_service}")
-                continue
-
-        if path_lengths:
-            metrics.causal_path_length = min(path_lengths)
-            print(f"Minimum causal path length: {metrics.causal_path_length}")
-        else:
-            raise nx.NetworkXNoPath("No paths found to any root cause service")
-    except (nx.NetworkXNoPath, AssertionError) as e:
-        handle_path_finding_error(e, entry_service, root_cause_service, dependency_graph, datapack_path)
-        metrics.causal_path_length = -1
-        return None
-
-    # metrics.blast_radius = calculate_blast_radius(abnormal_traces, baseline_traces1)
-    betweenness = nx.betweenness_centrality(dependency_graph, normalized=True)
-    centrality_scores = [betweenness.get(rc_service, 0.0) for rc_service in root_cause_service]
-    metrics.centrality_stress = sum(centrality_scores) / len(centrality_scores) if centrality_scores else 0.0
-
-    cache_file = datapack_path / "fault_metrics_cache.json"
-    try:
-        with open(cache_file, "w") as f:
-            json.dump(metrics.to_dict(), f, indent=2)
-        print(f"Cached fault metrics for {datapack_path}")
-    except Exception as e:
-        print(f"Failed to cache fault metrics for {datapack_path}: {e}")
-
-    return metrics
-
-
-@app.command()
-def dataset_metric(
-    dataset_name: str,
-    ignore_cache: bool = typer.Option(False, "--ignore-cache", help="omit cache files, force recalculation"),
-):
-    dataset_metrics = DatasetMetrics()
-    datapacks = None
-    tasks = []
-
-    if dataset_name == "rcabench":
-        from rcabench.openapi import InjectionApi
-
-        api = InjectionApi(get_rcabench_openapi_client(base_url="http://10.10.10.220:32080"))
-        with_issues_resp = api.api_v1_injections_analysis_with_issues_get()
-        assert with_issues_resp.data is not None
-        rows = set()
-        for item in with_issues_resp.data:
-            assert item.injection_name is not None
-            rows.add(item.injection_name)
-        datapacks = [Path("data/rcabench_dataset") / f / "converted" for f in list(rows)]
-
-        tasks = [functools.partial(calculate_fault_metrics_rcabench, datapack, ignore_cache) for datapack in datapacks]
-    if dataset_name.startswith("nezha"):
-        datapacks = [f for f in Path("data/rcabench-platform-v2/data/nezha_tt").iterdir() if f.is_dir()]
-        tasks = [functools.partial(calculate_fault_metrics_nezha, datapack, ignore_cache) for datapack in datapacks]
-    if dataset_name.startswith("eadro"):
-        datapacks = [f for f in Path(f"data/rcabench-platform-v2/data/{dataset_name}").iterdir() if f.is_dir()]
-        tasks = [functools.partial(calculate_fault_metrics_eadro, datapack, ignore_cache) for datapack in datapacks]
-
-    assert datapacks is not None
-    fault_metrics_results = fmap_processpool(tasks, parallel=31, cpu_limit_each=4)
-
-    for fault_metrics_results in fault_metrics_results:
-        if fault_metrics_results is not None:
-            dataset_metrics.fault_metrics.append(fault_metrics_results)
-
-    dataset_metrics.calculate_averages()
-
-    output_file = f"temp/{dataset_name}_fault_metrics.json"
-    with open(output_file, "w") as f:
-        json.dump(dataset_metrics.to_dict(), f, indent=4, default=str)
-
-    print(f"Fault metrics saved to {output_file}")
-    print(f"Total faults: {len(dataset_metrics.fault_metrics)}")
-    print(f"Average CPL: {dataset_metrics.avg_cpl:.2f}")
-    print(f"Average BR: {dataset_metrics.avg_br:.2f}")
-    print(f"Average CS: {dataset_metrics.avg_cs:.2f}")
-
-    return dataset_metrics
-
-
-@app.command()
-def local_test(
-    ignore_cache: bool = typer.Option(False, "--ignore-cache", help="omit cache files, force recalculation"),
-):
-    dataset_metrics = DatasetMetrics()
-    path = Path("/mnt/jfs/rcabench_dataset/ts5-ts-verification-code-service-return-f62ks9/converted")
-    fault_metrics_results = calculate_fault_metrics_rcabench(path, ignore_cache)
-
-    if fault_metrics_results is not None:
-        dataset_metrics.fault_metrics.append(fault_metrics_results)
-
-    dataset_metrics.calculate_averages()
-
-    print(f"Total faults: {len(dataset_metrics.fault_metrics)}")
-    print(f"Average CPL: {dataset_metrics.avg_cpl:.2f}")
-    print(f"Average BR: {dataset_metrics.avg_br:.2f}")
-    print(f"Average CS: {dataset_metrics.avg_cs:.2f}")
-
-    return dataset_metrics
 
 
 if __name__ == "__main__":

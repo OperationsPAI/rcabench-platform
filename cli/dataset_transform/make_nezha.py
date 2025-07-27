@@ -1,7 +1,12 @@
 #!/usr/bin/env -S uv run -s
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import convert_dataset, DatasetLoader, DatapackLoader, Label
+from rcabench_platform.v2.sources.convert import (
+    convert_dataset,
+    DatasetLoader,
+    DatapackLoader,
+    Label,
+)
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from pathlib import Path
@@ -37,7 +42,13 @@ def parse_time_utc(time_str: str) -> datetime | None:
 
 
 class NezhaDatapackLoader(DatapackLoader):
-    def __init__(self, case_data: dict[str, Any], source_dir: Path, inject_time: datetime, end_time: datetime):
+    def __init__(
+        self,
+        case_data: dict[str, Any],
+        source_dir: Path,
+        inject_time: datetime,
+        end_time: datetime,
+    ):
         assert case_data is not None, "case_data is None"
         assert isinstance(case_data, dict), f"case_data is not a dict: {type(case_data)}"
         assert source_dir is not None, "source_dir is None"
@@ -144,7 +155,10 @@ class NezhaDatapackLoader(DatapackLoader):
 
             df_long = (
                 df.unpivot(
-                    index=["TimeStamp", "PodName"], on=metric_columns, variable_name="metric", value_name="value"
+                    index=["TimeStamp", "PodName"],
+                    on=metric_columns,
+                    variable_name="metric",
+                    value_name="value",
                 )
                 .rename({"PodName": "service_name"})
                 .with_columns(
@@ -227,7 +241,15 @@ class NezhaDatapackLoader(DatapackLoader):
                 )
             )
 
-            base_columns = ["time", "trace_id", "span_id", "parent_span_id", "span_name", "service_name", "duration"]
+            base_columns = [
+                "time",
+                "trace_id",
+                "span_id",
+                "parent_span_id",
+                "span_name",
+                "service_name",
+                "duration",
+            ]
             attr_columns = [col for col in df_processed.columns if col.startswith("attr.")]
             final_columns = base_columns + attr_columns
 
@@ -276,7 +298,16 @@ class NezhaDatapackLoader(DatapackLoader):
                 "Log": pl.Utf8,
             }
 
-            columns = ["Timestamp", "TimeUnixNano", "Node", "PodName", "Container", "TraceID", "SpanID", "Log"]
+            columns = [
+                "Timestamp",
+                "TimeUnixNano",
+                "Node",
+                "PodName",
+                "Container",
+                "TraceID",
+                "SpanID",
+                "Log",
+            ]
 
             try:
                 df = pl.read_csv(log_file, schema=schema, columns=columns, truncate_ragged_lines=True)
@@ -310,7 +341,14 @@ class NezhaDatapackLoader(DatapackLoader):
                 .alias("message")
             )
 
-            base_columns = ["time", "trace_id", "span_id", "service_name", "level", "message"]
+            base_columns = [
+                "time",
+                "trace_id",
+                "span_id",
+                "service_name",
+                "level",
+                "message",
+            ]
             attr_columns = []
 
             for col in df_processed.columns:
@@ -342,7 +380,10 @@ class NezhaDatapackLoader(DatapackLoader):
         # Count abnormal values for logging
         abnormal_count = df.filter(pl.col(time_col) < abnormal_threshold).shape[0]
         if abnormal_count > 0:
-            logger.warning("Found {} abnormal timestamp values in log data, will interpolate them", abnormal_count)
+            logger.warning(
+                "Found {} abnormal timestamp values in log data, will interpolate them",
+                abnormal_count,
+            )
 
             # Simple approach: replace abnormal values with inject_time + row_index * 1ms
             # This provides sequential timestamps that maintain order
@@ -605,10 +646,12 @@ class MultiDateDatasetLoader(DatasetLoader):
 def run(
     source_dir: str = "data/nezha",
     ob_dates: list[str] = typer.Option(
-        ["2022-08-22", "2022-08-23"], help="All dates for ob system, e.g., 2022-08-22 2022-08-23"
+        ["2022-08-22", "2022-08-23"],
+        help="All dates for ob system, e.g., 2022-08-22 2022-08-23",
     ),
     tt_dates: list[str] = typer.Option(
-        ["2023-01-29", "2023-01-30"], help="All dates for tt system, e.g., 2023-01-29 2023-01-30"
+        ["2023-01-29", "2023-01-30"],
+        help="All dates for tt system, e.g., 2023-01-29 2023-01-30",
     ),
 ):
     if ob_dates:
@@ -633,7 +676,10 @@ def create_link(
         help="Source path where the Nezha dataset is located (default: /mnt/jfs/Nezha/)",
     ),
     target_path: str = typer.Option(
-        "data/nezha", "--target-path", "-t", help="Target path where the symbolic link will be created (default: data)"
+        "data/nezha",
+        "--target-path",
+        "-t",
+        help="Target path where the symbolic link will be created (default: data)",
     ),
 ):
     try:

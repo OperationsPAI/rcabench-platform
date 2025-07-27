@@ -31,7 +31,6 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
     app.add_typer(sdg.app, name="sdg")
     app.add_typer(eval.app, name="eval")
     app.add_typer(container.app, name="container")
-
     if enable_builtin_algorithms:
         register_builtin_algorithms()
 

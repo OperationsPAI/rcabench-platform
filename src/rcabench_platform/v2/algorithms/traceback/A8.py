@@ -362,7 +362,7 @@ def is_anomal_service(sdg, node: PlaceNode) -> bool:
     if node.kind != PlaceKind.service:
         return False
 
-    if node.self_name == "loadgenerator-service":
+    if node.self_name == "loadgenerator":
         return False
 
     anomalies = detect_node_anomalies(sdg, node)
@@ -874,5 +874,5 @@ def unify_to_service_candidates(sdg: SDG, rcc_list: list[PlaceNode]) -> list[str
         datapack = sdg.data["datapack"]
         logger.warning("all service candidates have zero dp: datapack=`{}`", datapack)
 
-    ans = [service_name for service_name, _ in services if service_name != "loadgenerator-service"]
+    ans = [service_name for service_name, _ in services if service_name != "loadgenerator"]
     return ans

@@ -56,27 +56,29 @@ FAULT_TYPES: list[str] = [
 ]
 
 
-def get_parent_resource_from_pod_name(pod_name: str) -> tuple[str | None, str | None, str | None]:
+def get_parent_resource_from_pod_name(
+    pod_name: str,
+) -> tuple[str | None, str | None, str | None]:
     """
-    从 Pod 名称解析出父资源（Deployment + ReplicaSet 或 StatefulSet/DaemonSet）
+    Parse parent resource from Pod name (Deployment + ReplicaSet or StatefulSet/DaemonSet)
 
-    支持的父资源类型：
+    Supported parent resource types:
     - Deployment Pods: <deployment-name>-<replicaset-hash>-<pod-hash>
-        → 返回 ("Deployment", deployment_name, replicaset_name)
+        → Returns ("Deployment", deployment_name, replicaset_name)
     - StatefulSet Pods: <statefulset-name>-<ordinal>
-        → 返回 ("StatefulSet", statefulset_name, None)
+        → Returns ("StatefulSet", statefulset_name, None)
     - DaemonSet Pods: <daemonset-name>-<pod-hash>
-        → 返回 ("DaemonSet", daemonset_name, None)
-    - 其他情况返回 (None, None, None)
+        → Returns ("DaemonSet", daemonset_name, None)
+    - Other cases return (None, None, None)
 
     Args:
-        podname (str): Pod 名称
+        podname (str): Pod name
 
     Returns:
         tuple: (parent_type, parent_name, replicaset_name_if_applicable)
     """
-    # Deployment Pod 格式: <deployment-name>-<replicaset-hash>-<pod-hash>
-    # 例如: nginx-deployment-5c689d88bb-q7zvf
+    # Deployment Pod format: <deployment-name>-<replicaset-hash>-<pod-hash>
+    # Example: nginx-deployment-5c689d88bb-q7zvf
     deployment_pattern = r"^(?P<deploy>.+?)-(?P<rs_hash>[a-z0-9]{5,10})-(?P<pod_hash>[a-z0-9]{5})$"
     match = re.fullmatch(deployment_pattern, pod_name)
     if match:
@@ -84,21 +86,21 @@ def get_parent_resource_from_pod_name(pod_name: str) -> tuple[str | None, str | 
         replicaset_name = f"{deployment_name}-{match.group('rs_hash')}"
         return ("Deployment", deployment_name, replicaset_name)
 
-    # StatefulSet Pod 格式: <statefulset-name>-<ordinal>
-    # 例如: web-0, mysql-1
+    # StatefulSet Pod format: <statefulset-name>-<ordinal>
+    # Example: web-0, mysql-1
     statefulset_pattern = r"^(?P<sts>.+)-(\d+)$"
     match = re.fullmatch(statefulset_pattern, pod_name)
     if match:
         return ("StatefulSet", match.group("sts"), None)
 
-    # DaemonSet Pod 格式: <daemonset-name>-<pod-hash>
-    # 例如: fluentd-elasticsearch-abcde
+    # DaemonSet Pod format: <daemonset-name>-<pod-hash>
+    # Example: fluentd-elasticsearch-abcde
     daemonset_pattern = r"^(?P<ds>.+)-([a-z0-9]{5})$"
     match = re.fullmatch(daemonset_pattern, pod_name)
     if match:
         return ("DaemonSet", match.group("ds"), None)
 
-    # 其他情况（如裸 Pod 或未知格式）
+    # Other cases (like bare Pod or unknown format)
     return (None, None, None)
 
 

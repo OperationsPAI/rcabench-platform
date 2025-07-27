@@ -50,6 +50,7 @@ dev = [ #
     "vl-convert-python>=1.8.0",
     "pandas-stubs>=2.3.0.250703",
     "uv-bump>=0.1.2",
+    "black>=25.1.0",
 ]
 
 [build-system]
@@ -87,6 +88,11 @@ exclude = [ #
     "vendor/",
     "output/",
 ]
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownMemberType = false
+reportUnusedCallResult = false
+reportAny = false
 
 [tool.marimo.runtime]
 output_max_bytes = 50_000_000

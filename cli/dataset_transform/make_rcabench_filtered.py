@@ -341,7 +341,7 @@ def _build_service_graph(datapack_folder: Path) -> nx.Graph:
     edges_df = (
         lf.select("parent_service_name", "service_name")
         .filter(
-            pl.col("parent_service_name") != pl.col("service_name")  # 排除自调用
+            pl.col("parent_service_name") != pl.col("service_name")  # Exclude self-calls
         )
         .unique()
         .collect()

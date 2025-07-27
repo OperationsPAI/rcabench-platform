@@ -28,7 +28,11 @@ def scan_rcaeval_ranks(dataset: str, algorithm: str):
             continue
 
         lf = pl.scan_parquet(output_folder / "ranks.parquet")
-        lf = lf.select(pl.lit(dataset).alias("dataset"), pl.lit(datapack).alias("datapack"), pl.all())
+        lf = lf.select(
+            pl.lit(dataset).alias("dataset"),
+            pl.lit(datapack).alias("datapack"),
+            pl.all(),
+        )
         lf_list.append(lf)
 
     ranks = pl.concat(lf_list).collect()

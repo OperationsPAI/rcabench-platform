@@ -74,7 +74,8 @@ class MCPWrapper:
 
     def mcp_get_suspicious_nodes(self, attribute: str, fn: Callable[[float, float], bool]):
         """
-        fn 传入的是函数，左边是正常 node 值，右边是异常 node 值。值均为数字，llm 可以自定义阈值来定义什么是异常
+        fn is a function, left side is normal node value, right side is abnormal node value. Values are all numbers,
+        llm can customize thresholds to define what is abnormal
         """
         ans = []
         for node in self._sdg.iter_nodes():
