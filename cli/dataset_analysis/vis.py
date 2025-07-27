@@ -20,6 +20,7 @@ import matplotlib.dates as mdates
 from typing import Any, cast
 from collections.abc import Generator
 import matplotlib.figure
+from matplotlib.figure import Figure
 
 # ================== Constants and Configuration ==================
 
@@ -312,7 +313,7 @@ def filter_valid_apis(
 def setup_figure(
     valid_apis: list[tuple[str, pl.DataFrame, pl.DataFrame, set[str], bool]],
     datapack_name: str,
-) -> tuple[plt.Figure, list[Any]]:
+) -> tuple[Figure, list[Any]]:
     """Setup the main figure and axes for plotting."""
     total_subplots: int = sum(
         1 for _, _, _, latency_issues, has_success_rate_issue in valid_apis if latency_issues

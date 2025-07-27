@@ -3,6 +3,7 @@ Preset configuration functions
 Provide ready-to-use detection configurations for different types of metrics
 """
 
+from collections.abc import Callable
 from .types import MetricType, DetectionMethod
 from .configs import (
     MetricDetectionConfig,
@@ -352,7 +353,9 @@ def get_preset_config(metric_type: MetricType, scenario: str = "default") -> Met
     Returns:
         Corresponding detection configuration
     """
-    scenario_map = {
+    scenario_map: dict[
+        str, dict[MetricType, Callable[[], MetricDetectionConfig]] | Callable[[MetricType], MetricDetectionConfig]
+    ] = {
         "default": {
             MetricType.LATENCY: create_latency_config,
             MetricType.TRAFFIC: create_traffic_config,
@@ -371,9 +374,9 @@ def get_preset_config(metric_type: MetricType, scenario: str = "default") -> Met
             MetricType.ERROR: create_error_config,
             MetricType.SATURATION: create_saturation_config,
         },
-        "microservice": lambda mt: create_microservice_config(mt),
-        "batch_processing": lambda mt: create_batch_processing_config(mt),
-        "development": lambda mt: create_development_config(mt),
+        "microservice": create_microservice_config,
+        "batch_processing": create_batch_processing_config,
+        "development": create_development_config,
         "high_traffic": {
             MetricType.LATENCY: create_latency_config,
             MetricType.TRAFFIC: create_high_traffic_config,

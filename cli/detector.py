@@ -19,9 +19,8 @@ import os
 import polars as pl
 import numpy as np
 import functools
-from datetime import datetime
-from typing import Literal, Any, TypedDict, NotRequired, Union
-import numpy.typing as npt
+from typing import Literal, Any, TypedDict
+import sys
 
 
 # TypedDict definitions
@@ -45,7 +44,7 @@ class AnomalyScoreResult(TypedDict):
     severity: str
     detection_method: str
     threshold_info: dict[str, Any] | None
-    rule_anomaly: NotRequired[bool]
+    rule_anomaly: bool
 
 
 class SuccessRateResult(TypedDict):
@@ -61,20 +60,28 @@ class SuccessRateResult(TypedDict):
     severity: str
 
 
-class AnomalTagEntry(TypedDict, total=False):
-    """Anomaly tag entry"""
+class ConclusionRowResult(TypedDict):
+    """Conclusion detection result"""
 
-    normal: float
-    abnormal: float
-    anomaly_score: float
-    change_rate: float
-    absolute_change: float
-    slo_violated: bool
-    threshold: float
-    rate_drop: float
-    p_value: float
-    z_statistic: float
-    detection_reason: str
+    # Latency results
+    latency_is_anomaly: bool
+    latency_total_score: float
+    latency_change_rate: float
+    latency_abnormal_value: float
+    latency_absolute_change: float
+    latency_description: str
+    latency_severity: str
+    latency_detection_method: str
+    latency_threshold_info: dict[str, Any] | None
+
+    # Success rate results
+    success_rate_is_significant: bool
+    success_rate_p_value: float
+    success_rate_z_statistic: float
+    success_rate_change_rate: float
+    success_rate_rate_drop: float
+    success_rate_confidence: float
+    success_rate_description: str
 
 
 class IssueCategories(TypedDict):
@@ -93,7 +100,7 @@ class Notations(TypedDict):
     total_endpoints: int
     skipped_endpoints: int
     absolute_anomaly: bool
-    anomaly_count: NotRequired[int]
+    anomaly_count: int
 
 
 class ConclusionRow(TypedDict):
@@ -131,11 +138,11 @@ class EndpointStats(TypedDict):
     status_code: list[int | str]
     response_content_length: list[int]
     request_content_length: list[int]
-    avg_duration: NotRequired[float]
-    p90_duration: NotRequired[float]
-    p95_duration: NotRequired[float]
-    p99_duration: NotRequired[float]
-    succ_rate: NotRequired[float]
+    avg_duration: float | None
+    p90_duration: float | None
+    p95_duration: float | None
+    p99_duration: float | None
+    succ_rate: float | None
 
 
 class AnalysisResult(TypedDict):
@@ -184,10 +191,8 @@ def calculate_anomaly_score(
         "severity": result["severity"],
         "detection_method": result["detection_method"],
         "threshold_info": result["threshold_info"],
+        "rule_anomaly": rule_anomaly,
     }
-
-    if rule_anomaly:
-        return_dict["rule_anomaly"] = True
 
     return return_dict
 
@@ -321,25 +326,36 @@ def preprocess_trace(file: Path) -> dict[str, Any]:
         durations = v["duration"]
         if not durations:
             logger.warning(f"No duration data found for endpoint: {k}")
-            continue
+            # Set duration metrics to None when no data is available
+            v["avg_duration"] = None
+            v["p90_duration"] = None
+            v["p95_duration"] = None
+            v["p99_duration"] = None
+        else:
+            durations_array = np.array(durations)
+            avg_duration = np.mean(durations_array)
+            p90_duration = np.percentile(durations_array, 90)
+            p95_duration = np.percentile(durations_array, 95)
+            p99_duration = np.percentile(durations_array, 99)
 
-        durations_array = np.array(durations)
-        avg_duration = np.mean(durations_array)
-        p90_duration = np.percentile(durations_array, 90)
-        p95_duration = np.percentile(durations_array, 95)
-        p99_duration = np.percentile(durations_array, 99)
+            v["avg_duration"] = avg_duration / 1e9
+            v["p90_duration"] = p90_duration / 1e9
+            v["p95_duration"] = p95_duration / 1e9
+            v["p99_duration"] = p99_duration / 1e9
 
         status_code = {i: v["status_code"].count(i) for i in set(v["status_code"])}
         request_content_length = {i: v["request_content_length"].count(i) for i in set(v["request_content_length"])}
         response_content_length = {i: v["response_content_length"].count(i) for i in set(v["response_content_length"])}
 
-        v["avg_duration"] = avg_duration / 1e9
-        v["p90_duration"] = p90_duration / 1e9
-        v["p95_duration"] = p95_duration / 1e9
-        v["p99_duration"] = p99_duration / 1e9
+        # Calculate success rate
+        total_requests = sum(status_code.values())
+        success_count = status_code.get("200", 0)
+        succ_rate = success_count / total_requests if total_requests > 0 else None
+
         v["status_code"] = status_code
         v["request_content_length"] = request_content_length
         v["response_content_length"] = response_content_length
+        v["succ_rate"] = succ_rate
 
     return stat
 
@@ -403,6 +419,7 @@ def initialize_analysis_state() -> AnalysisState:
             "total_endpoints": 0,
             "skipped_endpoints": 0,
             "absolute_anomaly": False,
+            "anomaly_count": 0,
         },
     }
 
@@ -452,10 +469,11 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
                 }
 
     # Check hard timeout threshold
-    if v.get("avg_duration", 0.0) > hard_timeout_threshold:
+    avg_duration_val = v.get("avg_duration", 0.0)
+    if avg_duration_val > hard_timeout_threshold:
         abnormal_tag["hard_timeout"] = {
             "threshold": hard_timeout_threshold,
-            "abnormal": v["avg_duration"],
+            "abnormal": avg_duration_val,
             "slo_violated": True,
             "detection_reason": "hard_timeout_exceeded",
         }
@@ -521,7 +539,7 @@ def detect_latency_anomalies(
     for idx, (tp, key, norm_fn) in enumerate(percentiles):
         if tp == "avg":
             normal_data = norm_fn(normal_stat[k]["duration"])
-            abnormal_value = v["avg_duration"]
+            abnormal_value = v.get("avg_duration", 0.0)
         else:
             # p90, p95, p99
             if tp == "p90":
@@ -531,7 +549,7 @@ def detect_latency_anomalies(
             else:  # p99
                 start, end = int(len(sorted_durations) * 0.95), len(sorted_durations)
             normal_data = sorted_durations[start:end] if start < end else sorted_durations
-            abnormal_value = v[key]
+            abnormal_value = v.get(key, 0.0)
 
         if normal_data:
             from typing import cast
