@@ -295,24 +295,65 @@ def convert_logs(src: Path) -> pl.LazyFrame:
 
 
 def convert_conclusion(src: Path) -> pl.LazyFrame:
-    lf = pl.scan_csv(
-        src,
-        schema={
-            "SpanName": pl.String,
-            "Issues": pl.String,
-            "AbnormalAvgDuration": pl.Float64,
-            "NormalAvgDuration": pl.Float64,
-            "AbnormalSuccRate": pl.Float64,
-            "NormalSuccRate": pl.Float64,
-            "AbnormalP90": pl.Float64,
-            "NormalP90": pl.Float64,
-            "AbnormalP95": pl.Float64,
-            "NormalP95": pl.Float64,
-            "AbnormalP99": pl.Float64,
-            "NormalP99": pl.Float64,
-        },
-    )
-    return lf
+    # Check if file exists and has content
+    if not src.exists():
+        logger.warning(f"Conclusion CSV file does not exist: {src}")
+        # Return empty LazyFrame with correct schema
+        return pl.LazyFrame(
+            schema={
+                "SpanName": pl.String,
+                "Issues": pl.String,
+                "AbnormalAvgDuration": pl.Float64,
+                "NormalAvgDuration": pl.Float64,
+                "AbnormalSuccRate": pl.Float64,
+                "NormalSuccRate": pl.Float64,
+                "AbnormalP90": pl.Float64,
+                "NormalP90": pl.Float64,
+                "AbnormalP95": pl.Float64,
+                "NormalP95": pl.Float64,
+                "AbnormalP99": pl.Float64,
+                "NormalP99": pl.Float64,
+            }
+        )
+
+    try:
+        lf = pl.scan_csv(
+            src,
+            schema={
+                "SpanName": pl.String,
+                "Issues": pl.String,
+                "AbnormalAvgDuration": pl.Float64,
+                "NormalAvgDuration": pl.Float64,
+                "AbnormalSuccRate": pl.Float64,
+                "NormalSuccRate": pl.Float64,
+                "AbnormalP90": pl.Float64,
+                "NormalP90": pl.Float64,
+                "AbnormalP95": pl.Float64,
+                "NormalP95": pl.Float64,
+                "AbnormalP99": pl.Float64,
+                "NormalP99": pl.Float64,
+            },
+        )
+        return lf
+    except Exception as e:
+        logger.warning(f"Error reading conclusion CSV {src}: {e}")
+        # Return empty LazyFrame with correct schema
+        return pl.LazyFrame(
+            schema={
+                "SpanName": pl.String,
+                "Issues": pl.String,
+                "AbnormalAvgDuration": pl.Float64,
+                "NormalAvgDuration": pl.Float64,
+                "AbnormalSuccRate": pl.Float64,
+                "NormalSuccRate": pl.Float64,
+                "AbnormalP90": pl.Float64,
+                "NormalP90": pl.Float64,
+                "AbnormalP95": pl.Float64,
+                "NormalP95": pl.Float64,
+                "AbnormalP99": pl.Float64,
+                "NormalP99": pl.Float64,
+            }
+        )
 
 
 class RcabenchDatapackLoader(DatapackLoader):

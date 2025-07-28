@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from rcabench.openapi import AlgorithmApi, InjectionApi
+from rcabench.openapi import AlgorithmApi, DtoSubmitExecutionReq, InjectionApi
+from rcabench.openapi.models import DtoAlgorithmItem, DtoExecutionPayload
 
 from ..clients.k8s import download_kube_info
 from ..clients.rcabench_ import get_rcabench_openapi_client
@@ -50,8 +51,8 @@ def list_injections():
     api = InjectionApi(get_rcabench_openapi_client())
     resp = api.api_v1_injections_get()
     assert resp.data is not None
-
-    ans = [item.model_dump() for item in resp.data]
+    assert resp.data.items is not None
+    ans = [item.model_dump() for item in resp.data.items]
     print_json(ans)
 
 
@@ -73,8 +74,6 @@ def submit_execution(
     datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
     envs: Annotated[list[str] | None, typer.Option("--env")] = None,
 ):
-    from rcabench.openapi.models import DtoAlgorithmItem, DtoExecutionPayload
-
     assert algorithms, "At least one algorithm must be specified."
     assert datasets, "At least one dataset must be specified."
 
@@ -86,7 +85,7 @@ def submit_execution(
             key, value = env.split("=", 1)
             env_vars[key] = value
 
-    payloads = []
+    payloads: list[DtoExecutionPayload] = []
     for algorithm in algorithms:
         for dataset in datasets:
             payload = DtoExecutionPayload(
@@ -97,7 +96,7 @@ def submit_execution(
             payloads.append(payload)
 
     api = AlgorithmApi(get_rcabench_openapi_client())
-    resp = api.api_v1_algorithms_post(body=payloads)
+    resp = api.api_v1_algorithms_post(body=DtoSubmitExecutionReq(payloads=payloads, project_name="pair_diagnosis"))
     assert resp.data is not None
 
     ans = resp.data.model_dump()

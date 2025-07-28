@@ -273,12 +273,29 @@ def preprocess_trace(file: Path) -> dict[str, Any]:
         entry_count = entry_df.select(pl.len()).collect().item()
 
     if entry_count == 0:
-        logger.error("No valid entrypoint found in trace data, aborting")
+        logger.error("No valid entrypoint found in trace data, trying all services")
 
+        # Try to find any service with root spans (no parent span)
         available_services = df.select(pl.col("ServiceName")).unique().collect()["ServiceName"].to_list()
         logger.error(f"Available services in trace data: {available_services}")
 
-        return {}
+        # Try each available service as potential entry point
+        for service in available_services:
+            if service in ["loadgenerator", "ts-ui-dashboard"]:
+                continue  # Already tried these
+
+            entry_df = df.filter(
+                (pl.col("ServiceName") == service) & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
+            )
+            entry_count = entry_df.select(pl.len()).collect().item()
+            if entry_count > 0:
+                logger.info(f"Using {service} as entry point with {entry_count} root spans")
+                break
+
+        # If still no entry points found, terminate the process
+        if entry_count == 0:
+            logger.error("No root spans found in any service, terminating analysis")
+            return {}
 
     entry_df_collected = entry_df.with_columns(pl.col("Timestamp").alias("ts")).sort("ts").collect()
 
@@ -690,6 +707,15 @@ def validate_results(
 
 def save_analysis_results(state: AnalysisState, output_path: Path) -> AnalysisState:
     """Save the analysis results to files."""
+    # Check if we have conclusion data to save
+    if not state["conclusion_data"]:
+        logger.warning("No conclusion data available, skipping file creation")
+        # Update final notations
+        state["notations"]["total_endpoints"] = state["processed_endpoints"]
+        state["notations"]["skipped_endpoints"] = state["skipped_endpoints"]
+        state["notations"]["anomaly_count"] = state["anomaly_count"]
+        return state
+
     # Save conclusion CSV
     conclusion = pl.DataFrame(state["conclusion_data"])
     conclusion.write_csv(Path(output_path) / "conclusion.csv")
@@ -732,8 +758,42 @@ def run(in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True
     normal_stat = preprocess_trace(normal_trace)
     abnormal_stat = preprocess_trace(abnormal_trace)
 
-    assert normal_stat, f"No endpoints found in normal trace data: {normal_trace}"
-    assert abnormal_stat, f"No endpoints found in abnormal trace data: {abnormal_trace}"
+    # Check if we have valid data for analysis
+    if not normal_stat:
+        logger.error("No endpoints found in normal trace data, terminating analysis.")
+        # Return default result without processing
+        result: AnalysisResult = {
+            "datapack_name": input_path.name,
+            "is_latency_only": False,
+            "total_endpoints": 0,
+            "anomaly_count": 0,
+            "issue_categories": {
+                "latency_only": 0,
+                "success_rate_only": 0,
+                "both_latency_and_success_rate": 0,
+                "no_issues": 0,
+            },
+            "absolute_anomaly": False,
+        }
+        return result
+
+    if not abnormal_stat:
+        logger.error("No endpoints found in abnormal trace data, terminating analysis.")
+        # Return default result without processing
+        result: AnalysisResult = {
+            "datapack_name": input_path.name,
+            "is_latency_only": False,
+            "total_endpoints": 0,
+            "anomaly_count": 0,
+            "issue_categories": {
+                "latency_only": 0,
+                "success_rate_only": 0,
+                "both_latency_and_success_rate": 0,
+                "no_issues": 0,
+            },
+            "absolute_anomaly": False,
+        }
+        return result
 
     # Initialize analysis state and configuration
     state = initialize_analysis_state()
@@ -781,6 +841,12 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
     output_path = ou_p
     assert input_path.exists(), f"Input path does not exist: {input_path}"
     assert output_path.exists(), f"Output path does not exist: {output_path}"
+
+    # Check if conclusion.csv exists before proceeding with conversion
+    conclusion_csv = input_path / "conclusion.csv"
+    if not conclusion_csv.exists():
+        logger.warning("conclusion.csv not found, skipping platform conversion")
+        return
 
     # Assert injection.json exists and is valid
     injection_file = input_path / "injection.json"
