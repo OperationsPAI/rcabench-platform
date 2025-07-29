@@ -22,5 +22,5 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv build
+      - run: just ci
       - run: uv publish --trusted-publishing always
