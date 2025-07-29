@@ -5,6 +5,9 @@ description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
 authors = [ #
     { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" },
+    { name = "Lincyaw", email = "814750204@qq.com" },
+    { name = "rainystevn1", email = "rainystevn1@gmail.com" },
+    { name = "YifanYang6", email = "yifanyang6@link.cuhk.edu.cn" },
 ]
 requires-python = ">=3.10"
 dependencies = [ #
