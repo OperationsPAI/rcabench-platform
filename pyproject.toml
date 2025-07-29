@@ -7,6 +7,7 @@ authors = [ #
     { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" },
     { name = "Lincyaw", email = "814750204@qq.com" },
     { name = "YifanYang6", email = "yifanyang6@link.cuhk.edu.cn" },
+    { name = "rainystevn1", email = "rainystevn1@gmail.com" },
 ]
 requires-python = ">=3.10"
 dependencies = [ #
