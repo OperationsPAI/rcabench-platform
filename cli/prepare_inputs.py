@@ -31,10 +31,10 @@ def ping_clickhouse() -> None:
 
 def convert_to_clickhouse_time(unix_timestamp: int, tz: str) -> str:
     """Convert UNIX timestamp to ClickHouse supported time format"""
+    import pytz
+
     return (
-        pd.to_datetime(unix_timestamp, utc=True, unit="s")
-        .astimezone(tz)  # type:ignore
-        .strftime("%Y-%m-%d %H:%M:%S")
+        pd.to_datetime(unix_timestamp, utc=True, unit="s").astimezone(pytz.timezone(tz)).strftime("%Y-%m-%d %H:%M:%S")
     )
 
 
@@ -389,8 +389,9 @@ def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
     api = InjectionApi(get_rcabench_openapi_client(base_url=rcabench_url))
     resp = api.api_v1_injections_get()
     assert resp.data is not None, "No cases found in the response"
+    assert resp.data.items is not None, "No items found in the response"
 
-    case_names = list(set([item.injection_name for item in resp.data if item.injection_name]))
+    case_names = list(set([item.injection_name for item in resp.data.items if item.injection_name is not None]))
     for dataset_name in case_names:
         injection = query_injection(rcabench_url, dataset_name)
         if injection:
