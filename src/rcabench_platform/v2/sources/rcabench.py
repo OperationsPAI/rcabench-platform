@@ -426,10 +426,14 @@ def scan_datapacks(src_root: Path) -> list[str]:
         if not (path / "conclusion.csv").exists():
             continue
 
-        df = pd.read_csv(path / "conclusion.csv")
+        try:
+            df = pd.read_csv(path / "conclusion.csv")
 
-        if "Issues" in df.columns and (df["Issues"] == "{}").all():
-            logger.warning(f"Skipping datapack `{path}` - all Issues are empty")
+            if "Issues" in df.columns and (df["Issues"] == "{}").all():
+                logger.warning(f"Skipping datapack `{path}` - all Issues are empty")
+                continue
+        except Exception as e:
+            logger.warning(f"Error reading conclusion CSV {path / 'conclusion.csv'}: {e}")
             continue
 
         total_size = 0

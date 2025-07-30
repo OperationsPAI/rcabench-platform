@@ -39,8 +39,9 @@ def single(
     datapack: str,
     clear: bool = False,
     skip_finished: bool = True,
+    submit_result: bool = False,
 ):
-    run_single(algorithm, dataset, datapack, clear=clear, skip_finished=skip_finished)
+    run_single(algorithm, dataset, datapack, clear=clear, skip_finished=skip_finished, submit_result=submit_result)
 
 
 @app.command()
@@ -52,8 +53,19 @@ def batch(
     clear: bool = False,
     skip_finished: bool = True,
     use_cpus: int | None = None,
+    submit_result: bool = False,
+    ignore_exceptions: bool = True,
 ):
-    run_batch(algorithms, datasets, sample=sample, clear=clear, skip_finished=skip_finished, use_cpus=use_cpus)
+    run_batch(
+        algorithms,
+        datasets,
+        sample=sample,
+        clear=clear,
+        skip_finished=skip_finished,
+        use_cpus=use_cpus,
+        submit_result=submit_result,
+        ignore_exceptions=ignore_exceptions,
+    )
 
 
 @app.command()

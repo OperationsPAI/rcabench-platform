@@ -21,6 +21,8 @@ def run_batch(
     clear: bool = False,
     skip_finished: bool = True,
     use_cpus: int | None = None,
+    submit_result: bool = False,
+    ignore_exceptions: bool = True,
 ):
     registry = global_algorithm_registry()
     for algorithm in algorithms:
@@ -59,11 +61,14 @@ def run_batch(
                         datapack,
                         clear=clear,
                         skip_finished=skip_finished,
+                        submit_result=submit_result,
                     )
                 )
 
             t0 = time.time()
-            fmap_processpool(tasks, parallel=parallel, cpu_limit_each=alg_cpu_count)
+            fmap_processpool(
+                tasks, parallel=parallel, cpu_limit_each=alg_cpu_count, ignore_exceptions=ignore_exceptions
+            )
             t1 = time.time()
 
             total_walltime = t1 - t0
