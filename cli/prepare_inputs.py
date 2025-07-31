@@ -17,6 +17,7 @@ from rcabench_platform.v2.clients.clickhouse import (
 )
 from rcabench_platform.v2.clients.k8s import download_kube_info
 from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
+from rcabench_platform.v2.config import get_config
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
 
@@ -256,8 +257,11 @@ def query_kube_info(namespace: str) -> dict[str, Any] | None:
 
 @app.command()
 @timeit()
-def run(rcabench_url: str = "http://10.10.10.220:32080"):
+def run():
     ping_clickhouse()
+
+    env_mode = os.environ["ENV_MODE"]
+    rcabench_url = get_config(env_mode=env_mode).base_url
 
     # Prepare the output directory
     output_path = Path(os.environ["OUTPUT_PATH"])
