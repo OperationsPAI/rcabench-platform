@@ -1,3 +1,5 @@
+import os
+
 from rcabench.openapi import ApiClient, AuthenticationApi, Configuration
 from rcabench.openapi.models.dto_login_request import DtoLoginRequest
 from rcabench.rcabench import RCABenchSDK
@@ -28,10 +30,14 @@ class RCABenchClient:
         print(f"Containers: {containers.data}")
     """
 
-    def __init__(self, base_url="http://10.10.10.220:32080", username="admin", password="admin123"):
+    def __init__(self, base_url="http://10.10.10.220:32080", username=None, password=None):
         self.base_url = base_url
-        self.username = username
-        self.password = password
+        self.username = username or os.getenv("RCABENCH_USERNAME")
+        self.password = password or os.getenv("RCABENCH_PASSWORD")
+
+        assert self.username is not None, "username or RCABENCH_USERNAME is not set"
+        assert self.password is not None, "password or RCABENCH_PASSWORD is not set"
+
         self.access_token = None
         self._api_client = None
 
@@ -49,6 +55,8 @@ class RCABenchClient:
         config = Configuration(host=self.base_url)
         with ApiClient(config) as api_client:
             auth_api = AuthenticationApi(api_client)
+            assert self.username is not None
+            assert self.password is not None
             login_request = DtoLoginRequest(username=self.username, password=self.password)
             response = auth_api.api_v2_auth_login_post(login_request)
             assert response.data is not None

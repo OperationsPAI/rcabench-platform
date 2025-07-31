@@ -167,24 +167,19 @@ def rcabench_fix_injection_display_config(display_config: dict[str, Any]) -> Non
         display_config[k] = d[v]
 
 
-@timeit(log_args={"train_ratio", "train_dataset_name", "test_dataset_name"})
+@timeit(log_args={"train_ratio"})
 def rcabench_split_train_test(
     datapacks: list[str],
     train_ratio: float,
-    train_dataset_name: str,
-    test_dataset_name: str,
-    previous_train_datapacks: list[str],
-    previous_test_datapacks: list[str],
+    previous_datapacks: list[str],
+    datapack_limit: int = 0,
 ):
     assert len(datapacks) > 0, "Datapacks list cannot be empty."
     assert 0 < train_ratio < 1, "Ratio must be between 0 and 1."
+    assert datapack_limit <= len(datapacks), "Datapack limit must be less than or equal to the number of datapacks."
 
-    assert train_dataset_name and test_dataset_name
-    assert train_dataset_name != test_dataset_name
-
-    prev_train_set = set(previous_train_datapacks)
-    prev_test_set = set(previous_test_datapacks)
-    additional_datapacks = set(datapacks) - prev_train_set - prev_test_set
+    prev_datapacks = set(previous_datapacks)
+    additional_datapacks = set(datapacks) - prev_datapacks
 
     group_by_service: defaultdict[str, list[str]] = defaultdict(list)
     for datapack in additional_datapacks:
@@ -223,11 +218,22 @@ def rcabench_split_train_test(
         train_datapacks.extend(service_datapacks[:num_train])
         test_datapacks.extend(service_datapacks[num_train:])
 
-    train_datapacks = list(prev_train_set) + train_datapacks
-    test_datapacks = list(prev_test_set) + test_datapacks
+    total_selected = len(train_datapacks) + len(test_datapacks)
 
-    link_subset("rcabench", train_dataset_name, train_datapacks)
-    link_subset("rcabench", test_dataset_name, test_datapacks)
+    if total_selected > datapack_limit:
+        target_train = int(datapack_limit * train_ratio)
+        target_test = datapack_limit - target_train
 
-    logger.info("train dataset: {} ({} datapacks)", train_dataset_name, len(train_datapacks))
-    logger.info("test dataset: {} ({} datapacks)", test_dataset_name, len(test_datapacks))
+        train_datapacks = train_datapacks[:target_train]
+        test_datapacks = test_datapacks[:target_test]
+
+        logger.info("Adjusted to datapack_limit: train={}, test={}", len(train_datapacks), len(test_datapacks))
+
+    logger.info(
+        "Final dataset: train={} datapacks, test={} datapacks, total={}",
+        len(train_datapacks),
+        len(test_datapacks),
+        len(train_datapacks) + len(test_datapacks),
+    )
+
+    return train_datapacks, test_datapacks
