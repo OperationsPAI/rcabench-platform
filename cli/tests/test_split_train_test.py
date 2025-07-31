@@ -59,7 +59,7 @@ def create_dataset(
 def run(stage: int):
     datapacks = get_datapack_list("rcabench")  # can be replaced by query with issues
 
-    with RCABenchClient(username="admin", password="admin123") as client:
+    with RCABenchClient() as client:
         datasets_api = DatasetsApi(client)
 
         previous_datapacks = get_previous_datapacks(datasets_api)
@@ -93,7 +93,7 @@ def run(stage: int):
 @app.command()
 @timeit()
 def cleanup():
-    with RCABenchClient(username="admin", password="admin123") as client:
+    with RCABenchClient() as client:
         datasets_api = DatasetsApi(client)
         resp = datasets_api.api_v2_datasets_get(search="pair-diag")
         assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
