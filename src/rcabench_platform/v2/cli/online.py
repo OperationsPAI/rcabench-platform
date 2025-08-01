@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -15,6 +16,7 @@ from rcabench.openapi import (
     DtoInjectionV2SearchReq,
     InjectionsApi,
 )
+from rcabench.rcabench import RCABenchSDK
 
 from ..clients.k8s import download_kube_info
 from ..clients.rcabench_ import RCABenchClient
@@ -45,8 +47,8 @@ def kube_info(namespace: str = "ts1", save_path: Path | None = None):
 
 @app.command()
 @timeit()
-def query_injection(name: str, page: int = 1, size: int = 5):
-    with RCABenchClient() as client:
+def query_injection(name: str, page: int = 1, size: int = 5, base_url: str | None = None):
+    with RCABenchClient(base_url=base_url) as client:
         api = InjectionsApi(client)
         resp = api.api_v2_injections_search_post(
             search=DtoInjectionV2SearchReq(
@@ -96,8 +98,8 @@ def list_datasets():
 
 @app.command()
 @timeit()
-def list_algorithms():
-    with RCABenchClient() as client:
+def list_algorithms(base_url: str | None = None):
+    with RCABenchClient(base_url=base_url) as client:
         api = AlgorithmsApi(client)
         resp = api.api_v2_algorithms_get()
         assert resp.data is not None
@@ -118,6 +120,7 @@ def submit_execution(
     datasets: Annotated[str | None, typer.Option("-ds", "--dataset")] = None,
     dataset_versions: Annotated[str | None, typer.Option("-dsv", "--dataset-version")] = None,
     envs: Annotated[list[str] | None, typer.Option("--env")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
 ):
     assert algorithms, "At least one algorithm must be specified."
     assert datapacks or datasets, "At least one datapack or dataset must be specified."
@@ -139,7 +142,7 @@ def submit_execution(
             env_vars[key] = value
 
     payloads: list[DtoAlgorithmExecutionRequest] = []
-    with RCABenchClient() as client:
+    with RCABenchClient(base_url=base_url) as client:
         api = AlgorithmsApi(client)
         for algorithm in algorithms:
             if dataset_list:
@@ -230,7 +233,7 @@ def parse_toml_config(info_file: Path) -> tuple[str, dict[str, str]]:
 @timeit()
 def upload_algorithm_harbor(
     algo_folder: Annotated[Path, typer.Argument(help="Algorithm folder path")],
-    base_url: Annotated[str, typer.Option("--base-url")] = "http://10.10.10.126:8082",
+    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
 ):
     """
     Upload algorithm record with pre-built image from Harbor registry
@@ -290,6 +293,17 @@ def upload_algorithm_harbor(
     except Exception as e:
         logger.error(f"❌ Algorithm upload failed {algo_folder}: {e}")
         return False
+
+
+@app.command()
+def trace(trace_id: str, base_url: str | None = None, timeout: int = 600):
+    base_url = base_url or os.getenv("RCABENCH_BASE_URL")
+    assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
+
+    sdk = RCABenchSDK(base_url=base_url)
+    res = sdk.trace.stream_trace_events(trace_id=trace_id, timeout=timeout)
+    for event in res:
+        logger.info(event.model_dump_json(indent=2))
 
 
 def main():

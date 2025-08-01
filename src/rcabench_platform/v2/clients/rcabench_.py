@@ -30,13 +30,14 @@ class RCABenchClient:
         print(f"Containers: {containers.data}")
     """
 
-    def __init__(self, base_url="http://10.10.10.220:32080", username=None, password=None):
-        self.base_url = base_url
+    def __init__(self, base_url=None, username=None, password=None):
+        self.base_url = base_url or os.getenv("RCABENCH_BASE_URL")
         self.username = username or os.getenv("RCABENCH_USERNAME")
         self.password = password or os.getenv("RCABENCH_PASSWORD")
 
         assert self.username is not None, "username or RCABENCH_USERNAME is not set"
         assert self.password is not None, "password or RCABENCH_PASSWORD is not set"
+        assert self.base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
 
         self.access_token = None
         self._api_client = None

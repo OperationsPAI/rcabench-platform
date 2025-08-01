@@ -16,6 +16,7 @@ from rcabench.openapi import (
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
 from ..clients.rcabench_ import RCABenchClient
+from ..config import get_config
 from ..datasets.spec import get_datapack_folder, get_datapack_labels
 from ..evaluation.ranking import calc_all_perf
 from ..logging import logger, timeit
@@ -112,7 +113,7 @@ def run_single(
     finished.touch()
 
     if submit_result:
-        with RCABenchClient() as client:
+        with RCABenchClient(base_url=get_config().base_url) as client:
             algorithms_api = AlgorithmsApi(client)
             injections_api = InjectionsApi(client)
             injections = injections_api.api_v2_injections_search_post(

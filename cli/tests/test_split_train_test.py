@@ -3,6 +3,7 @@ from rcabench.openapi import DatasetsApi, DtoDatasetV2CreateReq, DtoInjectionRef
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.config import get_config
 from rcabench_platform.v2.datasets.rcabench import rcabench_split_train_test
 from rcabench_platform.v2.datasets.spec import delete_dataset, get_datapack_list
 
@@ -59,7 +60,7 @@ def create_dataset(
 def run(stage: int):
     datapacks = get_datapack_list("rcabench")  # can be replaced by query with issues
 
-    with RCABenchClient() as client:
+    with RCABenchClient(base_url=get_config().base_url) as client:
         datasets_api = DatasetsApi(client)
 
         previous_datapacks = get_previous_datapacks(datasets_api)
@@ -93,7 +94,7 @@ def run(stage: int):
 @app.command()
 @timeit()
 def cleanup():
-    with RCABenchClient() as client:
+    with RCABenchClient(base_url=get_config().base_url) as client:
         datasets_api = DatasetsApi(client)
         resp = datasets_api.api_v2_datasets_get(search="pair-diag")
         assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
