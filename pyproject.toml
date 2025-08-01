@@ -33,6 +33,9 @@ dependencies = [ #
     "typer>=0.16.0",
 ]
 
+[project.scripts]
+rca = "rcabench_platform.v2.cli.online:main"
+
 [project.optional-dependencies]
 analysis = ["graphviz>=0.20.3", "matplotlib>=3.10.3"]
 

@@ -1,11 +1,12 @@
-import json
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import polars as pl
+import tomllib as tomli
 import typer
 from rcabench.openapi import (
     AlgorithmsApi,
+    ContainersApi,
     DatasetsApi,
     DtoAlgorithmExecutionRequest,
     DtoAlgorithmItem,
@@ -16,17 +17,13 @@ from rcabench.openapi import (
 )
 
 from ..clients.k8s import download_kube_info
-from ..clients.rcabench_ import RCABenchClient, get_rcabench_openapi_client
+from ..clients.rcabench_ import RCABenchClient
 from ..config import get_config
 from ..logging import logger, timeit
 from ..utils.dataframe import print_dataframe
 from ..utils.serde import save_json
 
 app = typer.Typer()
-
-
-def print_json(data: Any):
-    print(json.dumps(data, indent=4, ensure_ascii=False), flush=True)
 
 
 @app.command()
@@ -41,7 +38,9 @@ def kube_info(namespace: str = "ts1", save_path: Path | None = None):
     ans = kube_info.to_dict()
     save_json(ans, path=save_path)
 
-    print_json(ans)
+    # Convert dict to DataFrame for display
+    df = pl.DataFrame([ans])
+    print_dataframe(df)
 
 
 @app.command()
@@ -59,7 +58,9 @@ def query_injection(name: str, page: int = 1, size: int = 5):
     assert resp.data is not None
 
     ans = resp.data.model_dump()
-    print_json(ans)
+    # Convert dict to DataFrame for display
+    df = pl.DataFrame([ans])
+    print_dataframe(df)
 
 
 @app.command()
@@ -71,7 +72,9 @@ def list_injections():
         assert resp.data is not None
     assert resp.data.items is not None
     ans = [item.model_dump() for item in resp.data.items]
-    print_json(ans)
+    # Convert list of dicts to DataFrame for display
+    df = pl.DataFrame(ans)
+    print_dataframe(df)
 
 
 @app.command()
@@ -101,13 +104,16 @@ def list_algorithms():
 
         assert resp.data.items is not None
         ans = [item.model_dump() for item in resp.data.items]
-        print_json(ans)
+        # Convert list of dicts to DataFrame for display
+        df = pl.DataFrame(ans)
+        print_dataframe(df)
 
 
 @app.command()
 @timeit()
 def submit_execution(
     algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
+    project: Annotated[str | None, typer.Option("-p", "--project")] = None,
     datapacks: Annotated[list[str] | None, typer.Option("-d", "--datapack")] = None,
     datasets: Annotated[str | None, typer.Option("-ds", "--dataset")] = None,
     dataset_versions: Annotated[str | None, typer.Option("-dsv", "--dataset-version")] = None,
@@ -116,6 +122,7 @@ def submit_execution(
     assert algorithms, "At least one algorithm must be specified."
     assert datapacks or datasets, "At least one datapack or dataset must be specified."
     assert not (datapacks and datasets), "Cannot specify both datapacks and datasets."
+    assert project, "Project name must be specified."
 
     dataset_list = [datasets.strip()] if datasets and datasets.strip() else []
     dataset_version_list = [dataset_versions.strip()] if dataset_versions and dataset_versions.strip() else []
@@ -142,7 +149,7 @@ def submit_execution(
                         dataset=dataset,
                         dataset_version=dataset_version,
                         env_vars=env_vars,
-                        project_name="pair_diagnosis",
+                        project_name=project,
                     )
 
                     payloads.append(payload)
@@ -153,14 +160,14 @@ def submit_execution(
                         algorithm=DtoAlgorithmItem(name=algorithm),
                         datapack=datapack,
                         env_vars=env_vars,
-                        project_name="pair_diagnosis",
+                        project_name=project,
                     )
                     payloads.append(payload)
 
             resp = api.api_v2_algorithms_execute_post(
                 request=DtoBatchAlgorithmExecutionRequest(
                     executions=payloads,
-                    project_name="pair_diagnosis",
+                    project_name=project,
                 )
             )
             assert resp.data is not None
@@ -183,3 +190,107 @@ def submit_execution(
 
             df = pl.DataFrame(data)
             print_dataframe(df)
+
+
+def check_required_files(algo_folder: Path) -> bool:
+    """Check if required files exist in algorithm folder"""
+    required_files = ["info.toml", "Dockerfile", "entrypoint.sh"]
+
+    for file_name in required_files:
+        file_path = algo_folder / file_name
+        if not file_path.exists():
+            logger.warning(f"{algo_folder} missing file: {file_name}")
+            return False
+
+    return True
+
+
+def parse_toml_config(info_file: Path) -> tuple[str, dict[str, str]]:
+    """Parse info.toml file to extract name and env_vars"""
+    algorithm_name = info_file.parent.name
+    env_vars = {}
+
+    if info_file.exists():
+        try:
+            with open(info_file, "rb") as f:
+                config = tomli.load(f)
+
+            if "name" in config:
+                algorithm_name = config["name"]
+            if "env_vars" in config:
+                env_vars = config["env_vars"]
+
+        except Exception as e:
+            logger.warning(f"Failed to parse TOML file {info_file}: {e}")
+
+    return algorithm_name, env_vars
+
+
+@app.command()
+@timeit()
+def upload_algorithm_harbor(
+    algo_folder: Annotated[Path, typer.Argument(help="Algorithm folder path")],
+    base_url: Annotated[str, typer.Option("--base-url")] = "http://10.10.10.126:8082",
+):
+    """
+    Upload algorithm record with pre-built image from Harbor registry
+
+    🐳 HARBOR MODE: Use pre-built images from Harbor registry
+    - No file upload required
+    - Assumes image is already built and pushed to Harbor
+    - Backend uses existing Harbor image
+    - Requires: Image must exist in Harbor registry
+    """
+    logger.info(f"🐳 Using HARBOR MODE for algorithm: {algo_folder}")
+
+    # Check required files
+    if not check_required_files(algo_folder):
+        logger.error(f"Missing required files in {algo_folder}")
+        return False
+
+    try:
+        # Read info.toml to get algorithm name and env_vars
+        info_file = algo_folder / "info.toml"
+        algorithm_name, env_vars = parse_toml_config(info_file)
+
+        # Convert env_vars dict to list of keys only
+        env_vars_list = None
+        if env_vars:
+            env_vars_list = list(env_vars.keys())
+
+        logger.info(f"Uploading algorithm: {algorithm_name}")
+        if env_vars:
+            logger.info(f"Environment variables: {env_vars}")
+
+        with RCABenchClient(base_url=base_url) as api_client:
+            api = ContainersApi(api_client=api_client)
+
+            # Harbor mode - only pass image and tag
+            resp = api.api_v2_containers_post(
+                type="algorithm",
+                name=algorithm_name,
+                image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
+                tag="latest",
+                command="bash /entrypoint.sh",
+                env_vars=env_vars_list,
+                build_source_type="harbor",
+                harbor_image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
+                harbor_tag="latest",
+            )
+
+        logger.info(f"Response: {resp}")
+
+        if resp.code == 200:
+            logger.info(f"✅ Successfully uploaded algorithm: {algorithm_name}")
+            return True
+        else:
+            logger.error(f"❌ Upload failed: {algorithm_name}")
+            return False
+
+    except Exception as e:
+        logger.error(f"❌ Algorithm upload failed {algo_folder}: {e}")
+        return False
+
+
+def main():
+    app()
