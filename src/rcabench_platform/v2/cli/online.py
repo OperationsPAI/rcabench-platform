@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Annotated
 
 import polars as pl
-import tomllib as tomli
+import tomli
 import typer
 from rcabench.openapi import (
     AlgorithmsApi,
