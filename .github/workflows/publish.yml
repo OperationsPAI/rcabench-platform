@@ -11,8 +11,24 @@ permissions:
   id-token: write
 
 jobs:
+  test:
+    name: Test multiple Python versions
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@just
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+      - run: just ci
+
   pypi:
     name: Publish to PyPI
+    needs: test
     runs-on: ubuntu-latest
     environment:
       name: pypi
