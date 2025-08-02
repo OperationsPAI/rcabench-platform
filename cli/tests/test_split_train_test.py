@@ -11,6 +11,8 @@ from rcabench_platform.v2.datasets.spec import delete_dataset, get_datapack_list
 def get_previous_datapacks(datasets_api: DatasetsApi) -> list[str]:
     resp = datasets_api.api_v2_datasets_get(search="pair-diag")
     assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+    if len(resp.data.items) == 0:
+        return []
     dataset = resp.data.items[0]
 
     if dataset.injections is not None:
