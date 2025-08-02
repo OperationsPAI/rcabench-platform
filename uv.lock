@@ -3344,7 +3344,7 @@ wheels = [
 
 [[package]]
 name = "rcabench"
-version = "1.1.19"
+version = "1.1.20"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -3362,9 +3362,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wheel" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/8d/e6/431b03eaad1882aad11461ab7785bfe44b4d2450a5b4651e640e6b750dbb/rcabench-1.1.19.tar.gz", hash = "sha256:352a658d352515706be4c8af31982f7e017e6b3ca46338c57a3b5aef5c727035", size = 247307, upload-time = "2025-07-31T10:13:58.63Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/4a/3c/f1d975b4f9d2d65c085d185879cf0705a6ca04ea040c3a5b4d9f33b32d69/rcabench-1.1.20.tar.gz", hash = "sha256:0ead5f9225d0bf333e3007fb589642bfc2fc9eeaf4b098a104e4f515b32eaebc", size = 252151, upload-time = "2025-08-02T11:03:05.609Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/85/ad/2c0f49087a0ac9176c23d943b3b6347e35f36ae22505e78113ceb3539993/rcabench-1.1.19-py3-none-any.whl", hash = "sha256:58a33eede60c3457dac8f5a09ae37fe52c1579f04de2f2bc6339ee7cfc3a702d", size = 648998, upload-time = "2025-07-31T10:13:56.911Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/dd/69/0351f66a2d085b0a126cac88d89706da63ed3bb807128e5a9f19ea36f504/rcabench-1.1.20-py3-none-any.whl", hash = "sha256:e13544ba6dc3be12a41cffec32d76f74d6b04293aadc8014070ab39998b11214", size = 667518, upload-time = "2025-08-02T11:03:04.024Z" },
 ]
 
 [[package]]
@@ -3439,7 +3439,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.31.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
-    { name = "rcabench", specifier = ">=1.1.19" },
+    { name = "rcabench", specifier = ">=1.1.20" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "scikit-learn", specifier = ">=1.7.0" },
     { name = "scipy", specifier = ">=1.15.0" },

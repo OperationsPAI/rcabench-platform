@@ -13,6 +13,7 @@ from rcabench.openapi import (
     DtoAlgorithmItem,
     DtoBatchAlgorithmExecutionRequest,
     DtoDatasetV2SearchReq,
+    DtoExecutionLabels,
     DtoInjectionV2SearchReq,
     InjectionsApi,
 )
@@ -121,6 +122,7 @@ def submit_execution(
     dataset_versions: Annotated[str | None, typer.Option("-dsv", "--dataset-version")] = None,
     envs: Annotated[list[str] | None, typer.Option("--env")] = None,
     base_url: Annotated[str | None, typer.Option("--base-url")] = None,
+    tag: Annotated[str | None, typer.Option("--tag")] = None,
 ):
     assert algorithms, "At least one algorithm must be specified."
     assert datapacks or datasets, "At least one datapack or dataset must be specified."
@@ -171,6 +173,7 @@ def submit_execution(
                 request=DtoBatchAlgorithmExecutionRequest(
                     executions=payloads,
                     project_name=project,
+                    labels=DtoExecutionLabels(tag=tag),
                 )
             )
             assert resp.data is not None
