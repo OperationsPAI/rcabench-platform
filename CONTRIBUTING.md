@@ -71,7 +71,7 @@ docker compose down
 Mount JuiceFS to your machine:
 
 ```bash
-sudo juicefs mount redis://10.10.10.38:6379/1 /mnt/jfs -d --cache-size=1024
+sudo juicefs mount redis://10.10.10.119:6379/1 /mnt/jfs -d --cache-size=1024
 ```
 
 See [infra/README.md](infra/README.md) for more details.

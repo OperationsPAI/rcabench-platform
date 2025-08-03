@@ -14,7 +14,7 @@ from rcabench_platform.v2.logging import timeit
 
 def get_minio_client() -> minio.Minio:
     return minio.Minio(
-        "10.10.10.38:9000",
+        "10.10.10.119:9000",
         access_key="minioadmin",
         secret_key="minioadmin",
         secure=False,
