@@ -3344,7 +3344,7 @@ wheels = [
 
 [[package]]
 name = "rcabench"
-version = "1.1.20"
+version = "1.1.21"
 source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -3362,14 +3362,14 @@ dependencies = [
     { name = "urllib3" },
     { name = "wheel" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/4a/3c/f1d975b4f9d2d65c085d185879cf0705a6ca04ea040c3a5b4d9f33b32d69/rcabench-1.1.20.tar.gz", hash = "sha256:0ead5f9225d0bf333e3007fb589642bfc2fc9eeaf4b098a104e4f515b32eaebc", size = 252151, upload-time = "2025-08-02T11:03:05.609Z" }
+sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/46/a7/9f3340f3740600ee4e5386d03ea0e4f8115f122d58a7a6bfc4e48cfbbf98/rcabench-1.1.21.tar.gz", hash = "sha256:17cc66d1d8a161f3df7673c340c712c94b3ab6f9870744fa8783771d607dfab7", size = 252280, upload-time = "2025-08-03T02:09:46.824Z" }
 wheels = [
-    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/dd/69/0351f66a2d085b0a126cac88d89706da63ed3bb807128e5a9f19ea36f504/rcabench-1.1.20-py3-none-any.whl", hash = "sha256:e13544ba6dc3be12a41cffec32d76f74d6b04293aadc8014070ab39998b11214", size = 667518, upload-time = "2025-08-02T11:03:04.024Z" },
+    { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/74/92/eb486b2c9b2f9192498fac3091f2488cd5fc86fa36fb7b165c13e44f3a60/rcabench-1.1.21-py3-none-any.whl", hash = "sha256:efbd3668a90a15b840141634a2e88748f665c39811a631c97936a538cab8d29f", size = 667677, upload-time = "2025-08-03T02:09:45.39Z" },
 ]
 
 [[package]]
 name = "rcabench-platform"
-version = "0.3.17"
+version = "0.3.18"
 source = { editable = "." }
 dependencies = [
     { name = "backports-strenum", marker = "python_full_version < '3.11'" },
@@ -3439,7 +3439,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.31.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
-    { name = "rcabench", specifier = ">=1.1.20" },
+    { name = "rcabench", specifier = ">=1.1.21" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "scikit-learn", specifier = ">=1.7.0" },
     { name = "scipy", specifier = ">=1.15.0" },

@@ -25,6 +25,11 @@ from ..config import get_config
 from ..logging import logger, timeit
 from ..utils.dataframe import print_dataframe
 from ..utils.serde import save_json
+from ..metrics.algo_metrics import (
+    get_metrics_by_dataset,
+    get_multi_algorithms_metrics_by_dataset,
+    get_algorithms_metrics_across_datasets,
+)
 
 app = typer.Typer()
 
@@ -118,21 +123,22 @@ def submit_execution(
     algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
     project: Annotated[str | None, typer.Option("-p", "--project")] = None,
     datapacks: Annotated[list[str] | None, typer.Option("-d", "--datapack")] = None,
-    datasets: Annotated[str | None, typer.Option("-ds", "--dataset")] = None,
-    dataset_versions: Annotated[str | None, typer.Option("-dsv", "--dataset-version")] = None,
+    dataset: Annotated[str | None, typer.Option("-ds", "--dataset")] = None,
+    dataset_version: Annotated[str | None, typer.Option("-dsv", "--dataset-version")] = None,
     envs: Annotated[list[str] | None, typer.Option("--env")] = None,
     base_url: Annotated[str | None, typer.Option("--base-url")] = None,
     tag: Annotated[str | None, typer.Option("--tag")] = None,
 ):
     assert algorithms, "At least one algorithm must be specified."
-    assert datapacks or datasets, "At least one datapack or dataset must be specified."
-    assert not (datapacks and datasets), "Cannot specify both datapacks and datasets."
+    assert datapacks or dataset, "At least one datapack or dataset must be specified."
+    assert not (datapacks and dataset), "Cannot specify both datapacks and datasets."
     assert project, "Project name must be specified."
+    assert tag, "Tag must be specified."
 
-    dataset_list = [datasets.strip()] if datasets and datasets.strip() else []
-    dataset_version_list = [dataset_versions.strip()] if dataset_versions and dataset_versions.strip() else []
+    dataset_list = [dataset.strip()] if dataset and dataset.strip() else []
+    dataset_version_list = [dataset_version.strip()] if dataset_version and dataset_version.strip() else []
 
-    if datasets and dataset_versions and len(dataset_list) != len(dataset_version_list):
+    if dataset and dataset_version and len(dataset_list) != len(dataset_version_list):
         raise ValueError("The number of datasets and dataset versions must be the same.")
 
     env_vars: dict[str, str] = {}
@@ -307,6 +313,56 @@ def trace(trace_id: str, base_url: str | None = None, timeout: int = 600):
     res = sdk.trace.stream_trace_events(trace_id=trace_id, timeout=timeout)
     for event in res:
         logger.info(event.model_dump_json(indent=2))
+
+
+@app.command()
+def metrics(
+    algorithm: Annotated[str, typer.Option("-a", "--algorithm")],
+    dataset: Annotated[str, typer.Option("-d", "--dataset")],
+    dataset_version: Annotated[str | None, typer.Option("-dv", "--dataset-version")] = None,
+    tag: Annotated[str | None, typer.Option("--tag")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
+):
+    metrics = get_metrics_by_dataset(algorithm, dataset, dataset_version, tag, base_url)
+
+    df = pl.DataFrame(metrics)
+    print_dataframe(df)
+
+
+@app.command()
+def multi_metrics(
+    algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
+    dataset: Annotated[str, typer.Option("-d", "--dataset")],
+    dataset_version: Annotated[str | None, typer.Option("-dv", "--dataset-version")] = None,
+    tag: Annotated[str | None, typer.Option("--tag")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
+    level: Annotated[str | None, typer.Option("-l", "--level")] = None,
+):
+    """
+    Compare multiple algorithms on the same (dataset, version)
+
+    Supported level parameter values: service, span, pod, container, function, metric
+    If level is not specified, all levels will be displayed
+    """
+    metrics = get_multi_algorithms_metrics_by_dataset(algorithms, dataset, dataset_version, tag, base_url, level)
+
+    df = pl.DataFrame(metrics)
+    print_dataframe(df)
+
+
+@app.command()
+def cross_dataset_metrics(
+    algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
+    datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
+    dataset_versions: Annotated[list[str], typer.Option("-dv", "--dataset-version")],
+    tag: Annotated[str | None, typer.Option("--tag")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
+    level: Annotated[str | None, typer.Option("-l", "--level")] = None,
+):
+    metrics = get_algorithms_metrics_across_datasets(algorithms, datasets, dataset_versions, tag, base_url, level)
+
+    df = pl.DataFrame(metrics)
+    print_dataframe(df)
 
 
 def main():

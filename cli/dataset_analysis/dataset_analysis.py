@@ -16,7 +16,7 @@ from rcabench_platform.v2.datasets.spec import get_datapack_folder
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger
 from rcabench_platform.v2.metrics.dataset_loader import DatasetLoader
-from rcabench_platform.v2.metrics.metrics_calculator import MetricsCalculator
+from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 matplotlib.use("Agg")
@@ -334,7 +334,7 @@ def metrics(dataset: str, datapack: str):
     # Initialize DatasetLoader and MetricsCalculator
     try:
         loader = DatasetLoader(dataset, datapack)
-        calculator = MetricsCalculator(loader)
+        calculator = DatasetMetricsCalculator(loader)
 
         results = {}
 
@@ -391,7 +391,7 @@ def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, 
     Process metrics for a single datapack and return (datapack_name, results)
     """
     loader = DatasetLoader(dataset, datapack)
-    calculator = MetricsCalculator(loader)
+    calculator = DatasetMetricsCalculator(loader)
 
     # Calculate metrics
     results = {}

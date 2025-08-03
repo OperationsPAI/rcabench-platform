@@ -5,7 +5,7 @@ import networkx as nx
 from .dataset_loader import DatasetLoader
 
 
-class MetricsCalculator:
+class DatasetMetricsCalculator:
     def __init__(self, loader: DatasetLoader):
         self.loader = loader
         self.graph = loader.get_service_dependency_graph()
