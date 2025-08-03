@@ -12,10 +12,14 @@ permissions:
 
 jobs:
   test:
-    name: Test multiple Python versions
+    name: Test
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,5 +42,5 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: just ci
+      - run: uv build
       - run: uv publish --trusted-publishing always
