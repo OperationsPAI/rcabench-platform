@@ -10,6 +10,7 @@ from rcabench.openapi import (
 )
 
 from ..clients.rcabench_ import RCABenchClient
+from ..logging import logger
 
 
 class AlgoMetrics(TypedDict):
@@ -277,8 +278,8 @@ def get_algorithms_metrics_across_datasets(
                         )
             except Exception as e:
                 # If there's an error getting metrics for this combination, skip it
-                print(
-                    f"Warning: Failed to get metrics for algorithm={algorithm}, dataset={dataset}, version={dataset_version}: {e}"
+                logger.warning(
+                    f"Warning: Failed to get metrics for algorithm={algorithm}, dataset={dataset}, version={dataset_version}: {e}"  # noqa: E501
                 )
                 continue
 

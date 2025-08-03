@@ -23,13 +23,13 @@ from ..clients.k8s import download_kube_info
 from ..clients.rcabench_ import RCABenchClient
 from ..config import get_config
 from ..logging import logger, timeit
-from ..utils.dataframe import print_dataframe
-from ..utils.serde import save_json
 from ..metrics.algo_metrics import (
+    get_algorithms_metrics_across_datasets,
     get_metrics_by_dataset,
     get_multi_algorithms_metrics_by_dataset,
-    get_algorithms_metrics_across_datasets,
 )
+from ..utils.dataframe import print_dataframe
+from ..utils.serde import save_json
 
 app = typer.Typer()
 
