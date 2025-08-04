@@ -187,7 +187,7 @@ class DatasetMetricsCalculator:
 
         for root_service in self.root_services:
             if root_service in self.graph:
-                degree = int(self.graph.degree[root_service])
+                degree = int(self.graph.degree[root_service])  # type: ignore
                 if degree > max_degree:
                     max_degree = degree
 

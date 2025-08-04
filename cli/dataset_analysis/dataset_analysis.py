@@ -387,9 +387,6 @@ def metrics(dataset: str, datapack: str):
 
 
 def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, dict[str, Any]]:
-    """
-    Process metrics for a single datapack and return (datapack_name, results)
-    """
     loader = DatasetLoader(dataset, datapack)
     calculator = DatasetMetricsCalculator(loader)
 
@@ -430,6 +427,7 @@ def batch_metrics(dataset: str):
         tasks,
         parallel=cpu // 4,
         cpu_limit_each=4,
+        ignore_exceptions=True,
     )
 
     # Convert results list to dictionary

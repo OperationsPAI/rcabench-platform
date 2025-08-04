@@ -8,8 +8,19 @@ from typing import Any, Literal, TypedDict
 
 import numpy as np
 import polars as pl
+from rcabench.openapi import (
+    AlgorithmsApi,
+    DtoDetectorResultItem,
+    DtoDetectorResultRequest,
+    DtoInjectionV2CustomLabelManageReq,
+    DtoInjectionV2LabelManageReq,
+    DtoLabelItem,
+    InjectionsApi,
+)
 
 from rcabench_platform.v2.cli.main import app
+from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.datasets.rcabench import valid
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger, timeit
 from rcabench_platform.v2.metrics.ad.configs import (
@@ -94,16 +105,6 @@ class IssueCategories(TypedDict):
     no_issues: int
 
 
-class Notations(TypedDict):
-    """Analysis notation information"""
-
-    issue_categories: IssueCategories
-    total_endpoints: int
-    skipped_endpoints: int
-    absolute_anomaly: bool
-    anomaly_count: int
-
-
 class ConclusionRow(TypedDict):
     """Conclusion row data"""
 
@@ -121,14 +122,63 @@ class ConclusionRow(TypedDict):
     NormalP99: float
 
 
+class AnalysisMetrics:
+    def __init__(self):
+        self.processed_endpoints = 0
+        self.skipped_endpoints = 0
+        self.anomaly_count = 0
+        self.absolute_anomaly = False
+        self.issue_categories = {
+            "latency_only": 0,
+            "success_rate_only": 0,
+            "both_latency_and_success_rate": 0,
+            "no_issues": 0,
+        }
+
+    def increment_processed(self) -> None:
+        self.processed_endpoints += 1
+
+    def increment_skipped(self) -> None:
+        self.skipped_endpoints += 1
+
+    def increment_anomaly(self) -> None:
+        self.anomaly_count += 1
+
+    def set_absolute_anomaly(self) -> None:
+        self.absolute_anomaly = True
+
+    def categorize_issue(self, has_latency: bool, has_success_rate: bool) -> None:
+        if has_latency and has_success_rate:
+            self.issue_categories["both_latency_and_success_rate"] += 1
+        elif has_latency:
+            self.issue_categories["latency_only"] += 1
+        elif has_success_rate:
+            self.issue_categories["success_rate_only"] += 1
+        else:
+            self.issue_categories["no_issues"] += 1
+
+    def is_latency_only_dataset(self) -> bool:
+        return (
+            self.issue_categories["latency_only"] > 0
+            and self.issue_categories["success_rate_only"] == 0
+            and self.issue_categories["both_latency_and_success_rate"] == 0
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_endpoints": self.processed_endpoints,
+            "skipped_endpoints": self.skipped_endpoints,
+            "anomaly_count": self.anomaly_count,
+            "absolute_anomaly": self.absolute_anomaly,
+            "issue_categories": self.issue_categories.copy(),
+        }
+
+
 class AnalysisState(TypedDict):
     """Analysis state"""
 
     conclusion_data: list[ConclusionRow]
-    anomaly_count: int
-    processed_endpoints: int
-    skipped_endpoints: int
-    notations: Notations
+    metrics: AnalysisMetrics
 
 
 class EndpointStats(TypedDict):
@@ -153,7 +203,7 @@ class AnalysisResult(TypedDict):
     is_latency_only: bool
     total_endpoints: int
     anomaly_count: int
-    issue_categories: IssueCategories
+    issue_categories: dict[str, int]
     absolute_anomaly: bool
 
 
@@ -397,7 +447,7 @@ def build_conclusion_row(
     }
 
 
-def setup_paths_and_validation(in_p: Path | None, ou_p: Path | None) -> tuple[Path, Path, Path, Path]:
+def setup_paths_and_validation(in_p: Path | None, ou_p: Path | None) -> tuple[Path, Path]:
     """Setup and validate input/output paths and trace files."""
     if in_p is None:
         in_p = Path(os.environ.get("INPUT_PATH", ""))
@@ -412,33 +462,14 @@ def setup_paths_and_validation(in_p: Path | None, ou_p: Path | None) -> tuple[Pa
         os.makedirs(output_path)
         logger.info(f"Created output directory: {output_path}")
 
-    normal_trace = Path(input_path) / "normal_traces.parquet"
-    abnormal_trace = Path(input_path) / "abnormal_traces.parquet"
-    assert normal_trace.exists(), f"Normal trace file does not exist: {normal_trace}"
-    assert abnormal_trace.exists(), f"Abnormal trace file does not exist: {abnormal_trace}"
-
-    return input_path, output_path, normal_trace, abnormal_trace
+    return input_path, output_path
 
 
 def initialize_analysis_state() -> AnalysisState:
     """Initialize the analysis state with default values."""
     return {
         "conclusion_data": [],
-        "anomaly_count": 0,
-        "processed_endpoints": 0,
-        "skipped_endpoints": 0,
-        "notations": {
-            "issue_categories": {
-                "latency_only": 0,
-                "success_rate_only": 0,
-                "both_latency_and_success_rate": 0,
-                "no_issues": 0,
-            },
-            "total_endpoints": 0,
-            "skipped_endpoints": 0,
-            "absolute_anomaly": False,
-            "anomaly_count": 0,
-        },
+        "metrics": AnalysisMetrics(),
     }
 
 
@@ -455,7 +486,7 @@ def get_percentile_config() -> list[tuple[str, str, Any]]:
 def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None:
     """Handle endpoints that don't exist in normal data."""
     logger.warning(f"New endpoint found: {k} - checking against direct thresholds")
-    state["skipped_endpoints"] += 1
+    state["metrics"].increment_skipped()
 
     abnormal_tag = {}
 
@@ -515,7 +546,7 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
 
     # Count anomalies and categorize issues
     if abnormal_tag:
-        state["anomaly_count"] += 1
+        state["metrics"].increment_anomaly()
 
         # Categorize issues
         latency_keys = [
@@ -528,15 +559,10 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
         has_latency_issue = any(key in abnormal_tag for key in latency_keys)
         has_success_rate_issue = "succ_rate" in abnormal_tag
 
-        if has_latency_issue and has_success_rate_issue:
-            state["notations"]["issue_categories"]["both_latency_and_success_rate"] += 1
-        elif has_latency_issue:
-            state["notations"]["issue_categories"]["latency_only"] += 1
-        elif has_success_rate_issue:
-            state["notations"]["issue_categories"]["success_rate_only"] += 1
+        state["metrics"].categorize_issue(has_latency_issue, has_success_rate_issue)
     else:
         # No issues detected
-        state["notations"]["issue_categories"]["no_issues"] += 1
+        state["metrics"].categorize_issue(False, False)
 
     # Add to conclusion data
     state["conclusion_data"].append(build_conclusion_row(k, v, {}, abnormal_tag))
@@ -586,9 +612,8 @@ def detect_latency_anomalies(
                     "absolute_change": result.get("abnormal_value"),
                     "slo_violated": True,
                 }
-                # Check if it's a rule-based anomaly
                 if result.get("rule_anomaly"):
-                    state["notations"]["absolute_anomaly"] = True
+                    state["metrics"].set_absolute_anomaly()
 
     return abnormal_tag
 
@@ -625,29 +650,9 @@ def detect_success_rate_anomalies(
             f"drop={success_rate_result.get('rate_drop', 0.0):.3f}, "
             f"p_value={success_rate_result.get('p_value', 0.0):.3f}"
         )
-        state["notations"]["absolute_anomaly"] = True
+        state["metrics"].set_absolute_anomaly()
 
     return abnormal_tag
-
-
-def categorize_issues(
-    abnormal_tag: dict[str, Any],
-    percentiles: list[tuple[str, str, Any]],
-    state: AnalysisState,
-) -> None:
-    """Categorize the types of issues found."""
-    latency_keys = [x[1] for x in percentiles]
-    has_latency_issue = any(key in abnormal_tag for key in latency_keys)
-    has_success_rate_issue = "succ_rate" in abnormal_tag
-
-    if has_latency_issue and has_success_rate_issue:
-        state["notations"]["issue_categories"]["both_latency_and_success_rate"] += 1
-    elif has_latency_issue:
-        state["notations"]["issue_categories"]["latency_only"] += 1
-    elif has_success_rate_issue:
-        state["notations"]["issue_categories"]["success_rate_only"] += 1
-    else:
-        state["notations"]["issue_categories"]["no_issues"] += 1
 
 
 def analyze_single_endpoint(
@@ -658,7 +663,7 @@ def analyze_single_endpoint(
     state: AnalysisState,
 ) -> None:
     """Analyze a single endpoint for anomalies."""
-    state["processed_endpoints"] += 1
+    state["metrics"].increment_processed()
 
     if k not in normal_stat:
         handle_new_endpoint(k, v, state)
@@ -672,143 +677,118 @@ def analyze_single_endpoint(
 
     # Count anomalies
     if abnormal_tag:
-        state["anomaly_count"] += 1
+        state["metrics"].increment_anomaly()
 
     # Categorize issues
-    categorize_issues(abnormal_tag, percentiles, state)
+    latency_keys = [x[1] for x in percentiles]
+    has_latency_issue = any(key in abnormal_tag for key in latency_keys)
+    has_success_rate_issue = "succ_rate" in abnormal_tag
+    state["metrics"].categorize_issue(has_latency_issue, has_success_rate_issue)
 
     # Add to conclusion data
     state["conclusion_data"].append(build_conclusion_row(k, v, normal_stat, abnormal_tag))
 
 
-def validate_results(
-    state: AnalysisState,
-    normal_stat: dict[str, Any],
-    abnormal_stat: dict[str, Any],
-    input_path: Path,
-) -> None:
-    """Validate that we have conclusion data and log debug information if not."""
-    if not state["conclusion_data"]:
-        logger.error("No conclusion data generated!")
-        logger.error(f"Normal stat keys: {list(normal_stat.keys())[:10]}...")
-        logger.error(f"Abnormal stat keys: {list(abnormal_stat.keys())[:10]}...")
-        logger.error(f"Normal stat count: {len(normal_stat)}")
-        logger.error(f"Abnormal stat count: {len(abnormal_stat)}")
+def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[DtoLabelItem]]:
+    """Create tags and labels from analysis state."""
+    tags = []
+    labels = []
+    metrics = state["metrics"]
 
-        normal_keys = set(normal_stat.keys())
-        abnormal_keys = set(abnormal_stat.keys())
-        common_keys = normal_keys.intersection(abnormal_keys)
-        logger.error(f"Common keys count: {len(common_keys)}")
-        if common_keys:
-            logger.error(f"Sample common keys: {list(common_keys)[:5]}")
+    # Add datapack label
+    if metrics.anomaly_count > 0:
+        labels.append(DtoLabelItem(key="anomaly_count", value=str(metrics.anomaly_count)))
+    if metrics.skipped_endpoints > 0:
+        labels.append(DtoLabelItem(key="skipped_endpoints", value=str(metrics.skipped_endpoints)))
 
-    assert state["conclusion_data"], f"No conclusion data generated! {input_path}, data: {state['conclusion_data']}"
+    for category, count in metrics.issue_categories.items():
+        if count > 0:
+            labels.append(DtoLabelItem(key=f"issue_{category}", value=str(count)))
+
+    # Determine anomaly severity based on issue presence
+    has_any_issues = (
+        metrics.issue_categories["latency_only"] > 0
+        or metrics.issue_categories["success_rate_only"] > 0
+        or metrics.issue_categories["both_latency_and_success_rate"] > 0
+    )
+
+    # may_anomaly covers all cases with issues, no_anomaly covers cases without issues
+    if has_any_issues:
+        tags.append("may_anomaly")
+    else:
+        tags.append("no_anomaly")
+
+    # absolute_anomaly is a subset of may_anomaly for severe cases
+    if metrics.absolute_anomaly:
+        tags.append("absolute_anomaly")
+
+    # Keep specific issue type tags for detailed analysis
+    if metrics.issue_categories["latency_only"] > 0:
+        tags.append("has_latency_issues")
+    elif metrics.issue_categories["success_rate_only"] > 0:
+        tags.append("has_success_rate_issues")
+    elif metrics.issue_categories["both_latency_and_success_rate"] > 0:
+        tags.append("has_mixed_issues")
+
+    tags.append("analysis_completed")
+    return tags, labels
 
 
 def save_analysis_results(state: AnalysisState, output_path: Path) -> AnalysisState:
-    """Save the analysis results to files."""
-    # Check if we have conclusion data to save
     if not state["conclusion_data"]:
         logger.warning("No conclusion data available, skipping file creation")
-        # Update final notations
-        state["notations"]["total_endpoints"] = state["processed_endpoints"]
-        state["notations"]["skipped_endpoints"] = state["skipped_endpoints"]
-        state["notations"]["anomaly_count"] = state["anomaly_count"]
         return state
 
-    # Save conclusion CSV
     conclusion = pl.DataFrame(state["conclusion_data"])
     conclusion.write_csv(Path(output_path) / "conclusion.csv")
     logger.info(f"Results saved to {Path(output_path) / 'conclusion.csv'}")
 
-    # Update final notations
-    state["notations"]["total_endpoints"] = state["processed_endpoints"]
-    state["notations"]["skipped_endpoints"] = state["skipped_endpoints"]
-    state["notations"]["anomaly_count"] = state["anomaly_count"]
-
-    # Log summary
-    logger.info("Issue category summary:")
-    for category, count in state["notations"]["issue_categories"].items():
-        count_int = int(count) if isinstance(count, int) else 0
-        percentage = (count_int / state["processed_endpoints"] * 100) if state["processed_endpoints"] > 0 else 0
-        logger.info(f"  {category}: {count} ({percentage:.1f}%)")
-
-    # Save notations JSON
-    with open(Path(output_path) / "notations.json", "w") as f:
-        json.dump(state["notations"], f, indent=4)
-
     return state
-
-
-def is_latency_only_dataset(state: AnalysisState) -> bool:
-    issue_categories = state["notations"]["issue_categories"]
-    return (
-        issue_categories["latency_only"] > 0
-        and issue_categories["success_rate_only"] == 0
-        and issue_categories["both_latency_and_success_rate"] == 0
-    )
 
 
 @app.command()
 @timeit()
-def run(in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True) -> AnalysisResult:
-    """Run RCA analysis and return metadata about the analysis."""
-    input_path, output_path, normal_trace, abnormal_trace = setup_paths_and_validation(in_p, ou_p)
+def run(
+    in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True, online: bool = True
+) -> AnalysisResult | None:
+    input_path, output_path = setup_paths_and_validation(in_p, ou_p)
+    if not valid(input_path)[1]:
+        invalid_f = input_path / ".invalid"
+        invalid_f.touch()
+        return None
+
+    if online:
+        algorithm_id_str = os.environ.get("ALGORITHM_ID")
+        execution_id_str = os.environ.get("EXECUTION_ID")
+        assert algorithm_id_str is not None, "ALGORITHM_ID is not set"
+        assert execution_id_str is not None, "EXECUTION_ID is not set"
+        algorithm_id = int(algorithm_id_str)
+        execution_id = int(execution_id_str)
+
+    datapack_name = input_path.name
+    normal_trace = input_path / "normal_traces.parquet"
+    abnormal_trace = input_path / "abnormal_traces.parquet"
 
     normal_stat = preprocess_trace(normal_trace)
     abnormal_stat = preprocess_trace(abnormal_trace)
 
     # Check if we have valid data for analysis
-    if not normal_stat:
-        logger.error("No endpoints found in normal trace data, terminating analysis.")
-        # Return default result without processing
-        result: AnalysisResult = {
-            "datapack_name": input_path.name,
-            "is_latency_only": False,
-            "total_endpoints": 0,
-            "anomaly_count": 0,
-            "issue_categories": {
-                "latency_only": 0,
-                "success_rate_only": 0,
-                "both_latency_and_success_rate": 0,
-                "no_issues": 0,
-            },
-            "absolute_anomaly": False,
-        }
-        return result
-
-    if not abnormal_stat:
-        logger.error("No endpoints found in abnormal trace data, terminating analysis.")
-        # Return default result without processing
-        result: AnalysisResult = {
-            "datapack_name": input_path.name,
-            "is_latency_only": False,
-            "total_endpoints": 0,
-            "anomaly_count": 0,
-            "issue_categories": {
-                "latency_only": 0,
-                "success_rate_only": 0,
-                "both_latency_and_success_rate": 0,
-                "no_issues": 0,
-            },
-            "absolute_anomaly": False,
-        }
-        return result
+    if not normal_stat or not abnormal_stat:
+        logger.error("No endpoints found in normal or abnormal trace data, terminating analysis.")
+        return None
 
     # Initialize analysis state and configuration
     state = initialize_analysis_state()
     percentiles = get_percentile_config()
 
-    # Process each endpoint
     for k, v in abnormal_stat.items():
         analyze_single_endpoint(k, v, normal_stat, percentiles, state)
 
-    # Validate and save results
-    validate_results(state, normal_stat, abnormal_stat, input_path)
-    state = save_analysis_results(state, output_path)
+    if not state["conclusion_data"]:
+        logger.warning("No anomalies detected, skipping file creation")
+        return None
 
-    # Check if this is a latency-only dataset
-    is_latency_only = is_latency_only_dataset(state)
+    save_analysis_results(state, output_path)  # legacy, @Lincyaw delete it in the future
 
     # Get datapack name from input path
     datapack_name = input_path.name
@@ -819,12 +799,63 @@ def run(in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True
     # Return analysis metadata
     result: AnalysisResult = {
         "datapack_name": datapack_name,
-        "is_latency_only": is_latency_only,
-        "total_endpoints": state["processed_endpoints"],
-        "anomaly_count": state["anomaly_count"],
-        "issue_categories": state["notations"]["issue_categories"],
-        "absolute_anomaly": state["notations"]["absolute_anomaly"],
+        "is_latency_only": state["metrics"].is_latency_only_dataset(),
+        "total_endpoints": state["metrics"].processed_endpoints,
+        "anomaly_count": state["metrics"].anomaly_count,
+        "issue_categories": state["metrics"].issue_categories,
+        "absolute_anomaly": state["metrics"].absolute_anomaly,
     }
+
+    with RCABenchClient() as client:
+        algo_api = AlgorithmsApi(client)
+        injection_api = InjectionsApi(client)
+
+        if online:
+            resp = algo_api.api_v2_algorithms_algorithm_id_executions_execution_id_detectors_post(
+                algorithm_id=algorithm_id,  # type: ignore
+                execution_id=execution_id,  # type: ignore
+                request=DtoDetectorResultRequest(
+                    results=[
+                        DtoDetectorResultItem(
+                            issues=i["Issues"],
+                            span_name=i["SpanName"],
+                            abnormal_avg_duration=i["AbnormalAvgDuration"],
+                            abnormal_p90=i["AbnormalP90"],
+                            abnormal_p95=i["AbnormalP95"],
+                            abnormal_p99=i["AbnormalP99"],
+                            abnormal_succ_rate=i["AbnormalSuccRate"],
+                            normal_avg_duration=i["NormalAvgDuration"],
+                            normal_p90=i["NormalP90"],
+                            normal_p95=i["NormalP95"],
+                            normal_p99=i["NormalP99"],
+                            normal_succ_rate=i["NormalSuccRate"],
+                        )
+                        for i in state["conclusion_data"]
+                    ]
+                ),
+            )
+            logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
+
+        # Create tags and labels from analysis state
+        tags, labels = create_tags_and_labels(state)
+
+        resp = injection_api.api_v2_injections_name_tags_patch(
+            name=datapack_name,
+            manage=DtoInjectionV2LabelManageReq(
+                add_tags=tags,
+                remove_tags=[],
+            ),
+        )
+        logger.info(f"Add analysis tags: response code: {resp.code}, message: {resp.message}")
+
+        resp = injection_api.api_v2_injections_name_labels_patch(
+            name=datapack_name,
+            manage=DtoInjectionV2CustomLabelManageReq(
+                add_labels=labels,
+                remove_labels=[],
+            ),
+        )
+        logger.info(f"Add analysis labels: response code: {resp.code}, message: {resp.message}")
     return result
 
 
@@ -887,87 +918,6 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
     logger.info(f"Successfully converted datapack for {injection_name}")
 
 
-def datapack_validation(datapack: Path) -> bool:
-    """Validate that a datapack directory contains all required files and they are not empty.
-
-    Returns:
-        bool: True if validation passes, False otherwise.
-    """
-    required_files = [
-        "abnormal_logs.parquet",
-        "abnormal_metrics_histogram.parquet",
-        "abnormal_metrics.parquet",
-        "abnormal_metrics_sum.parquet",
-        "abnormal_trace_id_ts.parquet",
-        "abnormal_traces.parquet",
-        "env.json",
-        "injection.json",
-        "k8s.json",
-        "normal_logs.parquet",
-        "normal_metrics_histogram.parquet",
-        "normal_metrics.parquet",
-        "normal_metrics_sum.parquet",
-        "normal_trace_id_ts.parquet",
-        "normal_traces.parquet",
-    ]
-
-    # Check if datapack directory exists
-    if not datapack.exists():
-        logger.error(f"Datapack directory does not exist: {datapack}")
-        return False
-
-    if not datapack.is_dir():
-        logger.error(f"Datapack path is not a directory: {datapack}")
-        return False
-
-    missing_files = []
-    empty_files = []
-
-    for filename in required_files:
-        file_path = datapack / filename
-
-        # Check if file exists
-        if not file_path.exists():
-            missing_files.append(filename)
-            continue
-
-        # Check if file is empty
-        try:
-            if filename.endswith(".parquet"):
-                # For parquet files, check if they contain data
-                df = pl.scan_parquet(file_path)
-                count = df.select(pl.len()).collect().item()
-                if count == 0:
-                    empty_files.append(filename)
-            elif filename.endswith(".json"):
-                # For JSON files, check if they have content
-                file_size = file_path.stat().st_size
-                if file_size == 0:
-                    empty_files.append(filename)
-                else:
-                    # Also validate that JSON is parseable
-                    with open(file_path) as f:
-                        try:
-                            json.load(f)
-                        except json.JSONDecodeError:
-                            empty_files.append(f"{filename} (invalid JSON)")
-        except Exception as e:
-            logger.error(f"Error validating file {filename}: {e}")
-            empty_files.append(f"{filename} (validation error)")
-
-    # Log errors if validation fails
-    if missing_files:
-        logger.error(f"Missing files in {datapack}: {', '.join(missing_files)}")
-
-    if empty_files:
-        logger.error(f"Empty or invalid files in {datapack}: {', '.join(empty_files)}")
-
-    if missing_files or empty_files:
-        return False
-
-    return True
-
-
 @app.command()
 @timeit()
 def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
@@ -988,7 +938,7 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     assert cpu is not None, "Cannot determine CPU count"
     parallel = max(1, cpu // 4)
 
-    validation_tasks = [functools.partial(datapack_validation, dp) for dp in datapack_paths]
+    validation_tasks = [functools.partial(valid, dp) for dp in datapack_paths]
 
     # Run validation in parallel
     validation_results = fmap_processpool(validation_tasks, parallel=parallel, cpu_limit_each=1, ignore_exceptions=True)
@@ -997,7 +947,7 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     valid_datapacks = []
     invalid_datapacks: list[Path] = []
 
-    for i, (datapack_path, is_valid) in enumerate(zip(datapack_paths, validation_results)):
+    for datapack_path, is_valid in validation_results:
         if is_valid:
             valid_datapacks.append(datapack_path)
         else:
@@ -1052,6 +1002,10 @@ def local_test(datapack: str):
 
     result = run(convert=False)
 
+    if result is None:
+        logger.error(f"Analysis failed for datapack: {datapack}")
+        return {}
+
     logger.info(f"Analysis Results for {datapack}:")
     logger.info(f"  - Is Latency Only: {result['is_latency_only']}")
     logger.info(f"  - Total Endpoints: {result['total_endpoints']}")
@@ -1082,32 +1036,7 @@ def patch_detection():
         try:
             if not datapack.is_dir():
                 continue
-
-            trace_files = [
-                datapack / "abnormal_traces.parquet",
-                datapack / "normal_traces.parquet",
-            ]
-            missing_files = [f.name for f in trace_files if not f.exists()]
-            assert all(f.exists() for f in trace_files), f"Missing trace files in {datapack}: {missing_files}"
-
-            # Assert injection.json exists
-            injection_file = datapack / "injection.json"
-            assert injection_file.exists(), f"Missing injection.json in {str(datapack)}"
-
-            # Validate injection.json content
-            with open(injection_file) as f:
-                injection = json.load(f)
-                injection_name = injection.get("injection_name")
-                assert injection_name and isinstance(injection_name, str), (
-                    f"Invalid injection_name in {datapack.name}/injection.json: {injection_name}"
-                )
-
-            for trace_file in trace_files:
-                df = pl.scan_parquet(trace_file)
-                count = df.select(pl.len()).collect().item()
-                assert count > 0, f"Empty trace file: {trace_file}"
-
-            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=False))
+            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=False, online=False))
         except Exception as e:
             assertions.append((datapack.name, str(e)))
 
@@ -1118,7 +1047,7 @@ def patch_detection():
     assert cpu is not None, "Cannot determine CPU count"
 
     parallel = cpu // 4
-    results = fmap_processpool(tasks, parallel=parallel, cpu_limit_each=4, ignore_exceptions=True)
+    results = fmap_processpool(tasks, parallel=parallel, cpu_limit_each=4, ignore_exceptions=False)
 
     # Create temp directory if it doesn't exist
     temp_dir = Path("temp")
@@ -1131,8 +1060,9 @@ def patch_detection():
 
     with open("temp/patch_results.txt", "w") as f:
         for result in results:
-            if result["is_latency_only"] and not result["absolute_anomaly"]:
-                f.write(f"{result['datapack_name']}\n")
+            if result is not None:
+                if result["is_latency_only"] and not result["absolute_anomaly"]:
+                    f.write(f"{result['datapack_name']}\n")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,13 @@
 import json
 import math
+import os
 import random
 import re
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
+
+import polars as pl
 
 from ..logging import logger, timeit
 from ..sources.convert import link_subset
@@ -237,3 +241,65 @@ def rcabench_split_train_test(
     )
 
     return train_datapacks, test_datapacks
+
+
+def valid(path: Path) -> tuple[Path, bool]:
+    required_files = [
+        # Parquet files
+        "abnormal_logs.parquet",
+        "abnormal_metrics_sum.parquet",
+        "abnormal_metrics_histogram.parquet",
+        "abnormal_trace_id_ts.parquet",
+        "abnormal_metrics.parquet",
+        "abnormal_traces.parquet",
+        "normal_metrics_histogram.parquet",
+        "normal_trace_id_ts.parquet",
+        "normal_logs.parquet",
+        "normal_metrics.parquet",
+        "normal_metrics_sum.parquet",
+        "normal_traces.parquet",
+        # JSON files
+        "injection.json",
+        "k8s.json",
+        "env.json",
+    ]
+
+    path_obj = path
+
+    if not path_obj.exists() or not path_obj.is_dir():
+        logger.debug("Path does not exist or is not a directory: {}", path)
+        return path, False
+
+    for filename in required_files:
+        file_path = path_obj / filename
+
+        if not file_path.exists():
+            logger.debug("Missing required file: {}", file_path)
+            return path, False
+
+        if file_path.stat().st_size == 0:
+            logger.debug("Empty file: {}", file_path)
+            return path, False
+
+        if filename.endswith(".json"):
+            try:
+                with open(file_path, encoding="utf-8") as f:
+                    json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.debug("Invalid JSON file {}: {}", file_path, e)
+                return path, False
+
+        elif filename.endswith(".parquet"):
+            try:
+                df = pl.read_parquet(file_path)
+                row_count = df.height
+
+                if row_count == 0:
+                    logger.debug("Parquet file has no data rows: {}", file_path)
+                    return path, False
+
+            except Exception as e:
+                logger.debug("Failed to read Parquet file {}: {}", file_path, e)
+                return path, False
+
+    return path, True
