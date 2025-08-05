@@ -64,8 +64,8 @@ def run(
         algo_api = AlgorithmsApi(client)
 
         resp = algo_api.api_v2_algorithms_algorithm_id_executions_execution_id_results_post(
-            algorithm_id=algorithm_id,  # type: ignore
-            execution_id=execution_id,  # type: ignore
+            algorithm_id=algorithm_id,
+            execution_id=execution_id,
             request=DtoGranularityResultEnhancedRequest(
                 results=[
                     DtoGranularityResultItem(
