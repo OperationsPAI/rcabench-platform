@@ -30,8 +30,10 @@ class RCABenchClient:
         print(f"Containers: {containers.data}")
     """
 
-    def __init__(self, base_url=None, username=None, password=None):
-        self.base_url = base_url or os.getenv("RCABENCH_BASE_URL")
+    def __init__(self, base_url: str | None = None, username: str | None = None, password: str | None = None):
+        self.base_url = (
+            base_url or os.getenv("RCABENCH_BASE_URL") or get_config(env_mode=os.environ["ENV_MODE"]).base_url
+        )
         self.username = username or os.getenv("RCABENCH_USERNAME")
         self.password = password or os.getenv("RCABENCH_PASSWORD")
 

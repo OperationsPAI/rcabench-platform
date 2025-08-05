@@ -1,12 +1,15 @@
+import os
 from pathlib import Path
 from typing import Annotated
 
 import polars as pl
 import typer
+from rcabench.openapi import AlgorithmsApi, DtoGranularityResultEnhancedRequest, DtoGranularityResultItem
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
+from ..clients.rcabench_ import RCABenchClient
 from ..config import get_config
-from ..logging import timeit
+from ..logging import logger, timeit
 from ..sources.convert import convert_datapack
 from ..sources.rcabench import RcabenchDatapackLoader
 from ..utils.serde import load_json, save_csv
@@ -49,8 +52,33 @@ def run(
     )
 
     result_rows = [{"level": ans.level, "result": ans.name, "rank": ans.rank, "confidence": 0} for ans in answers]
-    result_df = pl.DataFrame(result_rows).sort(by=["rank"])
-    save_csv(result_df, path=output_path / "result.csv")
+
+    algorithm_id_str = os.environ.get("ALGORITHM_ID")
+    execution_id_str = os.environ.get("EXECUTION_ID")
+    assert algorithm_id_str is not None, "ALGORITHM_ID is not set"
+    assert execution_id_str is not None, "EXECUTION_ID is not set"
+    algorithm_id = int(algorithm_id_str)
+    execution_id = int(execution_id_str)
+
+    with RCABenchClient() as client:
+        algo_api = AlgorithmsApi(client)
+
+        resp = algo_api.api_v2_algorithms_algorithm_id_executions_execution_id_results_post(
+            algorithm_id=algorithm_id,
+            execution_id=execution_id,
+            request=DtoGranularityResultEnhancedRequest(
+                results=[
+                    DtoGranularityResultItem(
+                        level=row["level"],
+                        result=row["result"],
+                        rank=row["rank"],
+                        confidence=row["confidence"],
+                    )
+                    for row in result_rows
+                ]
+            ),
+        )
+        logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
 
 
 @app.command()
