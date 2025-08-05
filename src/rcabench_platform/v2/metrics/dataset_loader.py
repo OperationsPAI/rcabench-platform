@@ -37,7 +37,7 @@ class DatasetLoader:
                 lf = lf.sort("time")
                 files[f"abnormal_{file_type}"] = lf
 
-        for json_file in ["injection.json", "env.json", "notations.json"]:
+        for json_file in ["env.json", "injection.json"]:
             json_path = folder / json_file
             if json_path.exists():
                 with open(json_path) as f:

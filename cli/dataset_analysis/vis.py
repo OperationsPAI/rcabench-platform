@@ -982,56 +982,6 @@ def batch_visualize(skip_existing: bool = True, parallel_workers: int | None = N
             logger.warning(f"... and {len(failed_datapacks) - 5} more failed datapacks")
 
 
-@app.command(name="vis-anno")
-@timeit()
-def visualize_annotations():
-    input_path = Path("data") / "rcabench_dataset"
-    datapack_categories = {cat: [] for cat in CATEGORY_CONFIG["categories"]}
-    absolute_anomaly_datapacks = []
-    valid_datapacks = 0
-    errors = []
-
-    logger.info("Starting to collect notations.json data...")
-    for datapack, notations_file in iter_datapacks(input_path, "notations.json"):
-        try:
-            data = read_json(notations_file)
-            cats = classify_issue_categories_multi(data)
-            for cat in cats:
-                if cat == "absolute_anomaly":
-                    absolute_anomaly_datapacks.append(datapack.name)
-                if cat in datapack_categories:
-                    datapack_categories[cat].append(datapack.name)
-            valid_datapacks += 1
-        except Exception as e:
-            logger.error(f"Error processing {notations_file}: {e}")
-            errors.append((datapack.name, str(e)))
-
-    logger.info("=== Debug: Category counts ===")
-    for category, datapacks in datapack_categories.items():
-        logger.info(f"{category}: {len(datapacks)} datapacks")
-        if category == "absolute_anomaly" and datapacks:
-            logger.info(f"  Absolute anomaly datapacks: {', '.join(datapacks[:5])}")
-
-    logger.info(f"Successfully processed {valid_datapacks} datapacks, {len(errors)} errors")
-    if valid_datapacks == 0:
-        logger.error("No valid notations.json files found")
-        return
-
-    plt.style.use("default")
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    fig.suptitle("Datapack Issue Categories Distribution", fontsize=16, fontweight="bold")
-
-    create_category_pie_chart(axes[0], datapack_categories, CATEGORY_CONFIG)
-    create_category_bar_chart(axes[1], datapack_categories, CATEGORY_CONFIG)
-
-    plt.tight_layout()
-    output_path = Path("temp/datapack_categories.png")
-    output_path.parent.mkdir(exist_ok=True)
-    plt.savefig(output_path, dpi=PLOT_CONFIG["dpi"], bbox_inches="tight")
-    plt.show()
-    logger.info(f"Visualization chart saved to: {output_path}")
-
-
 @app.command(name="vis-patch-results")
 @timeit()
 def visualize_patch_results(
