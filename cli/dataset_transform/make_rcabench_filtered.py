@@ -216,18 +216,7 @@ def _check_datapack(row: dict[str, Any]) -> dict[str, Any]:
         logger.debug(f"datapack `{datapack}`: large_latency_in_normal_range")
         result["rule_6_large_latency_normal"] = True
 
-    # Rule 7: Absolute abnormal
-    if scan_absolute_abnormal(datapack_folder):
-        logger.debug(f"datapack `{datapack}`: absolute abnormal")
-        result["rule_7_absolute_abnormal"] = True
     return result
-
-
-def scan_absolute_abnormal(datapack_folder: Path) -> bool:
-    with open(datapack_folder / "notations.json", encoding="utf-8") as f:
-        data = json.load(f)
-        data["absolute_anomaly"] = data.get("absolute_anomaly", None)
-        return not data["absolute_anomaly"]
 
 
 def is_single_point_failure(fault_type: str) -> bool:

@@ -390,7 +390,6 @@ class RcabenchDatapackLoader(DatapackLoader):
         ans: dict[str, Any] = {
             "env.json": self._src_folder / "env.json",
             "injection.json": self._src_folder / "injection.json",
-            "notations.json": self._src_folder / "notations.json",
             "conclusion.parquet": convert_conclusion(self._src_folder / "conclusion.csv"),
         }
 
