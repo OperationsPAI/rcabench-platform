@@ -1,6 +1,6 @@
 [project]
 name = "rcabench-platform"
-version = "0.3.22"
+version = "0.3.23"
 description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
 authors = [ #
@@ -25,7 +25,7 @@ dependencies = [ #
     "polars>=1.31.0",
     "pyarrow>=20.0.0",
     "python-dotenv>=1.1.1",
-    "rcabench>=1.1.27",
+    "rcabench>=1.1.28",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
     "scipy>=1.15.0",
