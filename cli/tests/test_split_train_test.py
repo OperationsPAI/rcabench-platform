@@ -16,11 +16,7 @@ def get_previous_datapacks(datasets_api: DatasetsApi) -> list[str]:
     dataset = resp.data.items[0]
 
     if dataset.injections is not None:
-        previous_datapacks = [
-            item.fault_injection.injection_name
-            for item in dataset.injections
-            if item.fault_injection is not None and item.fault_injection.injection_name is not None
-        ]
+        previous_datapacks = [item.injection_name for item in dataset.injections if item.injection_name is not None]
         assert len(previous_datapacks) > 0
         return previous_datapacks
     return []
