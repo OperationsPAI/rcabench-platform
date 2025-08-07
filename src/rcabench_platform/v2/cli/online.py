@@ -104,6 +104,18 @@ def list_datasets():
 
 @app.command()
 @timeit()
+def get_dataset(id: int):
+    with RCABenchClient() as client:
+        api = DatasetsApi(client)
+        resp = api.api_v2_datasets_id_get(id=id, include_injections=True)
+        assert resp.data is not None
+
+    assert resp.data.injections is not None
+    return [i.injection_name for i in resp.data.injections]
+
+
+@app.command()
+@timeit()
 def list_algorithms(base_url: str | None = None):
     with RCABenchClient(base_url=base_url) as client:
         api = AlgorithmsApi(client)
@@ -217,10 +229,12 @@ def check_required_files(algo_folder: Path) -> bool:
     return True
 
 
-def parse_toml_config(info_file: Path) -> tuple[str, dict[str, str]]:
+def parse_toml_config(info_file: Path) -> tuple[str, dict[str, str], str, str]:
     """Parse info.toml file to extract name and env_vars"""
     algorithm_name = info_file.parent.name
     env_vars = {}
+    tag = "latest"
+    command = "bash /entrypoint.sh"
 
     if info_file.exists():
         try:
@@ -231,11 +245,15 @@ def parse_toml_config(info_file: Path) -> tuple[str, dict[str, str]]:
                 algorithm_name = config["name"]
             if "env_vars" in config:
                 env_vars = config["env_vars"]
+            if "tag" in config:
+                tag = config["tag"]
+            if "command" in config:
+                command = config["command"]
 
         except Exception as e:
             logger.warning(f"Failed to parse TOML file {info_file}: {e}")
 
-    return algorithm_name, env_vars
+    return algorithm_name, env_vars, tag, command
 
 
 @app.command()
@@ -263,7 +281,7 @@ def upload_algorithm_harbor(
     try:
         # Read info.toml to get algorithm name and env_vars
         info_file = algo_folder / "info.toml"
-        algorithm_name, env_vars = parse_toml_config(info_file)
+        algorithm_name, env_vars, tag, command = parse_toml_config(info_file)
 
         # Convert env_vars dict to list of keys only
         env_vars_list = None
@@ -282,12 +300,12 @@ def upload_algorithm_harbor(
                 type="algorithm",
                 name=algorithm_name,
                 image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
-                tag="latest",
-                command="bash /entrypoint.sh",
+                tag=tag,
+                command=command,
                 env_vars=env_vars_list,
                 build_source_type="harbor",
                 harbor_image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
-                harbor_tag="latest",
+                harbor_tag=tag,
             )
 
         logger.info(f"Response: {resp}")
