@@ -3,6 +3,7 @@
 import matplotlib
 import polars as pl
 
+from rcabench_platform.v2.datasets.rcabench import valid
 from rcabench_platform.v2.datasets.spec import get_dataset_meta_file
 
 matplotlib.use("Agg")
@@ -69,24 +70,6 @@ PLOT_CONFIG: dict[str, Any] = {
 # ================== File and Data Utilities ==================
 
 
-def iter_datapacks(input_path: Path, file_name: str) -> Generator[tuple[Path, Path], None, None]:
-    """Iterate through datapacks and yield valid datapack paths with the specified file."""
-    for datapack in input_path.iterdir():
-        if not datapack.is_dir():
-            continue
-        file = datapack / file_name
-        if not file.exists():
-            logger.warning(f"No {file_name} found for {datapack.name}, skipping")
-            continue
-        yield datapack, file
-
-
-def read_json(file: Path) -> dict[str, Any]:
-    """Read JSON file and return the data."""
-    with open(file, encoding="utf-8") as f:
-        return json.load(f)
-
-
 def read_dataframe(file: Path) -> pl.LazyFrame:
     """Read parquet file as a Polars LazyFrame."""
     return pl.scan_parquet(file)
@@ -99,71 +82,6 @@ def extract_status_code(span_attributes: str) -> str:
         return ra["http.status_code"]
     except Exception:
         return "-1"
-
-
-# ================== Data Processing Functions ==================
-
-
-def classify_issue_categories_multi(data: dict[str, Any]) -> list[str]:
-    """Classify issues into multiple categories based on the data."""
-    issue_cats = data.get("issue_categories", {})
-    absolute_anomaly = data.get("absolute_anomaly", False)
-    categories = []
-
-    if issue_cats.get("both_latency_and_success_rate", 0) > 0:
-        categories.append("both_latency_and_success_rate")
-    if issue_cats.get("latency_only", 0) > 0:
-        categories.append("latency_only")
-    if issue_cats.get("success_rate_only", 0) > 0:
-        categories.append("success_rate_only")
-
-    if absolute_anomaly:
-        categories.append("absolute_anomaly")
-    if not categories:
-        categories.append("no_issues")
-    return categories
-
-
-def collect_issues(
-    input_path: Path,
-) -> tuple[list[str], list[str], list[tuple[str, str]]]:
-    """Collect datapack names with and without issues."""
-    datapacks: list[str] = []
-    no_issue_datapacks: list[str] = []
-    errs: list[tuple[str, str]] = []
-
-    for datapack, con in iter_datapacks(input_path, "conclusion.csv"):
-        try:
-            conclusion = pl.read_csv(con)
-            non_empty_issues = conclusion.filter(
-                (pl.col("Issues").is_not_null()) & (pl.col("Issues") != "") & (pl.col("Issues") != "{}")
-            )
-            if len(non_empty_issues) > 0:
-                datapacks.append(datapack.name)
-            else:
-                no_issue_datapacks.append(datapack.name)
-        except Exception as e:
-            logger.error(f"Error processing {con}: {e}")
-            errs.append((datapack.name, str(e)))
-    return datapacks, no_issue_datapacks, errs
-
-
-def process_datapack_confidence(datapack_path: Path, du: int) -> str | None:
-    """Check if datapack meets duration confidence requirements."""
-    if not datapack_path.is_dir():
-        return None
-    normal_traces_file = datapack_path / "normal_traces.parquet"
-    if not normal_traces_file.exists():
-        logger.warning(f"No normal_traces.parquet found for {datapack_path.name}, skipping")
-        return None
-    try:
-        df = read_dataframe(normal_traces_file)
-        max_duration = df.select(pl.col("Duration").max()).collect().item()
-        if max_duration is not None and max_duration < du * 1e9:
-            return datapack_path.name
-    except Exception as e:
-        logger.error(f"Error processing {datapack_path.name}: {e}")
-    return None
 
 
 # ================== Data Preparation Functions ==================
@@ -217,42 +135,6 @@ def prepare_entry_data(df1: pl.DataFrame, df2: pl.DataFrame) -> pl.DataFrame:
     return entry_df
 
 
-def process_single_datapack_visualization(
-    datapack_path: str,
-    skip_existing: bool = True,
-    output_dir: Path | None = None,
-    base_path: str = "data/rcabench_dataset",
-) -> tuple[str, bool, str]:
-    """
-    Process a single datapack for visualization in a thread-safe manner.
-
-    Returns:
-        tuple: (datapack_name, success, error_message)
-    """
-    try:
-        matplotlib.use("Agg")  # Use non-interactive backend
-
-        full_datapack_path = Path(base_path) / datapack_path
-
-        if not full_datapack_path.exists():
-            return datapack_path, False, f"Datapack not found: {full_datapack_path}"
-
-        required_files = [
-            "normal_traces.parquet",
-            "abnormal_traces.parquet",
-            "conclusion.csv",
-        ]
-        missing_files = [f for f in required_files if not (full_datapack_path / f).exists()]
-        if missing_files:
-            return datapack_path, False, f"Required files not found: {missing_files}"
-
-        vis_call(full_datapack_path, skip_existing=skip_existing, output_dir=output_dir)
-        return datapack_path, True, ""
-
-    except Exception as e:
-        return datapack_path, False, str(e)
-
-
 # ================== Main Visualization Functions ==================
 
 
@@ -264,8 +146,6 @@ def create_span_visualization(
     start_time: Any,
     last_normal_time: Any,
 ) -> None:
-    """Create visualization for problematic spans."""
-    # Extract span names with issues
     problematic_spans = set()
     for record in issue_data:
         problematic_spans.add(record.span_name)
@@ -274,72 +154,136 @@ def create_span_visualization(
         logger.info(f"No specific problematic spans found in {datapack_name}")
         return
 
-    # Create figure with subplots
-    fig, axes = plt.subplots(len(problematic_spans), 1, figsize=(15, 6 * len(problematic_spans)), dpi=300)
+    # Create figure with subplots - 2 columns for each span (latency and status code)
+    fig, axes = plt.subplots(len(problematic_spans), 2, figsize=(20, 6 * len(problematic_spans)), dpi=300)
     if len(problematic_spans) == 1:
-        axes = [axes]
+        axes = axes.reshape(1, -1)
 
     # Plot each problematic span
     for idx, span_name in enumerate(problematic_spans):
-        ax = axes[idx]
+        ax_latency = axes[idx, 0]
+        ax_status = axes[idx, 1]
 
-        span_data = entry_df.filter(pl.col("SpanName").str.contains(span_name))
+        span_data = entry_df.filter(pl.col("api_path") == span_name)
 
         if len(span_data) == 0:
-            ax.text(
-                0.5,
-                0.5,
-                f"No data found for {span_name}",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
-            )
-            ax.set_title(f"{span_name}")
+            for ax in [ax_latency, ax_status]:
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"No data found for {span_name}",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+            ax_latency.set_title(f"{span_name} - Latency")
+            ax_status.set_title(f"{span_name} - Status Code")
             continue
 
         # Separate normal and abnormal data
         normal_data = span_data.filter(pl.col("trace_type") == "normal")
         abnormal_data = span_data.filter(pl.col("trace_type") == "abnormal")
 
+        normal_count = len(normal_data)
+        abnormal_count = len(abnormal_data)
+
         # Plot latency over time
         if len(normal_data) > 0:
-            normal_times = normal_data.select("datetime").to_numpy().flatten()
-            normal_durations = normal_data.select("duration").to_numpy().flatten()
-            ax.scatter(
-                normal_times, normal_durations, c="green", alpha=0.6, s=PLOT_CONFIG["marker_size"], label="Normal"
+            # Sort normal data by datetime for proper line connection
+            normal_sorted = normal_data.sort("datetime")
+            normal_times = normal_sorted.select("datetime").to_numpy().flatten()
+            normal_latencies = normal_sorted.select("duration").to_numpy().flatten()
+            ax_latency.plot(
+                normal_times,
+                normal_latencies,
+                color="green",
+                alpha=0.7,
+                linewidth=1.2,
+                marker="o",
+                markersize=3,
+                label=f"Normal ({normal_count})",
             )
 
         if len(abnormal_data) > 0:
-            abnormal_times = abnormal_data.select("datetime").to_numpy().flatten()
-            abnormal_durations = abnormal_data.select("duration").to_numpy().flatten()
-            ax.scatter(
-                abnormal_times, abnormal_durations, c="red", alpha=0.8, s=PLOT_CONFIG["marker_size"], label="Abnormal"
+            # Sort abnormal data by datetime for proper line connection
+            abnormal_sorted = abnormal_data.sort("datetime")
+            abnormal_times = abnormal_sorted.select("datetime").to_numpy().flatten()
+            abnormal_latencies = abnormal_sorted.select("duration").to_numpy().flatten()
+            ax_latency.plot(
+                abnormal_times,
+                abnormal_latencies,
+                color="red",
+                alpha=0.7,
+                linewidth=1.2,
+                marker="o",
+                markersize=3,
+                label=f"Abnormal ({abnormal_count})",
             )
 
-        # Add vertical line to separate normal and abnormal periods
-        ax.axvline(x=last_normal_time, color="orange", linestyle="--", alpha=0.7, label="Fault Injection")
+        # Add vertical line at last normal time
+        ax_latency.axvline(x=last_normal_time, color="blue", linestyle="--", alpha=0.7, label="Last Normal Time")
 
-        # Formatting
-        ax.set_title(f"{span_name}")
-        ax.set_xlabel("Time")
-        ax.set_ylabel("Duration (seconds)")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        ax_latency.set_xlabel("Time")
+        ax_latency.set_ylabel("Latency (seconds)")
+        ax_latency.set_title(f"{span_name} - Latency\n(Normal: {normal_count}, Abnormal: {abnormal_count})")
+        ax_latency.legend()
+        ax_latency.grid(True, alpha=0.3)
 
-        # Format x-axis dates
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-        ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=PLOT_CONFIG["interval_minutes"]))
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+        # Format x-axis for datetime
+        ax_latency.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        ax_latency.tick_params(axis="x", rotation=45)
+
+        # Plot status codes over time
+        # Convert status codes to numeric for plotting
+        if len(normal_data) > 0:
+            # Use sorted data for consistent time ordering
+            normal_sorted = normal_data.sort("datetime")
+            normal_times = normal_sorted.select("datetime").to_numpy().flatten()
+            normal_status = normal_sorted.select("status_code").to_numpy().flatten()
+            normal_status_numeric = [int(s) if s.isdigit() else -1 for s in normal_status]
+            ax_status.scatter(
+                normal_times, normal_status_numeric, color="green", alpha=0.6, s=10, label=f"Normal ({normal_count})"
+            )
+
+        if len(abnormal_data) > 0:
+            # Use sorted data for consistent time ordering
+            abnormal_sorted = abnormal_data.sort("datetime")
+            abnormal_times = abnormal_sorted.select("datetime").to_numpy().flatten()
+            abnormal_status = abnormal_sorted.select("status_code").to_numpy().flatten()
+            abnormal_status_numeric = [int(s) if s.isdigit() else -1 for s in abnormal_status]
+            ax_status.scatter(
+                abnormal_times,
+                abnormal_status_numeric,
+                color="red",
+                alpha=0.6,
+                s=10,
+                label=f"Abnormal ({abnormal_count})",
+            )
+
+        # Add vertical line at last normal time
+        ax_status.axvline(x=last_normal_time, color="blue", linestyle="--", alpha=0.7, label="Last Normal Time")
+
+        ax_status.set_xlabel("Time")
+        ax_status.set_ylabel("HTTP Status Code")
+        ax_status.set_title(f"{span_name} - Status Code\n(Normal: {normal_count}, Abnormal: {abnormal_count})")
+        ax_status.legend()
+        ax_status.grid(True, alpha=0.3)
+
+        # Format x-axis for datetime
+        ax_status.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        ax_status.tick_params(axis="x", rotation=45)
+
+        # Set y-axis to show common HTTP status codes
+        status_codes = [200, 400, 401, 403, 404, 500, 502, 503, 504]
+        ax_status.set_yticks(status_codes)
 
     plt.tight_layout()
-    plt.savefig(output_file, dpi=PLOT_CONFIG["dpi"], bbox_inches="tight")
+    plt.savefig(output_file, bbox_inches="tight")
     plt.close()
     logger.info(f"Visualization saved to {output_file}")
 
 
 def vis_call(datapack: Path, skip_existing: bool = True, output_dir: Path | None = None) -> None:
-    matplotlib.use("Agg")  # Use non-interactive backend
-
     with RCABenchClient() as client:
         eval_api = EvaluationApi(client)
         resp = eval_api.api_v2_evaluations_datapacks_detector_post(
@@ -362,6 +306,10 @@ def vis_call(datapack: Path, skip_existing: bool = True, output_dir: Path | None
     # Prepare trace data
     normal_df, abnormal_df, start_time, last_normal_time = prepare_trace_data(datapack)
 
+    if normal_df.is_empty() or abnormal_df.is_empty() or start_time is None or last_normal_time is None:
+        logger.error(f"Invalid trace data in {datapack.name}, skipping visualization")
+        return
+
     if output_dir is not None:
         final_output_dir = output_dir
     else:
@@ -383,31 +331,6 @@ def vis_call(datapack: Path, skip_existing: bool = True, output_dir: Path | None
     create_span_visualization(entry_df, issue_data, datapack.name, output_file, start_time, last_normal_time)
 
 
-@app.command()
-def query_issues():
-    """Query datapacks with issues."""
-    input_path = Path("data") / "rcabench_dataset"
-    datapacks, no_issue_datapacks, errs = collect_issues(input_path)
-    logger.info(f"Found {len(datapacks)} datapacks with issues, skipping {len(errs)} with errors")
-    return datapacks, no_issue_datapacks, errs
-
-
-@app.command(name="get-dataset-num")
-def query_with_confidence(duration: int):
-    """Query datapacks with confidence based on duration."""
-    input_path = Path("data") / "rcabench_dataset"
-    datapack_paths = [datapack for datapack in input_path.iterdir() if datapack.is_dir()]
-    tasks = [
-        functools.partial(process_datapack_confidence, datapack_path, duration) for datapack_path in datapack_paths
-    ]
-    cpu = os.cpu_count()
-    assert cpu is not None
-    results = fmap_threadpool(tasks, parallel=min(cpu, 32))
-    datapacks = [result for result in results if result is not None]
-    logger.info(f"Found {len(datapacks)} datapacks with all durations < {duration}s")
-    return datapacks
-
-
 @app.command(name="vis-single-entry")
 @timeit()
 def visualize_latency(datapack: str):
@@ -415,56 +338,26 @@ def visualize_latency(datapack: str):
     if not datapack_path.exists():
         logger.error(f"Datapack not found: {datapack_path}")
         return
-    vis_call(datapack_path)
+    vis_call(datapack_path, skip_existing=False)
 
 
-@app.command(name="vis-entry")
-@timeit()
-def batch_visualize(skip_existing: bool = True, parallel_workers: int | None = None):
-    """Batch visualize multiple datapacks using parallel processing."""
-
-    issue, no_issue, _ = collect_issues(Path("data") / "rcabench_dataset")
-
-    if not issue:
-        logger.info("No datapacks with issues found")
+@app.command(name="vis-batch")
+def batch_visualize(skip_existing: bool = True) -> None:
+    datapack_path = Path("data") / "rcabench_dataset"
+    if not datapack_path.exists():
+        logger.error(f"Datapack directory not found: {datapack_path}")
         return
 
-    logger.info(f"Found {len(issue)} datapacks with issues to process")
+    validation_tasks = [functools.partial(valid, datapack_path / p.name) for p in datapack_path.iterdir() if p.is_dir()]
+    datapacks = fmap_processpool(validation_tasks, parallel=32, ignore_exceptions=True, cpu_limit_each=2)
 
-    # Determine number of parallel workers
-    cpu = os.cpu_count()
-    assert cpu is not None
-    max_workers = parallel_workers if parallel_workers is not None else min(cpu, 8)
-
-    # Create tasks for parallel processing
     tasks = [
-        functools.partial(process_single_datapack_visualization, datapack_path, skip_existing)
-        for datapack_path in issue
+        functools.partial(vis_call, datapack=p[0], skip_existing=skip_existing, output_dir=None)
+        for p in datapacks
+        if p[1]
     ]
 
-    # Process in parallel with progress tracking
-    logger.info(f"Processing {len(tasks)} datapacks using {max_workers} parallel workers")
-    results = fmap_processpool(tasks, parallel=max_workers)
-
-    # Collect statistics
-    successful_count = 0
-    failed_count = 0
-    failed_datapacks = []
-
-    for datapack_name, success, error_message in results:
-        if success:
-            successful_count += 1
-        else:
-            failed_count += 1
-            failed_datapacks.append((datapack_name, error_message))
-            logger.error(f"Failed to process {datapack_name}: {error_message}")
-
-    # Report results
-    logger.info(f"Batch visualization completed: {successful_count} successful, {failed_count} failed")
-    if failed_datapacks:
-        logger.warning(f"Failed datapacks: {[name for name, _ in failed_datapacks[:5]]}")
-        if len(failed_datapacks) > 5:
-            logger.warning(f"... and {len(failed_datapacks) - 5} more failed datapacks")
+    fmap_processpool(tasks, parallel=32, cpu_limit_each=2)
 
 
 if __name__ == "__main__":

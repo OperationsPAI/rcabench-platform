@@ -753,8 +753,6 @@ def run(
 ) -> AnalysisResult | None:
     input_path, output_path = setup_paths_and_validation(in_p, ou_p)
     if not valid(input_path)[1]:
-        invalid_f = input_path / ".invalid"
-        invalid_f.touch()
         return None
 
     if online:

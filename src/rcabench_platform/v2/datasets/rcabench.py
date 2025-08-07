@@ -244,6 +244,17 @@ def rcabench_split_train_test(
 
 
 def valid(path: Path) -> tuple[Path, bool]:
+    path_obj = path
+
+    # Check cache files first
+    valid_cache = path_obj / ".valid"
+    invalid_cache = path_obj / ".invalid"
+
+    if valid_cache.exists():
+        return path, True
+    elif invalid_cache.exists():
+        return path, False
+
     required_files = [
         # Parquet files
         "abnormal_logs.parquet",
@@ -264,10 +275,10 @@ def valid(path: Path) -> tuple[Path, bool]:
         "env.json",
     ]
 
-    path_obj = path
-
     if not path_obj.exists() or not path_obj.is_dir():
         logger.debug("Path does not exist or is not a directory: {}", path)
+        invalid_f = path_obj / ".invalid"
+        invalid_f.touch()
         return path, False
 
     for filename in required_files:
@@ -275,10 +286,14 @@ def valid(path: Path) -> tuple[Path, bool]:
 
         if not file_path.exists():
             logger.debug("Missing required file: {}", file_path)
+            invalid_f = path_obj / ".invalid"
+            invalid_f.touch()
             return path, False
 
         if file_path.stat().st_size == 0:
             logger.debug("Empty file: {}", file_path)
+            invalid_f = path_obj / ".invalid"
+            invalid_f.touch()
             return path, False
 
         if filename.endswith(".json"):
@@ -287,6 +302,8 @@ def valid(path: Path) -> tuple[Path, bool]:
                     json.load(f)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.debug("Invalid JSON file {}: {}", file_path, e)
+                invalid_f = path_obj / ".invalid"
+                invalid_f.touch()
                 return path, False
 
         elif filename.endswith(".parquet"):
@@ -296,10 +313,17 @@ def valid(path: Path) -> tuple[Path, bool]:
 
                 if row_count == 0:
                     logger.debug("Parquet file has no data rows: {}", file_path)
+                    invalid_f = path_obj / ".invalid"
+                    invalid_f.touch()
                     return path, False
 
             except Exception as e:
                 logger.debug("Failed to read Parquet file {}: {}", file_path, e)
+                invalid_f = path_obj / ".invalid"
+                invalid_f.touch()
                 return path, False
 
+    # All validation passed, create valid cache file
+    valid_f = path_obj / ".valid"
+    valid_f.touch()
     return path, True
