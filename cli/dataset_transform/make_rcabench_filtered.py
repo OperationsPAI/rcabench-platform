@@ -17,6 +17,7 @@ from rcabench_platform.v2.datasets.spec import (
     get_dataset_meta_folder,
 )
 from rcabench_platform.v2.sources.convert import link_subset
+from rcabench_platform.v2.sources.rcabench import _build_service_graph
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
 
@@ -307,41 +308,6 @@ def scan_large_latency_in_normal_range(datapack_folder: Path) -> bool:
     if p99_duration is None:
         return False
     return p99_duration > 6 * 1e9
-
-
-def _build_service_graph(datapack_folder: Path) -> nx.Graph:
-    normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
-    anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
-    traces = pl.concat([normal_traces, anomal_traces])
-
-    lf = traces.select(
-        "span_id",
-        "parent_span_id",
-        "service_name",
-    ).filter(pl.col("parent_span_id").is_not_null())
-
-    lf = lf.join(
-        lf.select("span_id", pl.col("service_name").alias("parent_service_name")),
-        left_on="parent_span_id",
-        right_on="span_id",
-        how="inner",
-    )
-
-    edges_df = (
-        lf.select("parent_service_name", "service_name")
-        .filter(
-            pl.col("parent_service_name") != pl.col("service_name")  # Exclude self-calls
-        )
-        .unique()
-        .collect()
-    )
-
-    graph = nx.Graph()
-
-    for parent_service, child_service in edges_df.iter_rows():
-        graph.add_edge(parent_service, child_service)
-
-    return graph
 
 
 if __name__ == "__main__":
