@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import networkx as nx
 import pandas as pd
 import polars as pl
 
@@ -470,3 +471,38 @@ class RcabenchDatasetLoader(DatasetLoader):
     def __getitem__(self, index: int) -> DatapackLoader:
         datapack = self._datapacks[index]
         return RcabenchDatapackLoader(src_folder=self._src_root / datapack, datapack=datapack)
+
+
+def _build_service_graph(datapack_folder: Path) -> nx.Graph:
+    normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
+    traces = pl.concat([normal_traces, anomal_traces])
+
+    lf = traces.select(
+        "span_id",
+        "parent_span_id",
+        "service_name",
+    ).filter(pl.col("parent_span_id").is_not_null())
+
+    lf = lf.join(
+        lf.select("span_id", pl.col("service_name").alias("parent_service_name")),
+        left_on="parent_span_id",
+        right_on="span_id",
+        how="inner",
+    )
+
+    edges_df = (
+        lf.select("parent_service_name", "service_name")
+        .filter(
+            pl.col("parent_service_name") != pl.col("service_name")  # Exclude self-calls
+        )
+        .unique()
+        .collect()
+    )
+
+    graph = nx.Graph()
+
+    for parent_service, child_service in edges_df.iter_rows():
+        graph.add_edge(parent_service, child_service)
+
+    return graph

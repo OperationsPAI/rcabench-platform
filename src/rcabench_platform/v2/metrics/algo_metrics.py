@@ -1,7 +1,10 @@
 import os
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 from typing import TypedDict
 
+import networkx as nx
 from rcabench.openapi import (
     DtoAlgorithmDatapackEvaluationResp,
     DtoAlgorithmDatasetEvaluationResp,
@@ -11,6 +14,13 @@ from rcabench.openapi import (
 
 from ..clients.rcabench_ import RCABenchClient
 from ..logging import logger
+from ..sources.rcabench import _build_service_graph
+
+
+def _get_shortest_path_as_list(graph: nx.Graph, source: str, target: str) -> list[str]:
+    assert source in graph and target in graph, "Source or target not in graph"
+    path_result = nx.shortest_path(graph, source=source, target=target)
+    return list(path_result) if isinstance(path_result, (list, tuple)) else []
 
 
 class AlgoMetrics(TypedDict):
@@ -67,19 +77,111 @@ def get_evaluation_by_dataset(
     return resp.data
 
 
+def _as_vertices(path: Iterable[str]) -> set[str]:
+    return set(path)
+
+
+def _cpl(path: Sequence[str]) -> int:
+    n = len(path)
+    return n - 1 if n > 0 else 0
+
+
+def wcpl(
+    path: Iterable[str],
+    weights: dict[tuple[str, str], float] | None = None,
+) -> float:
+    """wCPL(P): Weighted path length.
+
+        Calculate the sum of the weights of all edges on the path:
+    - If weights (edge weight dictionary, key is (src, dst) tuple) is provided,
+        return the sum of the weights of each edge.
+    - If not provided, it falls back to CPL(P): number of edges = max(len(path_list)-1, 0).
+    """
+
+    path_list = list(path)
+    if len(path_list) <= 1:
+        return 0.0
+
+    if weights:
+        total_weight = 0.0
+        for i in range(len(path_list) - 1):
+            edge = (path_list[i], path_list[i + 1])
+            edge_weight = weights.get(edge, 1.0)
+            total_weight += edge_weight
+        return float(total_weight)
+
+    return _cpl(path_list)
+
+
+def jaccard_score(algo_path: list[str], gt_path: list[str]) -> float:
+    """Jaccard(P_algo, P_gt) = |V(P_gt) ∩ V(P_algo)| / |V(P_gt) ∪ V(P_algo)|。"""
+    va = _as_vertices(algo_path)
+    vg = _as_vertices(gt_path)
+    union = va | vg
+    if not union:
+        return 1.0
+    inter = va & vg
+    return float(len(inter) / len(union))
+
+
+def weighted_divergence_distance(
+    gt_path: list[str],
+    algo_path: list[str],
+    divergence_path: list[str],
+    weights: dict[tuple[str, str], float] | None = None,
+) -> float:
+    if weights is None:
+        weights = {}
+
+    algo_wcpl = wcpl(algo_path, weights)
+    gt_wcpl = wcpl(gt_path, weights)
+    div_wcpl = wcpl(divergence_path, weights)
+
+    if gt_wcpl == 0:
+        return 0.0
+
+    return (gt_wcpl / (algo_wcpl + div_wcpl)) if (algo_wcpl + div_wcpl) > 0 else 0.0
+
+
+def single_path_alignment_score(
+    algo_path: list[str],
+    gt_path: list[str],
+    divergence_path: list[str],
+    weights: dict[tuple[str, str], float] | None = None,
+) -> float:
+    """AS_sp(P_algo, P_gt) = WDD(P_algo, P_gt) x Jaccard(P_algo, P_gt)"""
+    return weighted_divergence_distance(algo_path, gt_path, divergence_path, weights) * jaccard_score(
+        algo_path, gt_path
+    )
+
+
+def multi_path_alignment_score(
+    algo_path: list[str],
+    gt_divergence_path_pairs: list[tuple[list[str], list[str]]],
+    weights: dict[tuple[str, str], float] | None = None,
+) -> float:
+    """AS_mp = max_i AS_sp(P_algo, P_gt^{(i)})。"""
+    best = 0.0
+    for gt, div in gt_divergence_path_pairs:
+        score = single_path_alignment_score(algo_path, gt, div, weights=weights)
+        if score > best:
+            best = score
+    return best
+
+
 def calculate_metrics_for_level(
     groundtruth_items: list[str], predictions: list[DtoGranularityRecord], level: str
 ) -> dict[str, float]:
     """
-    计算特定粒度级别的指标
+    Calculates metrics at a specific granularity level
 
     Args:
-        groundtruth_items: 该粒度级别的真实标签列表
-        predictions: 算法预测结果列表
-        level: 粒度级别名称
+    groundtruth_items: List of groundtruth labels for the granularity level
+    predictions: List of algorithm predictions
+    level: Name of the granularity level
 
     Returns:
-        包含top1, top3, top5, mrr的字典
+    Dictionary containing top1, top3, top5, and mrr
     """
     if not groundtruth_items or not predictions:
         return {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
@@ -107,6 +209,59 @@ def calculate_metrics_for_level(
     mrr = 1.0 / min_rank
 
     return {"top1": top1, "top3": top3, "top5": top5, "mrr": mrr}
+
+
+def calculate_alignment_score(
+    datapack_name: str, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord]
+) -> dict[str, float]:
+    g = _build_service_graph(Path(datapack_name))
+
+    # Check if entry service exists in graph
+    if entry not in g.nodes:
+        logger.warning(f"Entry service '{entry}' not found in service graph")
+        return {}
+
+    # Calculate ground truth paths and divergence paths for each prediction
+    gt_paths = []
+    for gt in groundtruth_items:
+        if gt not in g.nodes:
+            logger.warning(f"Ground truth service '{gt}' not found in service graph")
+            continue
+
+        try:
+            # Get shortest path from entry to ground truth
+            gt_path = _get_shortest_path_as_list(g, source=entry, target=gt)
+            gt_paths.append((gt_path, gt))
+        except nx.NetworkXNoPath:
+            logger.warning(f"No path found from '{entry}' to '{gt}'")
+            continue
+
+    if len(gt_paths) == 0:
+        logger.error(f"No valid ground truth paths found for entry '{entry}'")
+        return {}
+
+    alignment_scores = {}
+    for pre in predictions:
+        algo_pre = pre.result
+        assert algo_pre is not None
+
+        if algo_pre not in g.nodes:
+            logger.warning(f"Predicted service '{algo_pre}' not found in service graph")
+            alignment_scores[algo_pre] = 0.0
+            continue
+
+        algo_path = _get_shortest_path_as_list(g, source=entry, target=algo_pre)
+
+        gt_divergence_path_pairs_for_algo = []
+        for gt_path, gt in gt_paths:
+            divergence_path = _get_shortest_path_as_list(g, source=algo_pre, target=gt)
+            gt_divergence_path_pairs_for_algo.append((gt_path, divergence_path))
+
+        # Calculate multi-path alignment score
+        score = multi_path_alignment_score(algo_path, gt_divergence_path_pairs_for_algo)
+        alignment_scores[algo_pre] = score
+
+    return alignment_scores
 
 
 def get_metrics_by_dataset(
@@ -152,6 +307,12 @@ def get_metrics_by_dataset(
 
             for metric_name, value in metrics.items():
                 level_metrics[level][metric_name] += value
+
+            if level == "service":
+                scores = calculate_alignment_score(
+                    item.datapack_name, "loadgenerator", groundtruth_items, item.predictions
+                )
+                print(scores)
 
     result_metrics = []
     for level, metrics in level_metrics.items():
