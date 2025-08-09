@@ -56,14 +56,17 @@ def run(
     algorithm_id_str = os.environ.get("ALGORITHM_ID")
     execution_id_str = os.environ.get("EXECUTION_ID")
     assert algorithm_id_str is not None, "ALGORITHM_ID is not set"
-    assert execution_id_str is not None, "EXECUTION_ID is not set"
     algorithm_id = int(algorithm_id_str)
-    execution_id = int(execution_id_str)
+
+    if execution_id_str is not None:
+        execution_id = int(execution_id_str)
+    else:
+        execution_id = None
 
     with RCABenchClient() as client:
         algo_api = AlgorithmsApi(client)
 
-        resp = algo_api.api_v2_algorithms_algorithm_id_executions_execution_id_results_post(
+        resp = algo_api.api_v2_algorithms_algorithm_id_results_post(
             algorithm_id=algorithm_id,
             execution_id=execution_id,
             request=DtoGranularityResultEnhancedRequest(
