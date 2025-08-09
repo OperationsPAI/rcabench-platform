@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -3391,6 +3391,7 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "kubernetes" },
     { name = "loguru" },
+    { name = "matplotlib" },
     { name = "minio" },
     { name = "neo4j" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3443,6 +3444,7 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.33.4" },
     { name = "kubernetes", specifier = ">=33.1.0" },
     { name = "loguru", specifier = ">=0.7.3" },
+    { name = "matplotlib", specifier = ">=3.10.5" },
     { name = "matplotlib", marker = "extra == 'analysis'", specifier = ">=3.10.3" },
     { name = "minio", specifier = ">=7.2.15" },
     { name = "neo4j", specifier = ">=5.28.1" },
