@@ -17,6 +17,7 @@ dependencies = [ #
     "huggingface-hub>=0.33.4",
     "kubernetes>=33.1.0",
     "loguru>=0.7.3",
+    "matplotlib>=3.10.5",
     "minio>=7.2.15",
     "neo4j>=5.28.1",
     "networkx>=3.4.2",
