@@ -17,7 +17,7 @@ from rcabench_platform.v2.datasets.spec import (
     get_dataset_meta_folder,
 )
 from rcabench_platform.v2.sources.convert import link_subset
-from rcabench_platform.v2.sources.rcabench import _build_service_graph
+from rcabench_platform.v2.sources.rcabench import build_service_graph
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
 
@@ -232,7 +232,7 @@ def scan_path_from_traces(
     target_service: str,
 ) -> bool:
     assert datapack_folder.exists()
-    service_graph = _build_service_graph(datapack_folder)
+    service_graph = build_service_graph(datapack_folder)
     if source_service is None:
         return target_service in service_graph
     if source_service == target_service:

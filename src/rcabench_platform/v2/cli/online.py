@@ -25,8 +25,6 @@ from ..config import get_config
 from ..logging import logger, timeit
 from ..metrics.algo_metrics import (
     get_algorithms_metrics_across_datasets,
-    get_metrics_by_dataset,
-    get_multi_algorithms_metrics_by_dataset,
 )
 from ..utils.dataframe import print_dataframe
 from ..utils.serde import save_json
@@ -390,41 +388,6 @@ def trace(trace_id: str, base_url: str | None = None, timeout: int = 600):
     res = sdk.trace.stream_trace_events(trace_id=trace_id, timeout=timeout)
     for event in res:
         logger.info(event.model_dump_json(indent=2))
-
-
-@app.command()
-def metrics(
-    algorithm: Annotated[str, typer.Option("-a", "--algorithm")],
-    dataset: Annotated[str, typer.Option("-d", "--dataset")],
-    dataset_version: Annotated[str | None, typer.Option("-dv", "--dataset-version")] = None,
-    tag: Annotated[str | None, typer.Option("--tag")] = None,
-    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
-):
-    metrics = get_metrics_by_dataset(algorithm, dataset, dataset_version, tag, base_url)
-
-    df = pl.DataFrame(metrics)
-    print_dataframe(df)
-
-
-@app.command()
-def multi_metrics(
-    algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
-    dataset: Annotated[str, typer.Option("-d", "--dataset")],
-    dataset_version: Annotated[str | None, typer.Option("-dv", "--dataset-version")] = None,
-    tag: Annotated[str | None, typer.Option("--tag")] = None,
-    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
-    level: Annotated[str | None, typer.Option("-l", "--level")] = None,
-):
-    """
-    Compare multiple algorithms on the same (dataset, version)
-
-    Supported level parameter values: service, span, pod, container, function, metric
-    If level is not specified, all levels will be displayed
-    """
-    metrics = get_multi_algorithms_metrics_by_dataset(algorithms, dataset, dataset_version, tag, base_url, level)
-
-    df = pl.DataFrame(metrics)
-    print_dataframe(df)
 
 
 @app.command()

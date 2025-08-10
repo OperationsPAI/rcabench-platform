@@ -5,99 +5,60 @@ from pathlib import Path
 from typing import TypedDict
 
 import networkx as nx
-from rcabench.openapi import (
-    DtoAlgorithmDatapackEvaluationResp,
-    DtoAlgorithmDatasetEvaluationResp,
-    DtoGranularityRecord,
-    EvaluationApi,
-)
+from rcabench.openapi import DtoGranularityRecord
 
-from ..clients.rcabench_ import RCABenchClient
+from ..clients.rcabench_ import get_evaluation_by_dataset
 from ..logging import logger
-from ..sources.rcabench import _build_service_graph
+from ..sources.rcabench import build_service_graph
 
 
-def _get_shortest_path_as_list(graph: nx.Graph, source: str, target: str) -> list[str]:
+class AlgoMetrics(TypedDict):
+    """Algorithm metrics for a specific granularity level."""
+
+    level: str
+    top1: float
+    top3: float
+    top5: float
+
+    mrr: float
+
+    as1: float
+    as3: float
+    as5: float
+
+    efficiency: float
+    datapack_count: int
+
+
+# =============================================================================
+# Graph Path Utilities
+# =============================================================================
+
+
+def _get_shortest_path(graph: nx.Graph, source: str, target: str) -> list[str]:
     assert source in graph and target in graph, "Source or target not in graph"
     path_result = nx.shortest_path(graph, source=source, target=target)
     return list(path_result) if isinstance(path_result, (list, tuple)) else []
 
 
-class AlgoMetrics(TypedDict):
-    level: str
-    top1: float
-    top3: float
-    top5: float
-    mrr: float
-    datapack_count: int
-
-
-def get_evaluation_by_datapack(
-    algorithm: str, datapack: str, tag: str | None = None, base_url: str | None = None
-) -> DtoAlgorithmDatapackEvaluationResp:
-    base_url = base_url or os.getenv("RCABENCH_BASE_URL")
-    assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
-    assert tag, "Tag must be specified."
-
-    with RCABenchClient(base_url=base_url) as client:
-        api = EvaluationApi(client)
-        resp = api.api_v2_evaluations_algorithms_algorithm_datapacks_datapack_get(
-            algorithm=algorithm,
-            datapack=datapack,
-            tag=tag,
-        )
-
-    assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
-    assert resp.data is not None
-    return resp.data
-
-
-def get_evaluation_by_dataset(
-    algorithm: str,
-    dataset: str,
-    dataset_version: str | None = None,
-    tag: str | None = None,
-    base_url: str | None = None,
-) -> DtoAlgorithmDatasetEvaluationResp:
-    base_url = base_url or os.getenv("RCABENCH_BASE_URL")
-    assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
-    assert tag, "Tag must be specified."
-
-    with RCABenchClient(base_url=base_url) as client:
-        api = EvaluationApi(client)
-        resp = api.api_v2_evaluations_algorithms_algorithm_datasets_dataset_get(
-            algorithm=algorithm,
-            dataset=dataset,
-            dataset_version=dataset_version,
-            tag=tag,
-        )
-
-    assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
-    assert resp.data is not None
-    return resp.data
-
-
-def _as_vertices(path: Iterable[str]) -> set[str]:
+def _as_vertices(path: list[str]) -> set[str]:
     return set(path)
 
 
-def _cpl(path: Sequence[str]) -> int:
+def _cpl(path: list[str]) -> int:
     n = len(path)
     return n - 1 if n > 0 else 0
+
+
+# =============================================================================
+# Path Analysis and Scoring Functions
+# =============================================================================
 
 
 def wcpl(
     path: Iterable[str],
     weights: dict[tuple[str, str], float] | None = None,
 ) -> float:
-    """wCPL(P): Weighted path length.
-
-        Calculate the sum of the weights of all edges on the path:
-    - If weights (edge weight dictionary, key is (src, dst) tuple) is provided,
-        return the sum of the weights of each edge.
-    - If not provided, it falls back to CPL(P): number of edges = max(len(path_list)-1, 0).
-    """
-
     path_list = list(path)
     if len(path_list) <= 1:
         return 0.0
@@ -114,7 +75,6 @@ def wcpl(
 
 
 def jaccard_score(algo_path: list[str], gt_path: list[str]) -> float:
-    """Jaccard(P_algo, P_gt) = |V(P_gt) ∩ V(P_algo)| / |V(P_gt) ∪ V(P_algo)|。"""
     va = _as_vertices(algo_path)
     vg = _as_vertices(gt_path)
     union = va | vg
@@ -122,6 +82,16 @@ def jaccard_score(algo_path: list[str], gt_path: list[str]) -> float:
         return 1.0
     inter = va & vg
     return float(len(inter) / len(union))
+
+
+def effi(algo_path: list[str], gt_path: list[str]) -> float:
+    va = _as_vertices(algo_path)
+    vg = _as_vertices(gt_path)
+    union = va | vg
+    if not union:
+        return 1.0
+    inter = va & vg
+    return float(len(inter) / len(va))
 
 
 def weighted_divergence_distance(
@@ -149,18 +119,31 @@ def single_path_alignment_score(
     divergence_path: list[str],
     weights: dict[tuple[str, str], float] | None = None,
 ) -> float:
-    """AS_sp(P_algo, P_gt) = WDD(P_algo, P_gt) x Jaccard(P_algo, P_gt)"""
-    return weighted_divergence_distance(algo_path, gt_path, divergence_path, weights) * jaccard_score(
-        algo_path, gt_path
-    )
+    """
+    AS_sp(P_algo, P_gt) = WDD(P_algo, P_gt) × Jaccard(P_algo, P_gt)
+    """
+    wdd = weighted_divergence_distance(algo_path, gt_path, divergence_path, weights)
+    jaccard = jaccard_score(algo_path, gt_path)
+    return wdd * jaccard
 
 
-def multi_path_alignment_score(
+def alignment_score_multi_gt(
     algo_path: list[str],
     gt_divergence_path_pairs: list[tuple[list[str], list[str]]],
     weights: dict[tuple[str, str], float] | None = None,
 ) -> float:
-    """AS_mp = max_i AS_sp(P_algo, P_gt^{(i)})。"""
+    """Calculate multi-path alignment score.
+
+    AS_mp = max_i AS_sp(P_algo, P_gt^{(i)})
+
+    Args:
+        algo_path: Algorithm predicted path
+        gt_divergence_path_pairs: List of (ground_truth_path, divergence_path) tuples
+        weights: Optional edge weights
+
+    Returns:
+        Maximum single-path alignment score across all ground truth paths
+    """
     best = 0.0
     for gt, div in gt_divergence_path_pairs:
         score = single_path_alignment_score(algo_path, gt, div, weights=weights)
@@ -169,19 +152,23 @@ def multi_path_alignment_score(
     return best
 
 
+# =============================================================================
+# Metrics Calculation Functions
+# =============================================================================
+
+
 def calculate_metrics_for_level(
     groundtruth_items: list[str], predictions: list[DtoGranularityRecord], level: str
 ) -> dict[str, float]:
-    """
-    Calculates metrics at a specific granularity level
+    """Calculate metrics at a specific granularity level.
 
     Args:
-    groundtruth_items: List of groundtruth labels for the granularity level
-    predictions: List of algorithm predictions
-    level: Name of the granularity level
+        groundtruth_items: List of groundtruth labels for the granularity level
+        predictions: List of algorithm predictions
+        level: Name of the granularity level
 
     Returns:
-    Dictionary containing top1, top3, top5, and mrr
+        Dictionary containing top1, top3, top5, and mrr metrics
     """
     if not groundtruth_items or not predictions:
         return {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
@@ -212,14 +199,14 @@ def calculate_metrics_for_level(
 
 
 def calculate_alignment_score(
-    datapack_name: str, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord]
-) -> dict[str, float]:
-    g = _build_service_graph(Path(datapack_name))
+    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord], k: int = 5
+) -> list[float]:
+    g = build_service_graph(datapack_path)
 
     # Check if entry service exists in graph
     if entry not in g.nodes:
         logger.warning(f"Entry service '{entry}' not found in service graph")
-        return {}
+        return []
 
     # Calculate ground truth paths and divergence paths for each prediction
     gt_paths = []
@@ -230,7 +217,7 @@ def calculate_alignment_score(
 
         try:
             # Get shortest path from entry to ground truth
-            gt_path = _get_shortest_path_as_list(g, source=entry, target=gt)
+            gt_path = _get_shortest_path(g, source=entry, target=gt)
             gt_paths.append((gt_path, gt))
         except nx.NetworkXNoPath:
             logger.warning(f"No path found from '{entry}' to '{gt}'")
@@ -238,30 +225,52 @@ def calculate_alignment_score(
 
     if len(gt_paths) == 0:
         logger.error(f"No valid ground truth paths found for entry '{entry}'")
-        return {}
+        return []
 
-    alignment_scores = {}
-    for pre in predictions:
+    predictions_sorted = sorted(predictions, key=lambda x: getattr(x, "rank", 0))[:k]
+    max_score = None
+    alignment_scores = []
+    for pre in predictions_sorted:
         algo_pre = pre.result
         assert algo_pre is not None
 
         if algo_pre not in g.nodes:
             logger.warning(f"Predicted service '{algo_pre}' not found in service graph")
-            alignment_scores[algo_pre] = 0.0
+            alignment_scores.append(0.0)
             continue
 
-        algo_path = _get_shortest_path_as_list(g, source=entry, target=algo_pre)
+        algo_path = _get_shortest_path(g, source=entry, target=algo_pre)
 
         gt_divergence_path_pairs_for_algo = []
         for gt_path, gt in gt_paths:
-            divergence_path = _get_shortest_path_as_list(g, source=algo_pre, target=gt)
+            divergence_path = _get_shortest_path(g, source=algo_pre, target=gt)
             gt_divergence_path_pairs_for_algo.append((gt_path, divergence_path))
 
         # Calculate multi-path alignment score
-        score = multi_path_alignment_score(algo_path, gt_divergence_path_pairs_for_algo)
-        alignment_scores[algo_pre] = score
+        score = alignment_score_multi_gt(algo_path, gt_divergence_path_pairs_for_algo)
+        if max_score is None or score > max_score:
+            max_score = score
+        alignment_scores.append(max_score)
 
     return alignment_scores
+
+
+def calculate_efficiency_score(
+    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord]
+) -> float:
+    try:
+        g = build_service_graph(datapack_path)
+
+        if entry not in g.nodes:
+            logger.warning(f"Entry service '{entry}' not found in service graph")
+            return 0.0
+
+        pre_paths = [_get_shortest_path(g, source=entry, target=i.result) for i in predictions if i.result is not None]
+        gt_paths = [_get_shortest_path(g, source=entry, target=i) for i in groundtruth_items if i in g.nodes]
+
+        return effi([i for j in pre_paths for i in j], [i for j in gt_paths for i in j])
+    except Exception:
+        return 0.0
 
 
 def get_metrics_by_dataset(
@@ -277,7 +286,16 @@ def get_metrics_by_dataset(
     assert len(evaluation.items) > 0
 
     level_metrics: defaultdict[str, dict[str, float]] = defaultdict(
-        lambda: {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
+        lambda: {
+            "top1": 0.0,
+            "top3": 0.0,
+            "top5": 0.0,
+            "mrr": 0.0,
+            "as1": 0.0,
+            "as3": 0.0,
+            "as5": 0.0,
+            "efficiency": 0.0,
+        }
     )
     total_datapacks = 0
 
@@ -288,6 +306,7 @@ def get_metrics_by_dataset(
 
         total_datapacks += 1
 
+        # Extract ground truth items for each granularity level
         groundtruth_levels = {}
         if item.groundtruth.service:
             groundtruth_levels["service"] = item.groundtruth.service
@@ -302,6 +321,7 @@ def get_metrics_by_dataset(
         if item.groundtruth.metric:
             groundtruth_levels["metric"] = item.groundtruth.metric
 
+        # Calculate metrics for each level
         for level, groundtruth_items in groundtruth_levels.items():
             metrics = calculate_metrics_for_level(groundtruth_items, item.predictions, level)
 
@@ -309,11 +329,25 @@ def get_metrics_by_dataset(
                 level_metrics[level][metric_name] += value
 
             if level == "service":
-                scores = calculate_alignment_score(
-                    item.datapack_name, "loadgenerator", groundtruth_items, item.predictions
+                as_k = calculate_alignment_score(
+                    Path("data/rcabench_dataset") / item.datapack_name / "converted",
+                    "loadgenerator",
+                    groundtruth_items,
+                    item.predictions,
                 )
-                print(scores)
+                eff = calculate_efficiency_score(
+                    Path("data/rcabench_dataset") / item.datapack_name / "converted",
+                    "loadgenerator",
+                    groundtruth_items,
+                    item.predictions,
+                )
 
+                for idx, as_i in enumerate(as_k):
+                    level_metrics[level][f"as{idx + 1}"] = level_metrics[level].get(f"as{idx + 1}", 0.0) + as_i
+
+                level_metrics[level]["efficiency"] = level_metrics[level].get("efficiency", 0.0) + eff
+
+    # Average metrics across all datapacks
     result_metrics = []
     for level, metrics in level_metrics.items():
         if total_datapacks > 0:
@@ -322,9 +356,22 @@ def get_metrics_by_dataset(
                 "top3": metrics["top3"] / total_datapacks,
                 "top5": metrics["top5"] / total_datapacks,
                 "mrr": metrics["mrr"] / total_datapacks,
+                "as1": metrics["as1"] / total_datapacks,
+                "as3": metrics["as3"] / total_datapacks,
+                "as5": metrics["as5"] / total_datapacks,
+                "efficiency": metrics["efficiency"] / total_datapacks,
             }
         else:
-            avg_metrics = {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
+            avg_metrics = {
+                "top1": 0.0,
+                "top3": 0.0,
+                "top5": 0.0,
+                "mrr": 0.0,
+                "as1": 0.0,
+                "as3": 0.0,
+                "as5": 0.0,
+                "efficiency": 0.0,
+            }
 
         result_metrics.append(
             AlgoMetrics(
@@ -333,6 +380,10 @@ def get_metrics_by_dataset(
                 top3=round(avg_metrics["top3"], 3),
                 top5=round(avg_metrics["top5"], 3),
                 mrr=round(avg_metrics["mrr"], 3),
+                as1=round(avg_metrics["as1"], 3),
+                as3=round(avg_metrics["as3"], 3),
+                as5=round(avg_metrics["as5"], 3),
+                efficiency=round(avg_metrics["efficiency"], 3),
                 datapack_count=total_datapacks,
             )
         )
@@ -340,44 +391,9 @@ def get_metrics_by_dataset(
     return result_metrics
 
 
-def get_multi_algorithms_metrics_by_dataset(
-    algorithms: list[str],
-    dataset: str,
-    dataset_version: str | None = None,
-    tag: str | None = None,
-    base_url: str | None = None,
-    level: str | None = None,
-) -> list[dict]:
-    """
-    Get metrics comparison for multiple algorithms on the same (dataset, version)
-
-    Args:
-        algorithms: List of algorithm names
-        dataset: Dataset name
-        dataset_version: Dataset version
-        tag: Tag
-        base_url: Base URL
-        level: Granularity level, if None returns all levels
-
-    Returns:
-        List of dictionaries containing algorithm names and corresponding metrics
-    """
-    result = []
-
-    for algorithm in algorithms:
-        metrics = get_metrics_by_dataset(algorithm, dataset, dataset_version, tag, base_url)
-
-        if level is not None:
-            # Only return metrics for the specified level
-            level_metrics = [m for m in metrics if m["level"] == level]
-            if level_metrics:
-                result.append({"algorithm": algorithm, **level_metrics[0]})
-        else:
-            # Return metrics for all levels
-            for metric in metrics:
-                result.append({"algorithm": algorithm, **metric})
-
-    return result
+# =============================================================================
+# Multi-Algorithm Comparison Functions
+# =============================================================================
 
 
 def get_algorithms_metrics_across_datasets(
@@ -388,15 +404,14 @@ def get_algorithms_metrics_across_datasets(
     base_url: str | None = None,
     level: str | None = None,
 ) -> list[dict]:
-    """
-    Get metrics comparison for multiple algorithms across different datasets and versions
+    """Get metrics comparison for multiple algorithms across different datasets.
 
     Args:
         algorithms: List of algorithm names
         datasets: List of dataset names
         dataset_versions: List of dataset versions (optional, if None will use default versions)
-        tag: Tag
-        base_url: Base URL
+        tag: Evaluation tag
+        base_url: API base URL (optional)
         level: Granularity level, if None returns all levels
 
     Returns:
@@ -440,7 +455,8 @@ def get_algorithms_metrics_across_datasets(
             except Exception as e:
                 # If there's an error getting metrics for this combination, skip it
                 logger.warning(
-                    f"Warning: Failed to get metrics for algorithm={algorithm}, dataset={dataset}, version={dataset_version}: {e}"  # noqa: E501
+                    f"Warning: Failed to get metrics for algorithm={algorithm}, dataset={dataset}, "
+                    f"version={dataset_version}: {e}"
                 )
                 continue
 
