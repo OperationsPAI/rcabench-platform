@@ -18,6 +18,7 @@ The `analysis` extra includes additional dependencies like `graphviz` and `matpl
 
 ## Documentation
 
++ [User Guide](./docs/USER_GUIDE.md): Complete guide for using rcabench-platform as both a console command and SDK.
 + [Development Guide](./CONTRIBUTING.md): How to set up the development environment and contribute to this project.
 + [Specifications](./docs/specifications.md): Our design details about RCA algorithms and data formats.
 + [Workflow References](./docs/workflow-references.md): How to use the functionalities of this project.
