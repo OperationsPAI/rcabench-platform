@@ -1,6 +1,13 @@
 import os
 
-from rcabench.openapi import ApiClient, AuthenticationApi, Configuration
+from rcabench.openapi import (
+    ApiClient,
+    AuthenticationApi,
+    Configuration,
+    DtoAlgorithmDatapackEvaluationResp,
+    DtoAlgorithmDatasetEvaluationResp,
+    EvaluationApi,
+)
 from rcabench.openapi.models.dto_login_request import DtoLoginRequest
 from rcabench.rcabench import RCABenchSDK
 
@@ -82,3 +89,48 @@ class RCABenchClient:
         if not self._api_client:
             self._api_client = self._get_authenticated_client()
         return self._api_client
+
+
+def get_evaluation_by_datapack(
+    algorithm: str, datapack: str, tag: str | None = None, base_url: str | None = None
+) -> DtoAlgorithmDatapackEvaluationResp:
+    base_url = base_url or os.getenv("RCABENCH_BASE_URL")
+    assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
+    assert tag, "Tag must be specified."
+
+    with RCABenchClient(base_url=base_url) as client:
+        api = EvaluationApi(client)
+        resp = api.api_v2_evaluations_algorithms_algorithm_datapacks_datapack_get(
+            algorithm=algorithm,
+            datapack=datapack,
+            tag=tag,
+        )
+
+    assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
+    assert resp.data is not None
+    return resp.data
+
+
+def get_evaluation_by_dataset(
+    algorithm: str,
+    dataset: str,
+    dataset_version: str | None = None,
+    tag: str | None = None,
+    base_url: str | None = None,
+) -> DtoAlgorithmDatasetEvaluationResp:
+    base_url = base_url or os.getenv("RCABENCH_BASE_URL")
+    assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
+    assert tag, "Tag must be specified."
+
+    with RCABenchClient(base_url=base_url) as client:
+        api = EvaluationApi(client)
+        resp = api.api_v2_evaluations_algorithms_algorithm_datasets_dataset_get(
+            algorithm=algorithm,
+            dataset=dataset,
+            dataset_version=dataset_version,
+            tag=tag,
+        )
+
+    assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
+    assert resp.data is not None
+    return resp.data

@@ -473,7 +473,7 @@ class RcabenchDatasetLoader(DatasetLoader):
         return RcabenchDatapackLoader(src_folder=self._src_root / datapack, datapack=datapack)
 
 
-def _build_service_graph(datapack_folder: Path) -> nx.Graph:
+def build_service_graph(datapack_folder: Path) -> nx.Graph:
     normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
     anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
     traces = pl.concat([normal_traces, anomal_traces])
