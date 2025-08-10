@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 import polars as pl
 import tomli
@@ -129,10 +129,63 @@ def list_algorithms(base_url: str | None = None):
         print_dataframe(df)
 
 
+class AlgoSpec(TypedDict):
+    name: str
+    image: str | None
+    tag: str | None
+
+
+def parse_algorithm_spec(algo_string: str, default_tag: str | None = None) -> AlgoSpec:
+    """
+    Parse algorithm specification string.
+
+    Supports two formats:
+    1. Algorithm name: "algorithm_name" or "algorithm_name:tag"
+    2. Docker image: "registry/image:tag" (contains '/' character)
+
+    Args:
+        algo_string: Algorithm specification string
+        default_tag: Default tag to use if not specified
+
+    Returns:
+        AlgoSpec with name, image, and tag fields
+    """
+    algo_string = algo_string.strip()
+
+    # Check if this looks like a docker image (contains '/')
+    if "/" in algo_string:
+        # This is an image:tag format
+        if ":" in algo_string:
+            image, tag = algo_string.rsplit(":", 1)
+            # Extract name from image path (last part after /)
+            name = image.split("/")[-1]
+            return AlgoSpec(name=name.strip(), image=image.strip(), tag=tag.strip())
+        else:
+            # Image without tag, use default tag
+            # Extract name from image path (last part after /)
+            name = algo_string.split("/")[-1]
+            return AlgoSpec(name=name, image=algo_string, tag=default_tag)
+    else:
+        # This is an algorithm name format
+        if ":" in algo_string:
+            name, tag = algo_string.split(":", 1)
+            return AlgoSpec(name=name.strip(), image=None, tag=tag.strip())
+        else:
+            return AlgoSpec(name=algo_string, image=None, tag=default_tag)
+
+
 @app.command()
 @timeit()
 def submit_execution(
-    algorithms: Annotated[list[str], typer.Option("-a", "--algorithm")],
+    algorithms: Annotated[
+        list[str],
+        typer.Option(
+            "-a",
+            "--algorithm",
+            help="Algorithm specification: 'name' or 'name:tag' for algorithm name, "
+            "'registry/image:tag' for docker image",
+        ),
+    ],
     project: Annotated[str | None, typer.Option("-p", "--project")] = None,
     datapacks: Annotated[list[str] | None, typer.Option("-d", "--datapack")] = None,
     dataset: Annotated[str | None, typer.Option("-ds", "--dataset")] = None,
@@ -146,6 +199,8 @@ def submit_execution(
     assert not (datapacks and dataset), "Cannot specify both datapacks and datasets."
     assert project, "Project name must be specified."
     assert tag, "Tag must be specified."
+
+    parsed_algorithms = [parse_algorithm_spec(algo, tag) for algo in algorithms]
 
     dataset_list = [dataset.strip()] if dataset and dataset.strip() else []
     dataset_version_list = [dataset_version.strip()] if dataset_version and dataset_version.strip() else []
@@ -164,11 +219,13 @@ def submit_execution(
     payloads: list[DtoAlgorithmExecutionRequest] = []
     with RCABenchClient(base_url=base_url) as client:
         api = AlgorithmsApi(client)
-        for algorithm in algorithms:
+        for algorithm_spec in parsed_algorithms:
             if dataset_list:
                 for dataset, dataset_version in zip(dataset_list, dataset_version_list):
                     payload = DtoAlgorithmExecutionRequest(
-                        algorithm=DtoAlgorithmItem(name=algorithm),
+                        algorithm=DtoAlgorithmItem(
+                            name=algorithm_spec["name"], image=algorithm_spec["image"], tag=algorithm_spec["tag"]
+                        ),
                         dataset=dataset,
                         dataset_version=dataset_version,
                         env_vars=env_vars,
@@ -180,7 +237,9 @@ def submit_execution(
             if datapacks:
                 for datapack in datapacks:
                     payload = DtoAlgorithmExecutionRequest(
-                        algorithm=DtoAlgorithmItem(name=algorithm),
+                        algorithm=DtoAlgorithmItem(
+                            name=algorithm_spec["name"], image=algorithm_spec["image"], tag=algorithm_spec["tag"]
+                        ),
                         datapack=datapack,
                         env_vars=env_vars,
                         project_name=project,
