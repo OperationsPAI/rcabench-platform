@@ -246,6 +246,10 @@ def rcabench_split_train_test(
 def valid(path: Path) -> tuple[Path, bool]:
     path_obj = path
 
+    if not path_obj.exists() or not path_obj.is_dir():
+        logger.debug("Path does not exist or is not a directory: {}", path)
+        return path, False
+
     # Check cache files first
     valid_cache = path_obj / ".valid"
     invalid_cache = path_obj / ".invalid"
@@ -274,12 +278,6 @@ def valid(path: Path) -> tuple[Path, bool]:
         "k8s.json",
         "env.json",
     ]
-
-    if not path_obj.exists() or not path_obj.is_dir():
-        logger.debug("Path does not exist or is not a directory: {}", path)
-        invalid_f = path_obj / ".invalid"
-        invalid_f.touch()
-        return path, False
 
     for filename in required_files:
         file_path = path_obj / filename
