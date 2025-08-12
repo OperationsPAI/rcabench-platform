@@ -8,21 +8,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 from rcabench.openapi import (
     ApiClient,
     DtoInjectionFieldMappingResp,
     HandlerNode,
-    HandlerPair,
     HandlerResources,
     InjectionApi,
+    InjectionsApi,
 )
 
 from rcabench_platform.v2.cli.main import app
+from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader, valid
+from rcabench_platform.v2.datasets.rcaeval import RCAEvalAnalyzerLoader
 from rcabench_platform.v2.datasets.spec import get_datapack_folder
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger
-from rcabench_platform.v2.metrics.dataset_loader import DatasetLoader
 from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
@@ -533,79 +537,19 @@ def distribution(dataset: str):
         json.dump(metadata.to_dict(), f, indent=4, default=str)
 
 
-@app.command()
-def metrics(dataset: str, datapack: str):
-    """
-    Calculate 4 metrics for a specified datapack in the dataset:
-    - SDD: Service Distance to root cause
-    - AC: Anomaly Cardinality
-    - CPL: Causal Path Length
-    - Root Service Degree: Maximum degree of root cause services
-    """
-    # Validate if datapack exists
-    datapack_folder = get_datapack_folder(dataset, datapack)
-    if not datapack_folder.exists():
-        logger.error(f"Error: Datapack {datapack} does not exist in dataset {dataset}")
-        return
-
-    # Initialize DatasetLoader and MetricsCalculator
-    try:
-        loader = DatasetLoader(dataset, datapack)
-        calculator = DatasetMetricsCalculator(loader)
-
-        results = {}
-
-        # 1. Service Distance to root cause (SDD@1, SDD@3, SDD@5)
-        sdd_1 = calculator.compute_sdd(k=1)
-        sdd_3 = calculator.compute_sdd(k=3)
-        sdd_5 = calculator.compute_sdd(k=5)
-
-        results["SDD@1"] = sdd_1
-        results["SDD@3"] = sdd_3[:3] if isinstance(sdd_3, list) else [sdd_3]
-        results["SDD@5"] = sdd_5[:5] if isinstance(sdd_5, list) else [sdd_5]
-
-        # 2. Anomaly Cardinality (AC) - all services
-        ac_results = calculator.compute_ac()
-        results["AC"] = ac_results
-
-        # 3. Causal Path Length (CPL)
-        cpl = calculator.compute_cpl()
-        results["CPL"] = cpl
-
-        # 4. Root Service Degree
-        root_service_degree = calculator.get_root_service_degree()
-        results["RootServiceDegree"] = root_service_degree
-
-        # Output results
-        logger.info(f"\n=== Metrics Calculation Results for Dataset {dataset} - Datapack {datapack} ===")
-        logger.info(f"SDD@1 (Service Distance to root cause): {sdd_1}")
-        logger.info(f"SDD@3: {results['SDD@3']}")
-        logger.info(f"SDD@5: {results['SDD@5']}")
-        logger.info(f"CPL (Causal Path Length): {cpl}")
-        logger.info(f"Root Service Degree: {root_service_degree}")
-        logger.info("AC (Anomaly Cardinality) per service:")
-        for service, count in ac_results.items():
-            logger.info(f"  {service}: {count}")
-
-        # Save results to file
-        output_file = f"temp/{dataset}_{datapack}_metrics.json"
-        Path("temp").mkdir(exist_ok=True)
-
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=4, ensure_ascii=False, default=str)
-
-        logger.info(f"\nResults saved to: {output_file}")
-
-    except Exception as e:
-        logger.error(f"Error occurred while calculating metrics: {str(e)}")
-        import traceback
-
-        traceback.print_exc()
-
-
 def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, dict[str, Any]]:
-    loader = DatasetLoader(dataset, datapack)
-    calculator = DatasetMetricsCalculator(loader)
+    if dataset == "rcabench":
+        loader = RCABenchAnalyzerLoader(dataset, datapack)
+    elif dataset.startswith("rcaeval"):
+        loader = RCAEvalAnalyzerLoader(dataset, datapack)
+    else:
+        assert False, f"Unknown dataset: {dataset}"
+
+    try:
+        calculator = DatasetMetricsCalculator(loader)
+    except Exception as e:
+        logger.error(f"Error processing datapack {datapack} in dataset {dataset}: {e}")
+        return datapack, {}
 
     # Calculate metrics
     results = {}
@@ -614,27 +558,58 @@ def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, 
     results["SDD@5"] = calculator.compute_sdd(k=5)
     results["AC"] = calculator.compute_ac()
     results["CPL"] = calculator.compute_cpl()
-    results["RootServiceDegree"] = calculator.get_root_service_degree()
+    results["RootServiceDegree"] = calculator.get_root_cause_degree()
 
     return datapack, results
 
 
 @app.command()
-def batch_metrics(dataset: str):
+def batch_metrics(dataset: str, online: bool):
     folder = Path("data/rcabench-platform-v2/data") / dataset
     if not folder.exists():
         logger.error(f"Error: Dataset {dataset} does not exist")
         return
 
-    datapacks = [f.name for f in folder.iterdir() if f.is_dir()]
+    if dataset == "rcabench" and online:
+        datapacks = []
+        with RCABenchClient() as client:
+            injection_api = InjectionsApi(client)
+
+            page = 1
+            page_size = 100
+
+            while True:
+                logger.info(f"Fetching page {page} with {page_size} items per page...")
+                res = injection_api.api_v2_injections_get(tags=["absolute_anomaly"], size=page_size, page=page)
+                assert res.data is not None, "API returned empty data"
+
+                if res.data.items is None or len(res.data.items) == 0:
+                    logger.info(f"Page {page} has no data, stopping...")
+                    break
+
+                current_datapacks = [i.injection_name for i in res.data.items if i.injection_name is not None]
+                datapacks.extend(current_datapacks)
+                logger.info(f"Page {page} returned {len(current_datapacks)} valid items")
+
+                if res.data.pagination is not None and res.data.pagination.total_pages is not None:
+                    if page >= res.data.pagination.total_pages:
+                        logger.info(f"Retrieved all {res.data.pagination.total_pages} pages")
+                        break
+
+                if len(res.data.items) < page_size:
+                    logger.info("Last page reached")
+                    break
+
+                page += 1
+
+            logger.info(f"Total retrieved: {len(datapacks)} valid datapacks")
+    else:
+        datapacks = [f.name for f in folder.iterdir() if f.is_dir()]
 
     if not datapacks:
         logger.error(f"Error: No datapacks found in dataset {dataset}")
         return
 
-    logger.info(f"Found {len(datapacks)} datapacks: {datapacks}")
-
-    # Create tasks for parallel processing
     tasks = [functools.partial(_process_single_datapack_metrics, dataset, datapack) for datapack in datapacks]
 
     cpu = os.cpu_count()
@@ -644,7 +619,7 @@ def batch_metrics(dataset: str):
         tasks,
         parallel=cpu // 4,
         cpu_limit_each=4,
-        ignore_exceptions=True,
+        ignore_exceptions=False,
     )
 
     # Convert results list to dictionary
@@ -694,6 +669,360 @@ def patch(dataset: str):
         cpu_limit_each=4,
         ignore_exceptions=True,
     )
+
+
+@app.command()
+def visualize_metrics(dataset: str, output_dir: str = "temp/visualizations"):
+    """
+    Visualize batch metrics results including SDD, CPL, AC, and Root Service Degree.
+
+    Args:
+        dataset: Dataset name (e.g., 'rcaeval_re2_ob')
+        output_dir: Directory to save visualization plots
+    """
+    # Load batch metrics file
+    metrics_file = f"temp/{dataset}_batch_metrics.json"
+
+    if not Path(metrics_file).exists():
+        logger.error(f"Error: Metrics file {metrics_file} does not exist. Please run batch-metrics first.")
+        return
+
+    with open(metrics_file, encoding="utf-8") as f:
+        batch_results = json.load(f)
+
+    if not batch_results:
+        logger.error(f"Error: No data found in {metrics_file}")
+        return
+
+    # Create output directory
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Creating visualizations for {len(batch_results)} datapacks...")
+
+    # Extract metrics data
+    datapacks = list(batch_results.keys())
+
+    # 1. SDD metrics visualization
+    _plot_sdd_metrics(batch_results, datapacks, output_path, dataset)
+
+    # 2. CPL distribution
+    _plot_cpl_distribution(batch_results, datapacks, output_path, dataset)
+
+    # 3. Root Service Degree distribution
+    _plot_root_service_degree(batch_results, datapacks, output_path, dataset)
+
+    # 4. AC (Anomaly Cardinality) analysis
+    _plot_ac_analysis(batch_results, datapacks, output_path, dataset)
+
+    # 5. Overall metrics summary
+    _plot_metrics_summary(batch_results, datapacks, output_path, dataset)
+
+    logger.info(f"✓ Visualizations saved to: {output_path}")
+
+
+def _plot_sdd_metrics(batch_results: dict, datapacks: list, output_path: Path, dataset: str):
+    """Plot SDD@1, SDD@3, SDD@5 metrics distribution"""
+
+    sdd1_values = [batch_results[dp]["SDD@1"] for dp in datapacks]
+    sdd3_values = [np.mean(batch_results[dp]["SDD@3"]) for dp in datapacks]
+    sdd5_values = [np.mean(batch_results[dp]["SDD@5"]) for dp in datapacks]
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle(f"SDD Metrics Distribution - {dataset}", fontsize=16, fontweight="bold")
+
+    # SDD@1 histogram
+    axes[0, 0].hist(sdd1_values, bins=20, alpha=0.7, color="skyblue", edgecolor="black")
+    axes[0, 0].set_title("SDD@1 Distribution")
+    axes[0, 0].set_xlabel("SDD@1 Value")
+    axes[0, 0].set_ylabel("Frequency")
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # SDD@3 histogram
+    axes[0, 1].hist(sdd3_values, bins=20, alpha=0.7, color="lightgreen", edgecolor="black")
+    axes[0, 1].set_title("SDD@3 Average Distribution")
+    axes[0, 1].set_xlabel("SDD@3 Average Value")
+    axes[0, 1].set_ylabel("Frequency")
+    axes[0, 1].grid(True, alpha=0.3)
+
+    # SDD@5 histogram
+    axes[1, 0].hist(sdd5_values, bins=20, alpha=0.7, color="lightcoral", edgecolor="black")
+    axes[1, 0].set_title("SDD@5 Average Distribution")
+    axes[1, 0].set_xlabel("SDD@5 Average Value")
+    axes[1, 0].set_ylabel("Frequency")
+    axes[1, 0].grid(True, alpha=0.3)
+
+    # SDD comparison boxplot
+    sdd_data = [sdd1_values, sdd3_values, sdd5_values]
+    axes[1, 1].boxplot(sdd_data, tick_labels=["SDD@1", "SDD@3", "SDD@5"])
+    axes[1, 1].set_title("SDD Metrics Comparison")
+    axes[1, 1].set_ylabel("Value")
+    axes[1, 1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path / f"{dataset}_sdd_metrics.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"SDD metrics plot saved: {output_path / f'{dataset}_sdd_metrics.png'}")
+
+
+def _plot_cpl_distribution(batch_results: dict, datapacks: list, output_path: Path, dataset: str):
+    """Plot CPL (Causal Path Length) distribution"""
+
+    cpl_values = [batch_results[dp]["CPL"] for dp in datapacks]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    fig.suptitle(f"CPL (Causal Path Length) Distribution - {dataset}", fontsize=16, fontweight="bold")
+
+    # CPL histogram
+    ax1.hist(cpl_values, bins=20, alpha=0.7, color="orange", edgecolor="black")
+    ax1.set_title("CPL Distribution")
+    ax1.set_xlabel("CPL Value")
+    ax1.set_ylabel("Frequency")
+    ax1.grid(True, alpha=0.3)
+
+    # CPL over datapacks (line plot)
+    ax2.plot(range(len(datapacks)), cpl_values, "o-", color="darkblue", markersize=4)
+    ax2.set_title("CPL Values Across Datapacks")
+    ax2.set_xlabel("Datapack Index")
+    ax2.set_ylabel("CPL Value")
+    ax2.grid(True, alpha=0.3)
+
+    # Add statistics
+    mean_cpl = np.mean(cpl_values)
+    median_cpl = np.median(cpl_values)
+    ax1.axvline(mean_cpl, color="red", linestyle="--", label=f"Mean: {mean_cpl:.2f}")
+    ax1.axvline(median_cpl, color="green", linestyle="--", label=f"Median: {median_cpl:.2f}")
+    ax1.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_path / f"{dataset}_cpl_distribution.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"CPL distribution plot saved: {output_path / f'{dataset}_cpl_distribution.png'}")
+
+
+def _plot_root_service_degree(batch_results: dict, datapacks: list, output_path: Path, dataset: str):
+    """Plot Root Service Degree distribution"""
+
+    degree_values = [batch_results[dp]["RootServiceDegree"] for dp in datapacks]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    fig.suptitle(f"Root Service Degree Distribution - {dataset}", fontsize=16, fontweight="bold")
+
+    # Degree histogram
+    ax1.hist(degree_values, bins=20, alpha=0.7, color="purple", edgecolor="black")
+    ax1.set_title("Root Service Degree Distribution")
+    ax1.set_xlabel("Degree Value")
+    ax1.set_ylabel("Frequency")
+    ax1.grid(True, alpha=0.3)
+
+    # Degree boxplot
+    ax2.boxplot(degree_values)
+    ax2.set_title("Root Service Degree Boxplot")
+    ax2.set_ylabel("Degree Value")
+    ax2.grid(True, alpha=0.3)
+
+    # Add statistics
+    mean_degree = np.mean(degree_values)
+    median_degree = np.median(degree_values)
+    ax1.axvline(mean_degree, color="red", linestyle="--", label=f"Mean: {mean_degree:.2f}")
+    ax1.axvline(median_degree, color="green", linestyle="--", label=f"Median: {median_degree:.2f}")
+    ax1.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_path / f"{dataset}_root_service_degree.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"Root Service Degree plot saved: {output_path / f'{dataset}_root_service_degree.png'}")
+
+
+def _plot_ac_analysis(batch_results: dict, datapacks: list, output_path: Path, dataset: str):
+    """Plot AC (Anomaly Cardinality) analysis"""
+
+    # Aggregate AC data across all datapacks
+    all_services = set()
+    for dp in datapacks:
+        all_services.update(batch_results[dp]["AC"].keys())
+
+    # Calculate AC statistics per service
+    service_ac_stats = {}
+    for service in all_services:
+        ac_values = [batch_results[dp]["AC"].get(service, 0) for dp in datapacks]
+        service_ac_stats[service] = {
+            "mean": np.mean(ac_values),
+            "total": sum(ac_values),
+            "max": max(ac_values),
+            "std": np.std(ac_values),
+        }
+
+    # Total AC per datapack
+    total_ac_per_datapack = [sum(batch_results[dp]["AC"].values()) for dp in datapacks]
+
+    fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+    fig.suptitle(f"AC (Anomaly Cardinality) Analysis - {dataset}", fontsize=16, fontweight="bold")
+
+    # Total AC distribution
+    axes[0, 0].hist(total_ac_per_datapack, bins=20, alpha=0.7, color="teal", edgecolor="black")
+    axes[0, 0].set_title("Total AC per Datapack Distribution")
+    axes[0, 0].set_xlabel("Total AC Value")
+    axes[0, 0].set_ylabel("Frequency")
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # Top services by total AC
+    sorted_services = sorted(service_ac_stats.items(), key=lambda x: x[1]["total"], reverse=True)
+    top_services = sorted_services[:10] if len(sorted_services) > 10 else sorted_services
+
+    service_names = [s[0] for s in top_services]
+    service_totals = [s[1]["total"] for s in top_services]
+
+    axes[0, 1].bar(range(len(service_names)), service_totals, color="lightblue", edgecolor="black")
+    axes[0, 1].set_title("Top 10 Services by Total AC")
+    axes[0, 1].set_xlabel("Service")
+    axes[0, 1].set_ylabel("Total AC")
+    axes[0, 1].set_xticks(range(len(service_names)))
+    axes[0, 1].set_xticklabels(service_names, rotation=45, ha="right")
+    axes[0, 1].grid(True, alpha=0.3)
+
+    # AC variance across services
+    service_means = [s[1]["mean"] for s in sorted_services]
+    service_stds = [s[1]["std"] for s in sorted_services]
+
+    axes[1, 0].scatter(service_means, service_stds, alpha=0.6, color="red")
+    axes[1, 0].set_title("AC Mean vs Standard Deviation by Service")
+    axes[1, 0].set_xlabel("Mean AC")
+    axes[1, 0].set_ylabel("Standard Deviation")
+    axes[1, 0].grid(True, alpha=0.3)
+
+    # Total AC over datapacks
+    axes[1, 1].plot(range(len(datapacks)), total_ac_per_datapack, "o-", color="green", markersize=4)
+    axes[1, 1].set_title("Total AC Across Datapacks")
+    axes[1, 1].set_xlabel("Datapack Index")
+    axes[1, 1].set_ylabel("Total AC")
+    axes[1, 1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path / f"{dataset}_ac_analysis.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"AC analysis plot saved: {output_path / f'{dataset}_ac_analysis.png'}")
+
+
+def _plot_metrics_summary(batch_results: dict, datapacks: list, output_path: Path, dataset: str):
+    """Plot overall metrics summary and correlations"""
+
+    # Extract all metrics
+    sdd1_values = [batch_results[dp]["SDD@1"] for dp in datapacks]
+    cpl_values = [batch_results[dp]["CPL"] for dp in datapacks]
+    degree_values = [batch_results[dp]["RootServiceDegree"] for dp in datapacks]
+    total_ac_values = [sum(batch_results[dp]["AC"].values()) for dp in datapacks]
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle(f"Metrics Summary and Correlations - {dataset}", fontsize=16, fontweight="bold")
+
+    # SDD@1 vs CPL correlation
+    axes[0, 0].scatter(sdd1_values, cpl_values, alpha=0.6, color="blue")
+    axes[0, 0].set_title("SDD@1 vs CPL")
+    axes[0, 0].set_xlabel("SDD@1")
+    axes[0, 0].set_ylabel("CPL")
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # Add correlation coefficient
+    corr_sdd_cpl = np.corrcoef(sdd1_values, cpl_values)[0, 1]
+    axes[0, 0].text(
+        0.05,
+        0.95,
+        f"Correlation: {corr_sdd_cpl:.3f}",
+        transform=axes[0, 0].transAxes,
+        fontsize=10,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
+
+    # Total AC vs Root Service Degree
+    axes[0, 1].scatter(total_ac_values, degree_values, alpha=0.6, color="orange")
+    axes[0, 1].set_title("Total AC vs Root Service Degree")
+    axes[0, 1].set_xlabel("Total AC")
+    axes[0, 1].set_ylabel("Root Service Degree")
+    axes[0, 1].grid(True, alpha=0.3)
+
+    corr_ac_degree = np.corrcoef(total_ac_values, degree_values)[0, 1]
+    axes[0, 1].text(
+        0.05,
+        0.95,
+        f"Correlation: {corr_ac_degree:.3f}",
+        transform=axes[0, 1].transAxes,
+        fontsize=10,
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+    )
+
+    # Metrics statistics table
+    metrics_stats = {
+        "SDD@1": {
+            "mean": np.mean(sdd1_values),
+            "std": np.std(sdd1_values),
+            "min": min(sdd1_values),
+            "max": max(sdd1_values),
+        },
+        "CPL": {"mean": np.mean(cpl_values), "std": np.std(cpl_values), "min": min(cpl_values), "max": max(cpl_values)},
+        "Degree": {
+            "mean": np.mean(degree_values),
+            "std": np.std(degree_values),
+            "min": min(degree_values),
+            "max": max(degree_values),
+        },
+        "Total AC": {
+            "mean": np.mean(total_ac_values),
+            "std": np.std(total_ac_values),
+            "min": min(total_ac_values),
+            "max": max(total_ac_values),
+        },
+    }
+
+    # Create summary table
+    axes[1, 0].axis("tight")
+    axes[1, 0].axis("off")
+
+    table_data = []
+    for metric, stats in metrics_stats.items():
+        table_data.append(
+            [metric, f"{stats['mean']:.2f}", f"{stats['std']:.2f}", f"{stats['min']:.2f}", f"{stats['max']:.2f}"]
+        )
+
+    table = axes[1, 0].table(
+        cellText=table_data, colLabels=["Metric", "Mean", "Std", "Min", "Max"], cellLoc="center", loc="center"
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.5)
+    axes[1, 0].set_title("Metrics Statistics Summary")
+
+    # Overall metrics distribution (normalized)
+    normalized_sdd1 = np.array(sdd1_values) / max(sdd1_values) if max(sdd1_values) > 0 else np.array(sdd1_values)
+    normalized_cpl = np.array(cpl_values) / max(cpl_values) if max(cpl_values) > 0 else np.array(cpl_values)
+    normalized_degree = (
+        np.array(degree_values) / max(degree_values) if max(degree_values) > 0 else np.array(degree_values)
+    )
+    normalized_ac = (
+        np.array(total_ac_values) / max(total_ac_values) if max(total_ac_values) > 0 else np.array(total_ac_values)
+    )
+
+    x = range(len(datapacks))
+    axes[1, 1].plot(x, normalized_sdd1, "o-", label="SDD@1 (norm)", alpha=0.7, markersize=3)
+    axes[1, 1].plot(x, normalized_cpl, "s-", label="CPL (norm)", alpha=0.7, markersize=3)
+    axes[1, 1].plot(x, normalized_degree, "^-", label="Degree (norm)", alpha=0.7, markersize=3)
+    axes[1, 1].plot(x, normalized_ac, "v-", label="AC (norm)", alpha=0.7, markersize=3)
+
+    axes[1, 1].set_title("Normalized Metrics Across Datapacks")
+    axes[1, 1].set_xlabel("Datapack Index")
+    axes[1, 1].set_ylabel("Normalized Value")
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path / f"{dataset}_metrics_summary.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+    logger.info(f"Metrics summary plot saved: {output_path / f'{dataset}_metrics_summary.png'}")
 
 
 if __name__ == "__main__":

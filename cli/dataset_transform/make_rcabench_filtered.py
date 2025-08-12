@@ -11,13 +11,13 @@ import polars as pl
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.datasets.rcabench import rcabench_fix_injection_display_config
 from rcabench_platform.v2.datasets.spec import (
+    build_service_graph,
     get_datapack_folder,
     get_dataset_folder,
     get_dataset_meta_file,
     get_dataset_meta_folder,
 )
 from rcabench_platform.v2.sources.convert import link_subset
-from rcabench_platform.v2.sources.rcabench import build_service_graph
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
 
@@ -232,7 +232,12 @@ def scan_path_from_traces(
     target_service: str,
 ) -> bool:
     assert datapack_folder.exists()
-    service_graph = build_service_graph(datapack_folder)
+
+    normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
+    anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
+    traces = pl.concat([normal_traces, anomal_traces])
+
+    service_graph = build_service_graph(traces)
     if source_service is None:
         return target_service in service_graph
     if source_service == target_service:

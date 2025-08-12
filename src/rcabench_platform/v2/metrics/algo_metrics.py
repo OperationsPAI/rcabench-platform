@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import TypedDict
 
 import networkx as nx
+import polars as pl
 from rcabench.openapi import DtoGranularityRecord
 
 from ..clients.rcabench_ import get_evaluation_by_dataset
+from ..datasets.spec import build_service_graph
 from ..logging import logger
-from ..sources.rcabench import build_service_graph
 
 
 class AlgoMetrics(TypedDict):
@@ -35,7 +36,7 @@ class AlgoMetrics(TypedDict):
 # =============================================================================
 
 
-def _get_shortest_path(graph: nx.Graph, source: str, target: str) -> list[str]:
+def _get_shortest_path(graph: nx.DiGraph, source: str, target: str) -> list[str]:
     assert source in graph and target in graph, "Source or target not in graph"
     path_result = nx.shortest_path(graph, source=source, target=target)
     return list(path_result) if isinstance(path_result, (list, tuple)) else []
@@ -201,7 +202,11 @@ def calculate_metrics_for_level(
 def calculate_alignment_score(
     datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord], k: int = 5
 ) -> list[float]:
-    g = build_service_graph(datapack_path)
+    normal_traces = pl.scan_parquet(datapack_path / "normal_traces.parquet")
+    anomal_traces = pl.scan_parquet(datapack_path / "abnormal_traces.parquet")
+    traces = pl.concat([normal_traces, anomal_traces])
+
+    g = build_service_graph(traces)
 
     # Check if entry service exists in graph
     if entry not in g.nodes:
@@ -259,7 +264,10 @@ def calculate_efficiency_score(
     datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord]
 ) -> float:
     try:
-        g = build_service_graph(datapack_path)
+        normal_traces = pl.scan_parquet(datapack_path / "normal_traces.parquet")
+        anomal_traces = pl.scan_parquet(datapack_path / "abnormal_traces.parquet")
+        traces = pl.concat([normal_traces, anomal_traces])
+        g = build_service_graph(traces)
 
         if entry not in g.nodes:
             logger.warning(f"Entry service '{entry}' not found in service graph")

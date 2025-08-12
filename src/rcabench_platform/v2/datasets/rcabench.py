@@ -7,10 +7,13 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import networkx as nx
 import polars as pl
 
+from ..datasets.spec import get_datapack_folder
 from ..logging import logger, timeit
 from ..sources.convert import link_subset
+from .spec import DatasetAnalyzer, build_service_graph
 
 DATAPACK_PATTERN = (
     r"(ts|ts\d)-(mysql|ts-rabbitmq|ts-ui-dashboard|ts-\w+-service|ts-\w+-\w+-service|ts-\w+-\w+-\w+-service)-(.+)-[^-]+"
@@ -325,3 +328,195 @@ def valid(path: Path) -> tuple[Path, bool]:
     valid_f = path_obj / ".valid"
     valid_f.touch()
     return path, True
+
+
+class RCABenchAnalyzerLoader(DatasetAnalyzer):
+    # Golden signal metrics definition (SRE four golden signals: latency, traffic, errors, saturation)
+
+    _GOLDEN_SIGNAL_METRICS = {
+        "latency": [
+            "http.client.request.duration",
+            "http.server.request.duration",
+            "db.client.connections.use_time",
+            "db.client.connections.create_time",
+            "db.client.connections.wait_time",
+            "jvm.gc.duration",
+        ],
+        "traffic": [
+            "hubble_flows_processed_total",
+            "processedSpans",
+            "processedLogs",
+            "hubble_icmp_total",
+            "hubble_port_distribution_total",
+            "hubble_tcp_flags_total",
+            "otlp.exporter.seen",
+            "otlp.exporter.exported",
+            "k8s.pod.network.io",
+        ],
+        "error": [
+            "hubble_drop_total",
+            "k8s.pod.network.errors",
+            "k8s.container.restarts",
+        ],
+        "saturation": [
+            "container.cpu.usage",
+            "k8s.pod.cpu.usage",
+            "k8s.pod.cpu_limit_utilization",
+            "k8s.pod.cpu.node.utilization",
+            "jvm.cpu.recent_utilization",
+            "jvm.system.cpu.utilization",
+            "jvm.system.cpu.load_1m",
+            "container.memory.usage",
+            "k8s.pod.memory.usage",
+            "k8s.pod.memory_limit_utilization",
+            "k8s.pod.memory.node.utilization",
+            "container.memory.working_set",
+            "k8s.pod.memory.working_set",
+            "jvm.memory.used",
+            "container.filesystem.usage",
+            "k8s.pod.filesystem.usage",
+            "queueSize",
+        ],
+    }
+
+    def __init__(self, dataset: str, datapack: str):
+        assert isinstance(dataset, str) and dataset.strip(), "dataset must be a non-empty string"
+        assert isinstance(datapack, str) and datapack.strip(), "datapack must be a non-empty string"
+        self.dataset: str = dataset
+        self.datapack: str = datapack
+        self.files: dict[str, Any] = self._load_datapack_files()
+
+    def _get_datapack_folder(self) -> Path | None:
+        return Path("data") / "rcabench_dataset" / self.datapack / "converted"
+
+    def _load_datapack_files(self) -> dict[str, Any]:
+        folder = self._get_datapack_folder()
+        assert folder is not None, "datapack folder must exist"
+        files: dict[str, Any] = {}
+
+        for file_type in [
+            "traces",
+            "logs",
+            "metrics",
+            "metrics_sum",
+            "metrics_histogram",
+        ]:
+            normal_file = folder / f"normal_{file_type}.parquet"
+            abnormal_file = folder / f"abnormal_{file_type}.parquet"
+            if normal_file.exists():
+                lf = pl.scan_parquet(normal_file)
+                lf = lf.sort("time")
+                files[f"normal_{file_type}"] = lf
+            if abnormal_file.exists():
+                lf = pl.scan_parquet(abnormal_file)
+                lf = lf.sort("time")
+                files[f"abnormal_{file_type}"] = lf
+
+        for json_file in ["env.json", "injection.json"]:
+            json_path = folder / json_file
+            if json_path.exists():
+                with open(json_path) as f:
+                    files[json_file.replace(".json", "")] = json.load(f)
+
+        conclusion_file = folder / "conclusion.parquet"
+        if conclusion_file.exists():
+            lf = pl.scan_parquet(conclusion_file)
+            files["conclusion"] = lf
+
+        return files
+
+    def get_traces(self, abnormal: bool = False) -> pl.LazyFrame | None:
+        key = "abnormal_traces" if abnormal else "normal_traces"
+        return self.files.get(key)
+
+    def get_metrics(self, abnormal: bool = False) -> pl.LazyFrame | None:
+        key = "abnormal_metrics" if abnormal else "normal_metrics"
+        return self.files.get(key)
+
+    def get_logs(self, abnormal: bool = False) -> pl.LazyFrame | None:
+        key = "abnormal_logs" if abnormal else "normal_logs"
+        return self.files.get(key)
+
+    def get_conclusion(self) -> pl.LazyFrame | None:
+        return self.files.get("conclusion")
+
+    def get_service_dependency_graph(self) -> nx.DiGraph:
+        folder = self._get_datapack_folder()
+        assert folder is not None, "datapack folder must exist"
+
+        normal_traces = pl.scan_parquet(folder / "normal_traces.parquet")
+        anomal_traces = pl.scan_parquet(folder / "abnormal_traces.parquet")
+        traces = pl.concat([normal_traces, anomal_traces])
+
+        return build_service_graph(traces)
+
+    def get_all_services(self) -> list[str]:
+        services = set()
+        for key in [
+            "normal_traces",
+            "abnormal_traces",
+            "normal_metrics",
+            "abnormal_metrics",
+        ]:
+            lf = self.files.get(key)
+            if lf is not None and "service_name" in lf.collect_schema():
+                services.update(lf.select("service_name").unique().collect()["service_name"].to_list())
+
+        services.discard("loadgenerator-service")
+        services.discard("")
+        return list(services)
+
+    def get_service_metrics(self, service_name: str, abnormal: bool = False) -> dict[str, list[float]]:
+        metrics_lf = self.get_metrics(abnormal=abnormal)
+        if metrics_lf is None:
+            return {}
+
+        return self._extract_service_metrics(metrics_lf, service_name)
+
+    def get_root_services(self) -> list[str]:
+        injection = self.files.get("injection", {})
+        assert isinstance(injection, dict), "injection must be a dictionary"
+        if not injection:
+            return []
+        ground_truth = injection.get("ground_truth", {})
+        root_services = ground_truth.get("service", [])
+        return root_services
+
+    def get_entry_service(self) -> str | None:
+        return "loadgenerator"
+
+    def _extract_service_metrics(self, metrics_lf: pl.LazyFrame, service_name: str) -> dict[str, list[float]]:
+        assert isinstance(metrics_lf, pl.LazyFrame), "metrics_lf must be a polars LazyFrame"
+        assert isinstance(service_name, str) and service_name.strip(), "service_name must be a non-empty string"
+
+        schema = metrics_lf.collect_schema()
+        assert "service_name" in schema, "metrics_lf must have service_name column"
+        assert "metric" in schema, "metrics_lf must have metric column"
+        assert "value" in schema, "metrics_lf must have value column"
+
+        service_metrics = (
+            metrics_lf.filter(pl.col("service_name") == service_name)
+            .group_by("metric")
+            .agg(pl.col("value").alias("values"))
+            .collect()
+        )
+
+        metrics_dict = {}
+        for row in service_metrics.iter_rows(named=True):
+            metric_name = row["metric"]
+            values = row["values"]
+            if not self._is_golden_signal_metric(metric_name):
+                continue
+            for value in values:
+                assert isinstance(value, (int, float)), f"metric value must be numeric, got {type(value)}"
+            metrics_dict[metric_name] = values
+        return metrics_dict
+
+    def _is_golden_signal_metric(self, metric_name: str) -> bool:
+        for metrics_list in self._GOLDEN_SIGNAL_METRICS.values():
+            if metric_name in metrics_list:
+                return True
+            for metric in metrics_list:
+                if metric in metric_name:
+                    return True
+        return False

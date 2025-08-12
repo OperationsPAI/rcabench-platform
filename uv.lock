@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -3357,7 +3357,7 @@ wheels = [
 
 [[package]]
 name = "rcabench"
-version = "1.1.29"
+version = "1.1.31"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -3375,9 +3375,9 @@ dependencies = [
     { name = "urllib3" },
     { name = "wheel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/21/e299c5654c3b189ded93172172f8ab38cb085ae27bf9f7b1239b97ab082f/rcabench-1.1.29.tar.gz", hash = "sha256:de8138817500e78149dfbe380dc8bfae1ed070e3666d475c59ae88dc2d1882e3", size = 257675, upload-time = "2025-08-09T12:32:15.796Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/a9/16bd368f1a66dfb4d14839405833a639eb952870d0f331ab66d74758e706/rcabench-1.1.31.tar.gz", hash = "sha256:1fe9beb8c11f424716800f0de0aa6ec32e5f928299384d7e4eadf6066ea78799", size = 258986, upload-time = "2025-08-12T10:13:02.235Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/b4/65fe36af79b506a3eb0907c11faac87d34252add038c894d5aaec0d7bbe5/rcabench-1.1.29-py3-none-any.whl", hash = "sha256:4ba1550f2c847f25e6464ca7437c9f579531ba89909276b6acff2355009fec68", size = 692400, upload-time = "2025-08-09T12:32:14.149Z" },
+    { url = "https://files.pythonhosted.org/packages/15/a9/c409410f37f3c95536dcadfe9bf8c99e584b8d6f56408915ed127c403c7e/rcabench-1.1.31-py3-none-any.whl", hash = "sha256:1908f09769c72a1ca84ecb15187a8d7fe75a283009c04640d0c3b3db120dd341", size = 695945, upload-time = "2025-08-12T10:13:00.3Z" },
 ]
 
 [[package]]
@@ -3454,7 +3454,7 @@ requires-dist = [
     { name = "polars", specifier = ">=1.31.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
-    { name = "rcabench", specifier = ">=1.1.29" },
+    { name = "rcabench", specifier = ">=1.1.31" },
     { name = "requests", specifier = ">=2.32.4" },
     { name = "scikit-learn", specifier = ">=1.7.0" },
     { name = "scipy", specifier = ">=1.15.0" },

@@ -1,16 +1,24 @@
+import json
 import statistics
 
 import networkx as nx
+from networkx.readwrite import json_graph
 
-from .dataset_loader import DatasetLoader
+from ..datasets.spec import DatasetAnalyzer
+from ..logging import logger
 
 
 class DatasetMetricsCalculator:
-    def __init__(self, loader: DatasetLoader):
+    def __init__(self, loader: DatasetAnalyzer):
         self.loader = loader
         self.graph = loader.get_service_dependency_graph()
         self.root_services = loader.get_root_services()
         self.services = loader.get_all_services()
+
+        for svc in self.root_services:
+            if svc == "mysql":
+                continue
+            assert svc in self.graph, f"Service '{svc}' not found in graph"
 
     def compute_sdd(self, k: int = 1) -> float | list[float]:
         """
@@ -155,17 +163,22 @@ class DatasetMetricsCalculator:
         if not entry_service:
             return 0.0
 
+        if entry_service not in self.graph:
+            logger.warning(f"Entry service '{entry_service}' not found in graph")
+            return 0.0
+
         max_path_length = 99999
         for root_service in self.root_services:
             try:
-                path_length = nx.shortest_path_length(self.graph, root_service, entry_service)
+                path_length = nx.shortest_path_length(self.graph, entry_service, root_service)
                 max_path_length = min(max_path_length, path_length)
-            except Exception:
+            except Exception as e:
+                logger.error(e)
                 continue
 
         return max_path_length
 
-    def get_root_service_degree(self) -> int | None:
+    def get_root_cause_degree(self) -> int | None:
         """
         Get the root cause service with maximum degree.
 

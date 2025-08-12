@@ -1,7 +1,9 @@
 import shutil
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
+import networkx as nx
 import polars as pl
 
 from ..config import get_config
@@ -106,3 +108,56 @@ def delete_dataset(dataset: str):
 
     shutil.rmtree(meta_folder, ignore_errors=True)
     shutil.rmtree(data_folder, ignore_errors=True)
+
+
+def build_service_graph(trace_lf: pl.LazyFrame) -> nx.DiGraph:
+    lf = trace_lf.select(
+        "span_id",
+        "parent_span_id",
+        "service_name",
+    ).filter(pl.col("parent_span_id").is_not_null())
+
+    lf = lf.join(
+        lf.select("span_id", pl.col("service_name").alias("parent_service_name")),
+        left_on="parent_span_id",
+        right_on="span_id",
+        how="inner",
+    )
+
+    edges_df = (
+        lf.select("parent_service_name", "service_name")
+        .filter(
+            pl.col("parent_service_name") != pl.col("service_name")  # Exclude self-calls
+        )
+        .unique()
+        .collect()
+    )
+
+    graph = nx.DiGraph()
+
+    for parent_service, child_service in edges_df.iter_rows():
+        graph.add_edge(parent_service, child_service)
+
+    return graph
+
+
+class DatasetAnalyzer(ABC):
+    @abstractmethod
+    def get_all_services(self) -> list[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_service_metrics(self, service_name: str, abnormal: bool = False) -> dict[str, list[float]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_root_services(self) -> list[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_entry_service(self) -> str | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_service_dependency_graph(self) -> nx.DiGraph:
+        raise NotImplementedError

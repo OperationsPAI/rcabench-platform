@@ -17,6 +17,7 @@ from rcabench.openapi import (
     DtoLabelItem,
     InjectionsApi,
 )
+from tqdm import tqdm
 
 from rcabench_platform.v2.cli.main import app
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
@@ -946,11 +947,21 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     valid_datapacks = []
     invalid_datapacks: list[Path] = []
 
-    for datapack_path, is_valid in validation_results:
+    with RCABenchClient() as client:
+        injection_api = InjectionsApi(client)
+
+    for datapack_path, is_valid in tqdm(validation_results):
+        tag = "valid" if is_valid else "invalid"
         if is_valid:
             valid_datapacks.append(datapack_path)
         else:
             invalid_datapacks.append(datapack_path)
+        injection_api.api_v2_injections_name_tags_patch(
+            name=datapack_path.name,
+            manage=DtoInjectionV2LabelManageReq(
+                add_tags=[tag],
+            ),
+        )
 
     # Summary statistics
     valid_count = len(valid_datapacks)
@@ -1016,7 +1027,7 @@ def local_test(datapack: str):
 
 @app.command()
 @timeit()
-def patch_detection():
+def patch_detection(convert: bool):
     """Run patch detection on all valid datapacks.
 
     Args:
@@ -1035,7 +1046,7 @@ def patch_detection():
         try:
             if not datapack.is_dir():
                 continue
-            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=False, online=False))
+            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=convert, online=False))
         except Exception as e:
             assertions.append((datapack.name, str(e)))
 
