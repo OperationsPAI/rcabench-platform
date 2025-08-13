@@ -18,6 +18,7 @@ from rcabench_platform.v2.datasets.spec import (
     get_dataset_meta_folder,
 )
 from rcabench_platform.v2.sources.convert import link_subset
+from rcabench_platform.v2.sources.rcabench import _build_service_graph
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
 
