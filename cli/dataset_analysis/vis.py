@@ -13,6 +13,7 @@ from rcabench_platform.v2.utils.fmap import fmap_processpool
 matplotlib.use("Agg")
 import functools
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -24,19 +25,32 @@ from rcabench.openapi import (
     DatasetsApi,
     DtoDatapackDetectorReq,
     DtoDetectorRecord,
+    DtoInjectionV2Response,
     EvaluationApi,
     HandlerNode,
+    InjectionsApi,
+    ProjectsApi,
 )
 
 from rcabench_platform.v2.cli.main import app, logger
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 
-from .dataset_analysis import Analyzer
+from .dataset_analysis import Analyzer, Distribution
 
 load_dotenv()
 
 DEFAULT_NAMESPACE = "ts"
+DEFAULT_CREATED_AT = "2025-08-05T03:00:00Z"
+
+
+def is_earlier(time1: str, time2: str) -> bool:
+    """
+    Determine whether time1 is earlier than time2
+    """
+    dt1 = datetime.fromisoformat(time1.replace("Z", "+00:00"))
+    dt2 = datetime.fromisoformat(time2.replace("Z", "+00:00"))
+    return dt1 < dt2
 
 
 @dataclass
@@ -87,18 +101,16 @@ def get_timestamp() -> str:
 
 # ================== Dataset Results Visualization ==================
 class VisDataset:
-    def __init__(self, client: ApiClient, dataset_id: int, nodes: list[HandlerNode]):
+    def __init__(self, save_folder: Path, distribution: Distribution):
         """
         Initialize the visualization with a list of datapacks.
         """
 
-        self.analyzer: Analyzer = Analyzer(client=client, namespace=DEFAULT_NAMESPACE, nodes=nodes)
-        self.nodes: list[HandlerNode] = nodes
-        self.output_path = Path("temp") / "vis_dataset" / f"dataset_{dataset_id}" / get_timestamp()
+        self.output_path = Path("temp") / "vis_dataset" / save_folder
         if not self.output_path.exists():
             self.output_path.mkdir(parents=True, exist_ok=True)
 
-        self.distribution = self.analyzer.get_distribution()
+        self.distribution = distribution
 
     @staticmethod
     def _plot_bar_chart(meta: BarChartMeta):
@@ -177,6 +189,13 @@ class VisDataset:
                 save_path=self.output_path / "fault_distribution.png",
             )
         )
+
+        csv_path = self.output_path / "fault_distribution.csv"
+        lf = pl.DataFrame(
+            data=[{"fault_type": fault, "count": count} for fault, count in self.distribution.faults.items()]
+        )
+        lf.write_csv(csv_path)
+        logger.info(f"Fault distribution CSV saved to: {csv_path}")
 
     def _display_service_distribution(self) -> None:
         """
@@ -584,20 +603,133 @@ class VisDetector:
         self._create_span_visualization()
 
 
+def process_dataset_visualization(save_folder: Path, nodes: list[HandlerNode]) -> None:
+    try:
+        with RCABenchClient() as client:
+            analyzer = Analyzer(client=client, namespace=DEFAULT_NAMESPACE, nodes=nodes)
+            distribution = analyzer.get_distribution()
+            processor = VisDataset(save_folder=save_folder, distribution=distribution)
+            processor.vis_call()
+    except Exception as e:
+        logger.error(f"Error processing visualization for {save_folder}: {e}")
+
+
+def process_detector_visualization(datapack_dir: Path, skip_existing: bool) -> None:
+    try:
+        detector = VisDetector(datapack_dir)
+        detector.vis_call(skip_existing=skip_existing)
+    except Exception as e:
+        logger.error(f"Error processing detector visualization for {datapack_dir}: {e}")
+
+
 @app.command(name="vis-dataset")
-def visualize_dataset(dataset_id: int = 5) -> None:
+def visualize_dataset(dataset_id: int | None = None, project_id: int | None = None) -> None:
+    withDatasetID = dataset_id is not None
+    withProjectID = project_id is not None
+
+    if withDatasetID and withProjectID:
+        logger.error("Please provide either dataset_id or project_id, not both.")
+        return
+
+    def _get_injections_and_folder(client: ApiClient) -> tuple[list[DtoInjectionV2Response], Path]:
+        if dataset_id is not None:
+            folder_name = f"dataset_{dataset_id}"
+            api = DatasetsApi(client)
+            resp = api.api_v2_datasets_id_get(id=dataset_id, include_injections=True)
+
+            if not resp or not resp.data or not resp.data.injections:
+                raise ValueError(f"No injections found for dataset {dataset_id}")
+
+            return resp.data.injections, Path(folder_name) / get_timestamp()
+
+        elif project_id is not None:
+            folder_name = f"project_{project_id}"
+            api = ProjectsApi(client)
+            resp = api.api_v2_projects_id_get(id=project_id, include_injections=True)
+
+            if not resp or not resp.data or not resp.data.injections:
+                raise ValueError(f"No injections found for project {project_id}")
+
+            return resp.data.injections, Path(folder_name) / get_timestamp()
+
+        else:
+            folder_name = "injections"
+            api = InjectionsApi(client)
+
+            def _fetch_all_injections(api: InjectionsApi, max_workers: int = 10) -> list[DtoInjectionV2Response]:
+                first_resp = api.api_v2_injections_get(page=1)
+                if not first_resp or not first_resp.data or not first_resp.data.items:
+                    return []
+
+                all_injections = list(first_resp.data.items)
+                total_pages = first_resp.data.pagination.total_pages if first_resp.data.pagination else 1
+
+                if total_pages is None:
+                    raise ValueError("Total pages information is missing in the response")
+
+                if total_pages <= 1:
+                    return all_injections
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # 提交所有页面请求
+                    future_to_page = {
+                        executor.submit(api.api_v2_injections_get, page=page): page
+                        for page in range(2, total_pages + 1)
+                    }
+
+                # 收集结果
+                for future in as_completed(future_to_page):
+                    page = future_to_page[future]
+                    try:
+                        resp = future.result()
+                        if resp and resp.data and resp.data.items:
+                            all_injections.extend(resp.data.items)
+                            logger.debug(f"Successfully fetched page {page}")
+                    except Exception as e:
+                        logger.error(f"Failed to fetch page {page}: {e}")
+
+                return all_injections
+
+            injections = _fetch_all_injections(api=api)
+            if not injections:
+                raise ValueError("No injections found")
+
+            return injections, Path(folder_name) / get_timestamp()
+
+    def _filter_injections(injections: list[DtoInjectionV2Response]) -> dict[str, list[HandlerNode]]:
+        nodes_dict: dict[str, list[HandlerNode]] = {
+            "absolute_anomaly": [],
+            "may_anomaly": [],
+            "no_anomaly": [],
+        }
+        for injection in injections:
+            if injection.engine_config and injection.created_at:
+                if injection.labels is not None:
+                    for label in injection.labels:
+                        if label.value is not None and label.value in nodes_dict:
+                            nodes_dict[label.value].append(HandlerNode.from_json(injection.engine_config))
+
+        return nodes_dict
+
+    tasks = []
     with RCABenchClient() as client:
-        datasets_api = DatasetsApi(client)
-        resp = datasets_api.api_v2_datasets_id_get(id=dataset_id, include_injections=True, include_labels=True)
-        assert resp.data is not None and resp.data.injections is not None, "No injections found"
+        try:
+            injections, folder_path = _get_injections_and_folder(client)
+            nodes_dict = _filter_injections(injections)
 
-        nodes: list[HandlerNode] = []
-        for injection in resp.data.injections:
-            if injection.engine_config:
-                nodes.append(HandlerNode.from_json(injection.engine_config))
+            for label, nodes in nodes_dict.items():
+                if nodes:
+                    save_folder = folder_path / label
+                    task = functools.partial(process_dataset_visualization, save_folder, nodes)
+                    tasks.append(task)
+        except ValueError as e:
+            logger.error(f"Error fetching injections: {e}")
+            return
 
-        processor = VisDataset(client=client, dataset_id=dataset_id, nodes=nodes)
-        processor.vis_call()
+    if tasks:
+        fmap_processpool(tasks, parallel=32, cpu_limit_each=2)
+    else:
+        logger.warning("No valid data found for visualization")
 
 
 @app.command(name="vis-detector")
@@ -618,7 +750,10 @@ def visualize_detector_results(skip_existing: bool = True) -> None:
         task = functools.partial(detector.vis_call, skip_existing=skip_existing)
         tasks.append(task)
 
-    fmap_processpool(tasks, parallel=32, cpu_limit_each=2)
+    if tasks:
+        fmap_processpool(tasks, parallel=32, cpu_limit_each=2)
+    else:
+        logger.warning("No valid datapacks found for visualization")
 
 
 if __name__ == "__main__":

@@ -97,7 +97,7 @@ class Analyzer:
     time slices, QPM, and total duration.
     """
 
-    def __init__(self, client: ApiClient, namespace: str = "default", nodes: list[HandlerNode] = []):
+    def __init__(self, client: ApiClient, namespace: str, nodes: list[HandlerNode]):
         """
         Initialize the analyzer with a list of nodes.
         """
@@ -255,8 +255,10 @@ class Analyzer:
         for fault_type, service_coverages in coverage_item_mapping.items():
             for service, coverage_item in service_coverages.items():
                 ratio = 0.0
-                if coverage_item.range_num != 0:
-                    ratio = len(coverage_item.covered_mapping) / coverage_item.range_num
+                if coverage_item.range_num == 0:
+                    continue
+
+                ratio = len(coverage_item.covered_mapping) / coverage_item.range_num
 
                 is_pair = "->" in service
                 if is_pair:
