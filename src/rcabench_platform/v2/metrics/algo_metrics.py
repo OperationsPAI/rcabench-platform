@@ -336,24 +336,24 @@ def get_metrics_by_dataset(
             for metric_name, value in metrics.items():
                 level_metrics[level][metric_name] += value
 
-            if level == "service":
-                as_k = calculate_alignment_score(
-                    Path("data/rcabench_dataset") / item.datapack_name / "converted",
-                    "loadgenerator",
-                    groundtruth_items,
-                    item.predictions,
-                )
-                eff = calculate_efficiency_score(
-                    Path("data/rcabench_dataset") / item.datapack_name / "converted",
-                    "loadgenerator",
-                    groundtruth_items,
-                    item.predictions,
-                )
+            # if level == "service":
+            #     as_k = calculate_alignment_score(
+            #         Path("data/rcabench_dataset") / item.datapack_name / "converted",
+            #         "loadgenerator",
+            #         groundtruth_items,
+            #         item.predictions,
+            #     )
+            #     eff = calculate_efficiency_score(
+            #         Path("data/rcabench_dataset") / item.datapack_name / "converted",
+            #         "loadgenerator",
+            #         groundtruth_items,
+            #         item.predictions,
+            #     )
 
-                for idx, as_i in enumerate(as_k):
-                    level_metrics[level][f"as{idx + 1}"] = level_metrics[level].get(f"as{idx + 1}", 0.0) + as_i
+            #     for idx, as_i in enumerate(as_k):
+            #         level_metrics[level][f"as{idx + 1}"] = level_metrics[level].get(f"as{idx + 1}", 0.0) + as_i
 
-                level_metrics[level]["efficiency"] = level_metrics[level].get("efficiency", 0.0) + eff
+            #     level_metrics[level]["efficiency"] = level_metrics[level].get("efficiency", 0.0) + eff
 
     # Average metrics across all datapacks
     result_metrics = []
@@ -462,10 +462,6 @@ def get_algorithms_metrics_across_datasets(
                         )
             except Exception as e:
                 # If there's an error getting metrics for this combination, skip it
-                logger.warning(
-                    f"Warning: Failed to get metrics for algorithm={algorithm}, dataset={dataset}, "
-                    f"version={dataset_version}: {e}"
-                )
-                continue
+                raise e
 
     return result

@@ -713,15 +713,12 @@ def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[DtoLab
         or metrics.issue_categories["both_latency_and_success_rate"] > 0
     )
 
-    # may_anomaly covers all cases with issues, no_anomaly covers cases without issues
-    if has_any_issues:
+    if metrics.absolute_anomaly:
+        tags.append("absolute_anomaly")
+    elif has_any_issues:
         tags.append("may_anomaly")
     else:
         tags.append("no_anomaly")
-
-    # absolute_anomaly is a subset of may_anomaly for severe cases
-    if metrics.absolute_anomaly:
-        tags.append("absolute_anomaly")
 
     # Keep specific issue type tags for detailed analysis
     if metrics.issue_categories["latency_only"] > 0:

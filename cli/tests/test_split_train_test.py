@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run -s
-from rcabench.openapi import DatasetsApi, DtoDatasetV2CreateReq, DtoInjectionRef
+from rcabench.openapi import DatasetsApi, DtoDatasetV2CreateReq, DtoInjectionRef, InjectionsApi
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
@@ -103,6 +103,55 @@ def cleanup():
                 id=dataset.id,
             )
             logger.info(resp)
+
+
+def get_datapack(tag: str = "absolute_anomaly") -> list[str]:
+    with RCABenchClient(base_url=get_config().base_url) as client:
+        injection_api = InjectionsApi(client)
+        resp = injection_api.api_v2_injections_get(tags=[tag], page=1, size=10000)
+        assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+        return [item.injection_name for item in resp.data.items if item.injection_name is not None]
+
+
+@app.command()
+def build_anomaly():
+    datapacks = get_datapack()
+    with RCABenchClient(base_url=get_config().base_url) as client:
+        datasets_api = DatasetsApi(client)
+
+    # create_dataset(
+    #     datasets_api=datasets_api,
+    #     name="pair-diag",
+    #     dataset_type="all",
+    #     version="all-8.15",
+    #     description="all the dataset until 8.15 for study",
+    #     datapacks=datapacks,
+    # )
+
+    train_datapacks, test_datapacks = rcabench_split_train_test(
+        datapacks=datapacks,
+        train_ratio=0.8,
+        previous_datapacks=[],
+        datapack_limit=len(datapacks),
+    )
+
+    create_dataset(
+        datasets_api=datasets_api,
+        name="pair-diag",
+        dataset_type="train",
+        version="study-train",
+        description="training dataset for study",
+        datapacks=train_datapacks,
+    )
+
+    create_dataset(
+        datasets_api=datasets_api,
+        name="pair-diag",
+        dataset_type="test",
+        version="study-test",
+        description="test dataset for study",
+        datapacks=test_datapacks,
+    )
 
 
 if __name__ == "__main__":
