@@ -88,11 +88,9 @@ def convert_logs(src: Path):
     if "level" in columns:
         base_select.append(pl.col("level").cast(pl.String))
     else:
-        # Parse level from message like "2024-12-07 20:01:34.523  INFO 1 ---"
+        # Parse level from message - look for common log levels anywhere in the message
         # Keep null when extraction fails
-        level_expr = (
-            pl.col("message").str.extract(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\s+(\w+)\s+").alias("level")
-        )
+        level_expr = pl.col("message").str.extract(r"\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b").alias("level")
         base_select.append(level_expr)
 
     # Add req_path with attr prefix if it exists
@@ -176,5 +174,4 @@ class RcaevalDatasetLoader(DatasetLoader):
         return len(self._datapack_loaders)
 
     def __getitem__(self, index: int) -> DatapackLoader:
-        return self._datapack_loaders[index]
         return self._datapack_loaders[index]
