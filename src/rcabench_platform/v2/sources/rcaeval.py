@@ -125,12 +125,15 @@ class RcaevalDatapackLoader(DatapackLoader):
         return [Label(level="service", name=self._service)]
 
     def data(self) -> dict[str, Any]:
-        return {
+        data = {
             "inject_time.txt": self._src_folder / "inject_time.txt",
-            "traces.parquet": convert_traces(self._src_folder / "traces.csv"),
             "simple_metrics.parquet": convert_metrics(self._src_folder / "simple_metrics.csv"),
             "logs.parquet": convert_logs(self._src_folder / "logs.csv"),
         }
+        if (self._src_folder / "traces.csv").exists():
+            data["traces.parquet"] = convert_traces(self._src_folder / "traces.csv")
+
+        return data
 
 
 class RcaevalDatasetLoader(DatasetLoader):
