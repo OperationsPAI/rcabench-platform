@@ -14,7 +14,7 @@ from rcabench_platform.v2.utils.serde import save_parquet
 @timeit()
 def run(skip_finished: bool = True, parallel: int = 4):
     src_root = Path("data") / "RCAEval"
-    src_datasets = ["RE2-TT", "RE2-OB"]
+    src_datasets = ["RE2-TT", "RE2-OB", "RE3-TT", "RE3-OB"]
 
     for src_dataset in src_datasets:
         dst_dataset = "rcaeval_" + src_dataset.lower().replace("-", "_")
@@ -57,7 +57,7 @@ def local_test_2():
 @app.command()
 @timeit()
 def collect_fault_types():
-    for dataset in ["rcaeval_re2_tt"]:
+    for dataset in ["rcaeval_re2_tt", "rcaeval_re2_ob", "rcaeval_re3_tt", "rcaeval_re3_ob"]:
         df = read_dataset_index(dataset)
         df = df.with_columns(pl.col("datapack").str.split("_").list.get(1).alias("fault_type"))
         save_parquet(df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
