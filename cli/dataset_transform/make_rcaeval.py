@@ -57,7 +57,14 @@ def local_test_2():
 @app.command()
 @timeit()
 def collect_fault_types():
-    for dataset in ["rcaeval_re2_tt", "rcaeval_re2_ob", "rcaeval_re3_tt", "rcaeval_re3_ob"]:
+    for dataset in [
+        "rcaeval_re2_tt",
+        "rcaeval_re2_ob",
+        "rcaeval_re2_ss",
+        "rcaeval_re3_tt",
+        "rcaeval_re3_ob",
+        "rcaeval_re3_ss",
+    ]:
         df = read_dataset_index(dataset)
         df = df.with_columns(pl.col("datapack").str.split("_").list.get(1).alias("fault_type"))
         save_parquet(df, path=get_dataset_meta_file(dataset, "attributes.parquet"))
