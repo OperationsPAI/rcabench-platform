@@ -14,7 +14,7 @@ from rcabench_platform.v2.utils.serde import save_parquet
 @timeit()
 def run(skip_finished: bool = True, parallel: int = 4):
     src_root = Path("data") / "RCAEval"
-    src_datasets = ["RE2-TT", "RE2-OB", "RE3-TT", "RE3-OB"]
+    src_datasets = ["RE2-TT", "RE2-OB", "RE2-SS", "RE3-TT", "RE3-OB", "RE3-SS"]
 
     for src_dataset in src_datasets:
         dst_dataset = "rcaeval_" + src_dataset.lower().replace("-", "_")
