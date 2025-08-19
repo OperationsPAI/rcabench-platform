@@ -6,8 +6,6 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    import marimo as mo
-
     import json
     import os
     import sys
@@ -15,6 +13,8 @@ def _():
     from datetime import datetime
     from pathlib import Path
     from typing import Any
+
+    import marimo as mo
 
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -623,7 +623,7 @@ def _(Any, df_ab_eq, df_ab_le, mo, pl):
 
         **分析结论:**
 
-        {f"✅ 有重叠 - 相同的故障-服务组合在SDD=0和SDD≠0中都出现" if overlap_result["overlap_count"] > 0 else "❌ 无重叠 - 所有故障-服务组合要么只有SDD=0，要么只有SDD≠0"}
+        {"✅ 有重叠 - 相同的故障-服务组合在SDD=0和SDD≠0中都出现" if overlap_result["overlap_count"] > 0 else "❌ 无重叠 - 所有故障-服务组合要么只有SDD=0，要么只有SDD≠0"}
         """)
     return name1, name2, overlap_result
 
