@@ -4,18 +4,20 @@
 import functools
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
-import numpy as np
 import polars as pl
 from rcabench.openapi import (
     ApiClient,
+    DtoGranularityRecord,
     DtoInjectionFieldMappingResp,
     DtoInjectionV2CustomLabelManageReq,
+    DtoInjectionV2Response,
     DtoLabelItem,
+    EvaluationApi,
     HandlerNode,
     HandlerResources,
     InjectionApi,
@@ -24,25 +26,29 @@ from rcabench.openapi import (
 
 from rcabench_platform.v2.cli.main import app
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
-from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader, valid
+from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader
 from rcabench_platform.v2.datasets.rcaeval import RCAEvalAnalyzerLoader
-from rcabench_platform.v2.datasets.spec import get_datapack_folder
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger
+from rcabench_platform.v2.metrics.algo_metrics import calculate_metrics_for_level
 from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 
 @dataclass
 class CountItem:
+    node: HandlerNode
+    injection: DtoInjectionV2Response
     fault_type: str = ""
     service: str = ""
-    node: HandlerNode | None = None
     is_pair: bool = False
+    metrics: dict[str, int] = field(default_factory=dict)
+    algo_evals: dict[str, list[DtoGranularityRecord]] = field(default_factory=dict)
 
 
 @dataclass
 class CoverageItem:
+    is_pair: bool = False
     num: int = 0
     range_num: int = 0
     covered_mapping: dict[str, bool] = field(default_factory=dict)
@@ -84,10 +90,30 @@ class Metadata:
 class Distribution:
     faults: dict[str, int] = field(default_factory=dict)
     services: dict[str, int] = field(default_factory=dict)
-    fault_services: dict[str, dict[str, int]] = field(default_factory=dict)
     pairs: dict[str, PairStats] = field(default_factory=dict)
+    metrics: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    fault_services: dict[str, dict[str, int]] = field(default_factory=dict)
     fault_service_attribute_coverages: dict[str, dict[str, float]] = field(default_factory=dict)
+    fault_service_metrics: dict[str, dict[str, dict[str, dict[str, int]]]] = field(default_factory=dict)
+
     fault_pair_attribute_coverages: dict[str, dict[str, float]] = field(default_factory=dict)
+    fault_pair_metrics: dict[str, dict[str, dict[str, dict[str, int]]]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "faults": self.faults,
+            "services": self.services,
+            "pairs": {k: v.__dict__ for k, v in self.pairs.items()},
+            "metrics": self.metrics,
+            "fault_pair_attribute_coverages": self.fault_pair_attribute_coverages,
+            "fault_pair_metrics": {k: {sk: sv for sk, sv in v.items()} for k, v in self.fault_pair_metrics.items()},
+            "fault_services": self.fault_services,
+            "fault_service_attribute_coverages": self.fault_service_attribute_coverages,
+            "fault_service_metrics": {
+                k: {sk: sv for sk, sv in v.items()} for k, v in self.fault_service_metrics.items()
+            },
+        }
 
 
 class Analyzer:
@@ -97,31 +123,44 @@ class Analyzer:
     time slices, QPM, and total duration.
     """
 
-    def __init__(self, client: ApiClient, namespace: str, nodes: list[HandlerNode]):
+    def __init__(
+        self,
+        client: ApiClient,
+        namespace: str,
+        metrics: list[str],
+        algorithms: list[str],
+        injections: list[DtoInjectionV2Response],
+    ):
         """
         Initialize the analyzer with a list of nodes.
         """
-        self.namespace = namespace
-        self.nodes = nodes
-
+        self.evaluator = EvaluationApi(client)
         self.injector = InjectionApi(client)
+        self.namespace = namespace
+        self.algorithms = algorithms
+        self.metrics = metrics
 
-        self._get_conf()
-        self._get_resources()
+        self.conf = self._get_conf()
+        self.injection_mapping, self.injection_resources = self._get_resources()
 
-    def _get_conf(self) -> None:
+        self.count_items = self._get_count_items(injections)
+        self.coverage_items = self._get_coverage_items()
+
+    def _get_conf(self) -> HandlerNode:
         resp = self.injector.api_v1_injections_conf_get(namespace=self.namespace)
         assert resp.data is not None
-        self.conf = resp.data
+        return resp.data
 
-    def _get_resources(self) -> None:
+    def _get_resources(self) -> tuple[DtoInjectionFieldMappingResp, HandlerResources]:
         resp = self.injector.api_v1_injections_mapping_get()
         assert resp.data is not None
-        self.injection_mapping: DtoInjectionFieldMappingResp = resp.data
+        mapping_data = resp.data
 
         resp = self.injector.api_v1_injections_ns_resources_get(namespace=self.namespace)
         assert resp.data is not None
-        self.injection_resources: HandlerResources = resp.data
+        resources_data = resp.data
+
+        return mapping_data, resources_data
 
     def _get_individual_service(self, individual: HandlerNode) -> tuple[str, bool]:
         fault_type_index = str(individual.value)
@@ -154,121 +193,338 @@ class Analyzer:
         )
         return f"{service['source']}->{service['target']}", True
 
-    @staticmethod
-    def _recursive_to_get_range_num(node: HandlerNode, key: str) -> int:
-        int_key = int(key)
-        total = 0
-        if node.children is None and int_key > 2:
-            if node.range is not None:
-                total = node.range[1] - node.range[0] + 1
-
-        if node.children is not None:
-            for childKey, childNode in node.children.items():
-                total += Analyzer._recursive_to_get_range_num(childNode, childKey)
-
-        return total
-
-    @staticmethod
-    def _recursive_to_get_covered_mapping(node: HandlerNode, key: str) -> dict[str, bool]:
-        int_key = int(key)
-        covered_mapping: dict[str, bool] = {}
-        if node.children is None and int_key > 2:
-            covered_mapping[f"{key}-{node.value}"] = True
-
-        if node.children is not None:
-            for childKey, childNode in node.children.items():
-                assert childNode is not None, f"Child node for key {childKey} is None"
-                covered_mapping.update(Analyzer._recursive_to_get_covered_mapping(childNode, childKey))
-
-        return covered_mapping
-
-    def get_distribution(self) -> Distribution:
-        """
-        Get the distribution of faults and services from the nodes.
-        """
-        distribution = Distribution()
-
+    def _get_count_items(self, injections: list[DtoInjectionV2Response]) -> list[CountItem]:
         count_items: list[CountItem] = []
-        for node in self.nodes:
+
+        for injection in injections:
+            if not injection.engine_config:
+                continue
+
+            node = HandlerNode.from_json(injection.engine_config)
             fault = node.value
             assert fault is not None, "Node value must not be None"
             assert self.injection_mapping.fault_type is not None, "Fault type mapping must not be None"
             fault_type = self.injection_mapping.fault_type.get(str(fault), "unknown")
             service, is_pair = self._get_individual_service(node)
-            count_items.append(CountItem(fault_type=fault_type, service=service, node=node, is_pair=is_pair))
 
-        for item in count_items:
-            # Count faults
-            distribution.faults[item.fault_type] = distribution.faults.get(item.fault_type, 0) + 1
+            label_mapping = {
+                label.key: label.value
+                for injection in injections
+                if injection.labels
+                for label in injection.labels
+                if label.key
+            }
 
-            # Count services
-            if not item.is_pair:
-                distribution.services[item.service] = distribution.services.get(item.service, 0) + 1
-            else:
-                source, target = item.service.split("->")
-                if source not in distribution.pairs:
-                    distribution.pairs[source] = PairStats(out_degree=1)
-                else:
-                    distribution.pairs[source].out_degree += 1
+            metric_values: dict[str, int] = {}
 
-                if target not in distribution.pairs:
-                    distribution.pairs[target] = PairStats(in_degree=1)
-                else:
-                    distribution.pairs[target].in_degree += 1
+            for metric in self.metrics:
+                value = 0
+                value_str = label_mapping.get(metric)
+                if value_str is not None:
+                    try:
+                        value = int(value_str)
+                    except ValueError:
+                        logger.warning(f"Invalid {metric} value: {label_mapping[metric]} for injection {injection.id}")
 
-            # Count fault-service pairs
-            if not item.is_pair:
-                if item.fault_type not in distribution.fault_services:
-                    distribution.fault_services[item.fault_type] = {}
+                metric_values[metric] = value
 
-                distribution.fault_services[item.fault_type][item.service] = (
-                    distribution.fault_services[item.fault_type].get(item.service, 0) + 1
+            # algo_evals: dict[str, list[DtoGranularityRecord]] = {}
+            # if injection.injection_name is not None:
+            #     for algorithm in self.algorithms:
+            #         resp = self.evaluator.api_v2_evaluations_algorithms_algorithm_datapacks_datapack_get(
+            #             algorithm=algorithm,
+            #             datapack=injection.injection_name,
+            #         )
+            #         assert resp.data is not None and resp.data is not None, "Failed to get evaluation data"
+            #         assert resp.data.predictions is not None, "Predictions must not be None"
+            #         algo_evals[algorithm] = resp.data.predictions
+
+            count_items.append(
+                CountItem(
+                    node=node,
+                    injection=injection,
+                    fault_type=fault_type,
+                    service=service,
+                    is_pair=is_pair,
+                    metrics=metric_values,
+                    # algo_evals=algo_evals,
                 )
+            )
 
-        fault_range_num_mapping: dict[str, int] = {}
+        return count_items
+
+    def _get_coverage_items(self) -> dict[str, dict[str, CoverageItem]]:
+        def get_range_num(node: HandlerNode, key: str) -> int:
+            int_key = int(key)
+            total = 0
+            if node.children is None and int_key > 2:
+                if node.range is not None:
+                    total = node.range[1] - node.range[0] + 1
+
+            if node.children is not None:
+                for childKey, childNode in node.children.items():
+                    total += get_range_num(childNode, childKey)
+
+            return total
+
+        def get_covered_mapping(node: HandlerNode, key: str) -> dict[str, bool]:
+            int_key = int(key)
+            covered_mapping: dict[str, bool] = {}
+            if node.children is None and int_key > 2:
+                covered_mapping[f"{key}-{node.value}"] = True
+
+            if node.children is not None:
+                for childKey, childNode in node.children.items():
+                    assert childNode is not None, f"Child node for key {childKey} is None"
+                    covered_mapping.update(get_covered_mapping(childNode, childKey))
+
+            return covered_mapping
+
+        fault_range_mapping: dict[str, int] = {}
         assert self.conf.children is not None, "Injection configuration children must not be None"
+
         for key, node in self.conf.children.items():
-            range_num = self._recursive_to_get_range_num(node, key)
-            fault_range_num_mapping[key] = range_num
+            range_num = get_range_num(node, key)
+            fault_range_mapping[key] = range_num
 
-        coverage_item_mapping: dict[str, dict[str, CoverageItem]] = {}
-        for item in count_items:
-            assert item.node is not None, "Node must not be None"
-            covered_mapping = self._recursive_to_get_covered_mapping(item.node, str(item.node.value))
+        coverage_items: dict[str, dict[str, CoverageItem]] = {}
+        for item in self.count_items:
+            covered_mapping = get_covered_mapping(item.node, str(item.node.value))
 
-            if item.fault_type not in coverage_item_mapping:
-                coverage_item_mapping[item.fault_type] = {}
-                coverage_item_mapping[item.fault_type][item.service] = CoverageItem(
-                    range_num=fault_range_num_mapping.get(str(item.node.value), 0),
+            if item.fault_type not in coverage_items:
+                coverage_items[item.fault_type] = {}
+
+            if item.service not in coverage_items[item.fault_type]:
+                coverage_items[item.fault_type][item.service] = CoverageItem(
+                    is_pair="->" in item.service,
+                    range_num=fault_range_mapping.get(str(item.node.value), 0),
                     covered_mapping=covered_mapping,
                 )
 
-            if item.service not in coverage_item_mapping[item.fault_type]:
-                coverage_item_mapping[item.fault_type][item.service] = CoverageItem(
-                    range_num=fault_range_num_mapping.get(str(item.node.value), 0),
-                    covered_mapping=covered_mapping,
-                )
-
-            coverage_item = coverage_item_mapping[item.fault_type][item.service]
+            coverage_item = coverage_items[item.fault_type][item.service]
             coverage_item.num += 1
+            coverage_item.covered_mapping.update(covered_mapping)
 
-        for fault_type, service_coverages in coverage_item_mapping.items():
-            for service, coverage_item in service_coverages.items():
-                ratio = 0.0
+        return coverage_items
+
+    def calculate_faults_distribution(self) -> dict[str, int]:
+        """
+        Calculate the distribution of faults.
+        """
+        faults_distribution: dict[str, int] = {}
+
+        for item in self.count_items:
+            faults_distribution[item.fault_type] = faults_distribution.get(item.fault_type, 0) + 1
+
+        return faults_distribution
+
+    def calculate_services_distribution(self) -> dict[str, int]:
+        """
+        Calculate the distribution of services.
+        """
+        services_distribution: dict[str, int] = {}
+
+        for item in self.count_items:
+            if not item.is_pair:
+                services_distribution[item.service] = services_distribution.get(item.service, 0) + 1
+
+        return services_distribution
+
+    def calcuate_pairs_distribution(self) -> dict[str, PairStats]:
+        """
+        Calculate the distribution of service pairs.
+        """
+        pairs_distribution: dict[str, PairStats] = {}
+
+        for item in self.count_items:
+            if item.is_pair:
+                source, target = item.service.split("->")
+                if source not in pairs_distribution:
+                    pairs_distribution[source] = PairStats(out_degree=1)
+                else:
+                    pairs_distribution[source].out_degree += 1
+
+                if target not in pairs_distribution:
+                    pairs_distribution[target] = PairStats(in_degree=1)
+                else:
+                    pairs_distribution[target].in_degree += 1
+
+        return pairs_distribution
+
+    def calculate_fault_services_distribution(self) -> dict[str, dict[str, int]]:
+        fault_services_distribution: dict[str, dict[str, int]] = {}
+
+        for item in self.count_items:
+            if not item.is_pair:
+                if item.fault_type not in fault_services_distribution:
+                    fault_services_distribution[item.fault_type] = {}
+
+                fault_services_distribution[item.fault_type][item.service] = (
+                    fault_services_distribution[item.fault_type].get(item.service, 0) + 1
+                )
+
+        return fault_services_distribution
+
+    def calculate_fault_service_attribute_coverages(self) -> dict[str, dict[str, float]]:
+        """
+        Calculate the coverage distribution of fault-service attribution.
+        """
+        fault_service_attribute_coverages: dict[str, dict[str, float]] = {}
+
+        for fault_type, mapping in self.coverage_items.items():
+            for mapping_key, coverage_item in mapping.items():
                 if coverage_item.range_num == 0:
                     continue
 
-                ratio = len(coverage_item.covered_mapping) / coverage_item.range_num
+                if not coverage_item.is_pair:
+                    if fault_type not in fault_service_attribute_coverages:
+                        fault_service_attribute_coverages[fault_type] = {}
 
-                is_pair = "->" in service
-                if is_pair:
-                    if fault_type not in distribution.fault_pair_attribute_coverages:
-                        distribution.fault_pair_attribute_coverages[fault_type] = {}
-                    distribution.fault_pair_attribute_coverages[fault_type][service] = ratio
-                else:
-                    if fault_type not in distribution.fault_service_attribute_coverages:
-                        distribution.fault_service_attribute_coverages[fault_type] = {}
-                    distribution.fault_service_attribute_coverages[fault_type][service] = ratio
+                    ratio = len(coverage_item.covered_mapping) / coverage_item.range_num
+                    fault_service_attribute_coverages[fault_type][mapping_key] = ratio
+
+        return fault_service_attribute_coverages
+
+    def calculate_fault_pair_attribute_coverages(self) -> dict[str, dict[str, float]]:
+        """
+        Calculate the coverage distribution of fault-pair attribution.
+        """
+        fault_pair_attribute_coverages: dict[str, dict[str, float]] = {}
+
+        for fault_type, service_coverages in self.coverage_items.items():
+            for service, coverage_item in service_coverages.items():
+                if coverage_item.range_num == 0:
+                    continue
+
+                if coverage_item.is_pair:
+                    if fault_type not in fault_pair_attribute_coverages:
+                        fault_pair_attribute_coverages[fault_type] = {}
+
+                    ratio = len(coverage_item.covered_mapping) / coverage_item.range_num
+                    fault_pair_attribute_coverages[fault_type][service] = ratio
+
+        return fault_pair_attribute_coverages
+
+    def calculate_metric_distributions(self) -> dict[str, dict[str, int]]:
+        """
+        Calculate the distributions of metrics
+        """
+        metric_distributions: dict[str, dict[str, int]] = {}
+
+        data: list[dict[str, Any]] = []
+        for count_item in self.count_items:
+            for key, value in count_item.metrics.items():
+                data.append({"metric_name": key, "metric_value": value})
+
+        if not data:
+            return {}
+
+        lf = pl.LazyFrame(data=data)
+        metrics_filter = pl.col("metric_name").is_in(self.metrics)
+        filtered_lf = lf.filter(metrics_filter)
+
+        collected_data = filtered_lf.collect()
+        if collected_data.is_empty():
+            return {}
+
+        for metric in self.metrics:
+            metric_data = collected_data.filter(pl.col("metric_name") == metric)
+            if metric_data.is_empty():
+                continue
+
+            try:
+                numeric_data = metric_data.with_columns(
+                    [pl.col("metric_value").cast(pl.Float64, strict=False).alias("numeric_value")]
+                ).filter(pl.col("numeric_value").is_not_null())
+                if numeric_data.is_empty():
+                    continue
+
+                distribution_stats = (
+                    numeric_data.group_by("numeric_value").agg(pl.len().alias("count")).sort("numeric_value")
+                )
+                distribution_dict = {
+                    str(row["numeric_value"]): row["count"] for row in distribution_stats.iter_rows(named=True)
+                }
+
+                metric_distributions[metric] = distribution_dict
+
+            except Exception:
+                logger.error(f"Error processing metric {metric}")
+
+        return metric_distributions
+
+    def calculate_fault_service_metric_distributions(self) -> dict[str, dict[str, dict[str, dict[str, int]]]]:
+        """
+        Calculate the distributions of fault-service metrics.
+        """
+        fault_service_metrics: dict[str, dict[str, dict[str, dict[str, int]]]] = {}
+
+        data: list[dict[str, Any]] = []
+        for count_item in self.count_items:
+            if count_item.is_pair:
+                for key, value in count_item.metrics.items():
+                    data.append(
+                        {
+                            "fault_type": count_item.fault_type,
+                            "service": count_item.service,
+                            "metric_name": key,
+                            "metric_value": value,
+                        }
+                    )
+
+        if not data:
+            return {}
+
+        lf = pl.LazyFrame(data=data)
+        metrics_filter = pl.col("metric_name").is_in(self.metrics)
+        filtered_lf = lf.filter(metrics_filter)
+
+        collected_data = filtered_lf.collect()
+        if collected_data.is_empty():
+            return {}
+
+        for (fault_type_object, service_object), group_df in collected_data.group_by(["fault_type", "service"]):
+            fault_type = str(fault_type_object)
+            service = str(service_object)
+
+            if fault_type not in fault_service_metrics:
+                fault_service_metrics[fault_type] = {}
+
+            if service not in fault_service_metrics[fault_type]:
+                fault_service_metrics[fault_type][service] = {}
+
+            for metric in self.metrics:
+                metric_data = group_df.filter(pl.col("metric_name") == metric)
+
+                if metric_data.is_empty():
+                    continue
+
+                distribution_stats = (
+                    metric_data.group_by("metric_value").agg(pl.len().alias("count")).sort("metric_value")
+                )
+
+                distribution_dict = {
+                    str(row["metric_value"]): row["count"] for row in distribution_stats.iter_rows(named=True)
+                }
+
+                fault_service_metrics[fault_type][service][metric] = distribution_dict
+
+        return fault_service_metrics
+
+    def get_distribution(self) -> Distribution:
+        """
+        Get the distribution of faults and services from the nodes.
+        """
+        distribution = Distribution(
+            faults=self.calculate_faults_distribution(),
+            services=self.calculate_services_distribution(),
+            pairs=self.calcuate_pairs_distribution(),
+            metrics=self.calculate_metric_distributions(),
+            fault_services=self.calculate_fault_services_distribution(),
+            fault_service_attribute_coverages=self.calculate_fault_service_attribute_coverages(),
+            fault_service_metrics=self.calculate_fault_service_metric_distributions(),
+            fault_pair_attribute_coverages=self.calculate_fault_pair_attribute_coverages(),
+        )
 
         return distribution
 
