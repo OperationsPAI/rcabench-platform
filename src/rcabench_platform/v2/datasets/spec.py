@@ -141,6 +141,61 @@ def build_service_graph(trace_lf: pl.LazyFrame) -> nx.DiGraph:
     return graph
 
 
+def calculate_trace_length(df: pl.DataFrame) -> list[int]:
+    trace_depths = []
+
+    df = df.with_columns(
+        pl.when(pl.col("parent_span_id") == "").then(None).otherwise(pl.col("parent_span_id")).alias("parent_span_id")
+    )
+
+    for trace_group in df.group_by("trace_id", maintain_order=False):
+        trace_data = trace_group[1]
+
+        span_depths = _compute_span_depths(trace_data)
+        max_depth = max(span_depths.values()) if span_depths else 1
+        trace_depths.append(max_depth)
+
+    return trace_depths
+
+
+def _compute_span_depths(trace_df: pl.DataFrame) -> dict[str, int]:
+    spans_data = {
+        row["span_id"]: row["parent_span_id"]
+        for row in trace_df.select(["span_id", "parent_span_id"]).iter_rows(named=True)
+    }
+
+    span_depths = {}
+
+    root_spans = [span_id for span_id, parent_id in spans_data.items() if parent_id is None]
+
+    queue = [(span_id, 1) for span_id in root_spans]  # (span_id, depth)
+    processed = set()
+
+    while queue:
+        current_span, current_depth = queue.pop(0)
+
+        if current_span in processed:
+            continue
+
+        processed.add(current_span)
+        span_depths[current_span] = current_depth
+
+        children = [
+            span_id
+            for span_id, parent_id in spans_data.items()
+            if parent_id == current_span and span_id not in processed
+        ]
+
+        for child in children:
+            queue.append((child, current_depth + 1))
+
+    for span_id in spans_data:
+        if span_id not in span_depths:
+            span_depths[span_id] = 1
+
+    return span_depths
+
+
 class DatasetAnalyzer(ABC):
     @abstractmethod
     def get_all_services(self) -> list[str]:
