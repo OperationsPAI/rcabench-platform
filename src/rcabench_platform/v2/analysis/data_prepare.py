@@ -23,14 +23,16 @@ from ..utils.fmap import fmap_processpool, fmap_threadpool
 
 @dataclass
 class Item:
+    # Required fields (no default values)
     _node: HandlerNode
     _injection: DtoInjectionV2Response
+
+    # Optional fields with default values
     fault_type: str = ""
     injected_service: str = ""
     is_pair: bool = False
     metrics: dict[str, int] = field(default_factory=dict)
     algo_evals: dict[str, list[DtoGranularityRecord]] = field(default_factory=dict)
-
     service_names: set[str] = field(default_factory=set)
     service_names_by_trace: set[str] = field(default_factory=set)  # trace
     trace_length: Counter[int] = field(default_factory=Counter)
