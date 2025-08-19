@@ -18,8 +18,7 @@ from rcabench.openapi import (
 
 from ..clients.rcabench_ import RCABenchClient
 from ..datasets.spec import calculate_trace_length
-from ..logging import logger
-from ..utils.fmap import fmap_processpool
+from ..utils.fmap import fmap_processpool, fmap_threadpool
 
 
 @dataclass
@@ -151,10 +150,7 @@ def process_item(
         value = 0
         value_str = label_mapping.get(metric)
         if value_str is not None:
-            try:
-                value = int(value_str)
-            except ValueError:
-                logger.warning(f"Invalid {metric} value: {label_mapping[metric]} for injection {injection.id}")
+            value = int(value_str)
 
         metric_values[metric] = value
 
@@ -253,16 +249,22 @@ def process_item(
     )
 
 
+def wrapper(injection: dict, metrics: list[str], injection_mapping: dict, injection_resources: dict) -> Item | None:
+    injection_obj = DtoInjectionV2Response.from_dict(injection)
+    mapping = DtoInjectionFieldMappingResp.from_dict(injection_mapping)
+    resources = HandlerResources.from_dict(injection_resources)
+    return process_item(injection_obj, metrics, mapping, resources)
+
+
 def batch_process_item(injections: list[DtoInjectionV2Response], metrics: list[str], namespace: str) -> list[Item]:
     injection_mapping, injection_resources = get_resources(namespace)
 
-    tasks = []
-    for injection in injections:
-        tasks.append(functools.partial(process_item, injection, metrics, injection_mapping, injection_resources))
-
+    tasks = [
+        functools.partial(process_item, injection, metrics, injection_mapping, injection_resources)
+        for injection in injections
+    ]
     cpu = os.cpu_count()
-    assert cpu is not None
+    assert cpu is not None, "CPU count must not be None"
+    res = fmap_processpool(tasks, parallel=cpu // 2, cpu_limit_each=2)
 
-    results = fmap_processpool(tasks, parallel=cpu // 2, cpu_limit_each=2)
-
-    return [i for i in results if i is not None]
+    return [i for i in res if i is not None]

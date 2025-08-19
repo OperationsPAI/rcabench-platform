@@ -35,7 +35,7 @@ def set_cpu_limit_inner(n: int | None) -> None:
 def initializers(*, cpu_limit: int | None = None) -> list[tuple[Callable, Any]]:
     ans = [
         (set_cpu_limit_inner, (cpu_limit,)),
-        (set_real_logger, (get_real_logger(),)),
+        # (set_real_logger, (get_real_logger(),)),
         (set_config, (get_config(),)),
         (set_global_algorithm_registry, (global_algorithm_registry(),)),
     ]
