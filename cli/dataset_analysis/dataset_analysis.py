@@ -7,7 +7,7 @@ import os
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import polars as pl
 from rcabench.openapi import (
@@ -44,6 +44,32 @@ class CountItem:
     is_pair: bool = False
     metrics: dict[str, int] = field(default_factory=dict)
     algo_evals: dict[str, list[DtoGranularityRecord]] = field(default_factory=dict)
+
+    service_name: set[str] = field(default_factory=set)
+    service_name_by_trace: set[str] = field(default_factory=set)  # trace
+    trace_length: Counter[int] = field(default_factory=Counter)
+    log_lines: dict[str, int] = field(default_factory=dict)  # service_name -> log_lines
+    metric_count: dict[str, int] = field(default_factory=dict)  # metric_name -> count
+    duration: int = 0  # duration in seconds
+    trace_count: int = 0  # number of traces
+    anomaly_degree: Literal["absolute", "may", "no"] = "no"
+    workload: Literal["trainticket"] = "trainticket"
+
+    @property
+    def qps(self) -> float:
+        if self.duration > 0:
+            return self.trace_count / self.duration
+        return 0.0
+
+    @property
+    def qpm(self) -> float:
+        if self.duration > 0:
+            return self.trace_count / self.duration * 60
+        return 0.0
+
+    @property
+    def service_coverage(self) -> float:
+        return len(self.service_name_by_trace) / len(self.service_name)
 
 
 @dataclass
