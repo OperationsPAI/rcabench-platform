@@ -24,10 +24,10 @@ from ..utils.fmap import fmap_processpool
 
 @dataclass
 class Item:
-    node: HandlerNode
-    injection: DtoInjectionV2Response
+    _node: HandlerNode
+    _injection: DtoInjectionV2Response
     fault_type: str = ""
-    service: str = ""
+    injected_service: str = ""
     is_pair: bool = False
     metrics: dict[str, int] = field(default_factory=dict)
     algo_evals: dict[str, list[DtoGranularityRecord]] = field(default_factory=dict)
@@ -235,10 +235,10 @@ def process_item(
         anomaly_degree = "may"
 
     return Item(
-        node=node,
-        injection=injection,
+        _node=node,
+        _injection=injection,
         fault_type=fault_type,
-        service=service,
+        injected_service=service,
         is_pair=is_pair,
         metrics=metric_values,
         service_names=service_names,
