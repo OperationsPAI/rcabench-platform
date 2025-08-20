@@ -379,11 +379,8 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
         ],
     }
 
-    def __init__(self, dataset: str, datapack: str):
-        assert isinstance(dataset, str) and dataset.strip(), "dataset must be a non-empty string"
-        assert isinstance(datapack, str) and datapack.strip(), "datapack must be a non-empty string"
-        self.dataset: str = dataset
-        self.datapack: str = datapack
+    def __init__(self, datapack: str):
+        super().__init__(datapack)
         self.files: dict[str, Any] = self._load_datapack_files()
 
     def _get_datapack_folder(self) -> Path | None:

@@ -9,10 +9,8 @@ from .spec import DatasetAnalyzer, build_service_graph, get_datapack_folder
 
 class RCAEvalAnalyzerLoader(DatasetAnalyzer):
     def __init__(self, dataset: str, datapack: str):
-        assert isinstance(dataset, str) and dataset.strip(), "dataset must be a non-empty string"
-        assert isinstance(datapack, str) and datapack.strip(), "datapack must be a non-empty string"
-        self.dataset: str = dataset
-        self.datapack: str = datapack
+        super().__init__(datapack)
+        self.dataset = dataset
 
     def get_service_dependency_graph(self) -> nx.DiGraph:
         folder = get_datapack_folder(self.dataset, self.datapack)

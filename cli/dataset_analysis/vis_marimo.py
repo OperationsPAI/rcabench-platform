@@ -94,15 +94,12 @@ def _(
         time_format = "%Y-%m-%d_%H-%M-%S"
         return datetime.now().strftime(time_format)
 
-
     def prepare_injections_data(
         client: ApiClient,
         dataset_id: int | None = None,
         project_id: int | None = None,
     ) -> tuple[dict[str, list[DtoInjectionV2Response]], Path]:
-        def _get_injections() -> tuple[
-            dict[str, list[DtoInjectionV2Response]], Path
-        ]:
+        def _get_injections() -> tuple[dict[str, list[DtoInjectionV2Response]], Path]:
             folder_name = "injections"
             api = InjectionsApi(client)
 
@@ -125,42 +122,30 @@ def _(
             if dataset_id is not None:
                 folder_name = f"dataset_{dataset_id}"
                 api = DatasetsApi(client)
-                resp = api.api_v2_datasets_id_get(
-                    id=dataset_id, include_injections=True
-                )
+                resp = api.api_v2_datasets_id_get(id=dataset_id, include_injections=True)
 
                 if not resp or not resp.data or not resp.data.injections:
-                    raise ValueError(
-                        f"No injections found for dataset {dataset_id}"
-                    )
+                    raise ValueError(f"No injections found for dataset {dataset_id}")
 
                 return resp.data.injections, Path(folder_name) / get_timestamp()
 
             elif project_id is not None:
                 folder_name = f"project_{project_id}"
                 api = ProjectsApi(client)
-                resp = api.api_v2_projects_id_get(
-                    id=project_id, include_injections=True
-                )
+                resp = api.api_v2_projects_id_get(id=project_id, include_injections=True)
 
                 if not resp or not resp.data or not resp.data.injections:
-                    raise ValueError(
-                        f"No injections found for project {project_id}"
-                    )
+                    raise ValueError(f"No injections found for project {project_id}")
 
                 return resp.data.injections, Path(folder_name) / get_timestamp()
 
             else:
-                raise ValueError(
-                    "Either dataset_id or project_id must be provided"
-                )
+                raise ValueError("Either dataset_id or project_id must be provided")
 
         def _filter_injections(
             injections: list[DtoInjectionV2Response],
         ) -> dict[str, list[DtoInjectionV2Response]]:
-            items_dict: dict[str, list[DtoInjectionV2Response]] = dict(
-                [(degree, []) for degree in DEGREES]
-            )
+            items_dict: dict[str, list[DtoInjectionV2Response]] = dict([(degree, []) for degree in DEGREES])
             for injection in injections:
                 if injection.labels is not None:
                     for label in injection.labels:
@@ -175,7 +160,6 @@ def _(
             return injections_dict, folder_path
         else:
             return _get_injections()
-
 
     def get_distributions_dict(
         client: ApiClient,
@@ -199,6 +183,7 @@ def _(
                 return None
 
         return distributions_dict
+
     return get_distributions_dict, prepare_injections_data
 
 
@@ -223,6 +208,7 @@ def _(
 @app.cell
 def _():
     from cli.dataset_analysis.vis.models import BarMeta, BubbleMeta, HeatmapMeta, NewVisInjectionsConfig
+
     return BarMeta, BubbleMeta, HeatmapMeta, NewVisInjectionsConfig
 
 
@@ -248,11 +234,7 @@ def _(BarMeta, BubbleMeta, HeatmapMeta, alt):
                 range=["#e74c3c", "#f39c12", "#2ecc71"],
             ),
         )
-        degree_opacity = (
-            alt.when(degree_selection)
-            .then(alt.value(0.9))
-            .otherwise(alt.value(0.1))
-        )
+        degree_opacity = alt.when(degree_selection).then(alt.value(0.9)).otherwise(alt.value(0.1))
 
         bar = (
             base.mark_bar(stroke="navy", strokeWidth=1, opacity=0.7)
@@ -273,7 +255,6 @@ def _(BarMeta, BubbleMeta, HeatmapMeta, alt):
         )
 
         return bar
-
 
     def plot_heatmap(meta: HeatmapMeta) -> None:
         plt.figure(figsize=(max(12, len(meta.x)), max(8, len(meta.y) * 0.5)))
@@ -305,25 +286,19 @@ def _(BarMeta, BubbleMeta, HeatmapMeta, alt):
                         display_text,
                         ha="center",
                         va="center",
-                        color="white"
-                        if meta.matrix[i, j] > meta.matrix.max() / 2
-                        else "black",
+                        color="white" if meta.matrix[i, j] > meta.matrix.max() / 2 else "black",
                     )
 
         plt.tight_layout()
 
         plt.savefig(meta.save_path, dpi=300, bbox_inches="tight")
 
-
     def plot_3d_bubble(meta: BubbleMeta) -> None:
         colors = px.colors.qualitative.Set3
         if len(meta.layer_datas) > len(colors):
             colors = colors * ((len(meta.layer_datas) // len(colors)) + 1)
 
-        value_key_to_color = {
-            key: colors[i % len(colors)]
-            for i, key in enumerate(meta.layer_datas.keys())
-        }
+        value_key_to_color = {key: colors[i % len(colors)] for i, key in enumerate(meta.layer_datas.keys())}
 
         fig = go.Figure()
 
@@ -395,9 +370,8 @@ def _(BarMeta, BubbleMeta, HeatmapMeta, alt):
             ),
         )
 
-        fig.write_image(
-            meta.save_path, width=1200, height=800, scale=2, engine="kaleido"
-        )
+        fig.write_image(meta.save_path, width=1200, height=800, scale=2, engine="kaleido")
+
     return pl, plot_bar
 
 
@@ -406,9 +380,7 @@ def _(Any, BarMeta, NewVisInjectionsConfig, alt, plot_bar):
     class VisInjections:
         config = NewVisInjectionsConfig()
 
-        def __init__(
-            self, distributions_dict: dict[str, dict[str, Any]], metrics: list[str]
-        ):
+        def __init__(self, distributions_dict: dict[str, dict[str, Any]], metrics: list[str]):
             self.distributions_dict = distributions_dict
             self.metrics = metrics
 
@@ -416,9 +388,7 @@ def _(Any, BarMeta, NewVisInjectionsConfig, alt, plot_bar):
             self,
         ) -> dict[
             str,
-            alt.HConcatChart
-            | alt.ConcatChart
-            | dict[str, alt.HConcatChart | alt.ConcatChart],
+            alt.HConcatChart | alt.ConcatChart | dict[str, alt.HConcatChart | alt.ConcatChart],
         ]:
             """
             Display bar charts for fault, service distributions.
@@ -433,9 +403,7 @@ def _(Any, BarMeta, NewVisInjectionsConfig, alt, plot_bar):
                 combined_data = []
 
                 for degree, distributions in self.distributions_dict.items():
-                    data: dict[str, int | dict[str, int]] = distributions.get(
-                        key, {}
-                    )
+                    data: dict[str, int | dict[str, int]] = distributions.get(key, {})
                     if not data:
                         continue
 
@@ -466,15 +434,14 @@ def _(Any, BarMeta, NewVisInjectionsConfig, alt, plot_bar):
 
             bars: dict[
                 str,
-                alt.HConcatChart
-                | alt.ConcatChart
-                | dict[str, alt.HConcatChart | alt.ConcatChart],
+                alt.HConcatChart | alt.ConcatChart | dict[str, alt.HConcatChart | alt.ConcatChart],
             ] = {}
 
             for key, config in self.config.bar_configs.items():
                 bars[key] = _display_bar(key, config.x_label, config.title)
 
             return bars
+
     return (VisInjections,)
 
 

@@ -663,7 +663,7 @@ def _compute_span_depths(trace_df: pl.DataFrame) -> dict[str, int]:
 
 def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, dict[str, Any]]:
     if dataset == "rcabench":
-        loader = RCABenchAnalyzerLoader(dataset, datapack)
+        loader = RCABenchAnalyzerLoader(datapack)
     elif dataset.startswith("rcaeval"):
         loader = RCAEvalAnalyzerLoader(dataset, datapack)
     else:
@@ -671,35 +671,11 @@ def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, 
 
     try:
         calculator = DatasetMetricsCalculator(loader)
+        return datapack, calculator.calculate_and_report()
+
     except Exception as e:
         logger.error(f"Error processing datapack {datapack} in dataset {dataset}: {e}")
         return datapack, {}
-
-    # Calculate metrics
-    results = {}
-    results["SDD@1"] = calculator.compute_sdd(k=1)
-    results["SDD@3"] = calculator.compute_sdd(k=3)
-    results["SDD@5"] = calculator.compute_sdd(k=5)
-    results["AC"] = calculator.compute_ac()
-    results["CPL"] = calculator.compute_cpl()
-    results["RootServiceDegree"] = calculator.get_root_cause_degree()
-
-    with RCABenchClient() as client:
-        api = InjectionsApi(client)
-        api.api_v2_injections_name_labels_patch(
-            name=datapack,
-            manage=DtoInjectionV2CustomLabelManageReq(
-                add_labels=[
-                    DtoLabelItem(key="SDD@1", value=str(results["SDD@1"])),
-                    DtoLabelItem(key="SDD@3", value=str(results["SDD@3"])),
-                    DtoLabelItem(key="SDD@5", value=str(results["SDD@5"])),
-                    DtoLabelItem(key="CPL", value=str(results["CPL"])),
-                    DtoLabelItem(key="RootServiceDegree", value=str(results["RootServiceDegree"])),
-                ]
-            ),
-        )
-
-    return datapack, results
 
 
 @app.command()
@@ -713,34 +689,11 @@ def batch_metrics(dataset: str, online: bool):
         datapacks = []
         with RCABenchClient() as client:
             injection_api = InjectionsApi(client)
-
-            page = 1
-            page_size = 100
-
-            while True:
-                logger.info(f"Fetching page {page} with {page_size} items per page...")
-                res = injection_api.api_v2_injections_get(tags=["absolute_anomaly"], size=page_size, page=page)
-                assert res.data is not None, "API returned empty data"
-
-                if res.data.items is None or len(res.data.items) == 0:
-                    logger.info(f"Page {page} has no data, stopping...")
-                    break
-
-                current_datapacks = [i.injection_name for i in res.data.items if i.injection_name is not None]
-                datapacks.extend(current_datapacks)
-                logger.info(f"Page {page} returned {len(current_datapacks)} valid items")
-
-                if res.data.pagination is not None and res.data.pagination.total_pages is not None:
-                    if page >= res.data.pagination.total_pages:
-                        logger.info(f"Retrieved all {res.data.pagination.total_pages} pages")
-                        break
-
-                if len(res.data.items) < page_size:
-                    logger.info("Last page reached")
-                    break
-
-                page += 1
-
+            res = injection_api.api_v2_injections_get(tags=["absolute_anomaly"], size=1000000, page=1)
+            assert res.data is not None and res.data.items is not None, (
+                "No injections found with absolute anomaly degree"
+            )
+            datapacks = [i.injection_name for i in res.data.items if i.injection_name is not None]
             logger.info(f"Total retrieved: {len(datapacks)} valid datapacks")
     else:
         datapacks = [f.name for f in folder.iterdir() if f.is_dir()]

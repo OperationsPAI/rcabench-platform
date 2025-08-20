@@ -21,7 +21,7 @@ from tqdm import tqdm
 
 from rcabench_platform.v2.cli.main import app
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
-from rcabench_platform.v2.datasets.rcabench import valid
+from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader, valid
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger, timeit
 from rcabench_platform.v2.metrics.ad.configs import (
@@ -33,21 +33,17 @@ from rcabench_platform.v2.metrics.ad.detectors import (
     SuccessRateDetector,
 )
 from rcabench_platform.v2.metrics.ad.types import HistoricalData
+from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 
-# TypedDict definitions
 class ThresholdInfo(TypedDict, total=False):
-    """Threshold information"""
-
     rule_based_anomaly: bool
     p_value: float
     z_statistic: float
 
 
 class AnomalyScoreResult(TypedDict):
-    """Anomaly score result"""
-
     is_anomaly: bool
     total_score: float
     change_rate: float
@@ -61,8 +57,6 @@ class AnomalyScoreResult(TypedDict):
 
 
 class SuccessRateResult(TypedDict):
-    """Success rate detection result"""
-
     is_significant: bool
     p_value: float
     z_statistic: float
@@ -74,8 +68,6 @@ class SuccessRateResult(TypedDict):
 
 
 class ConclusionRowResult(TypedDict):
-    """Conclusion detection result"""
-
     # Latency results
     latency_is_anomaly: bool
     latency_total_score: float
@@ -97,18 +89,7 @@ class ConclusionRowResult(TypedDict):
     success_rate_description: str
 
 
-class IssueCategories(TypedDict):
-    """Issue category statistics"""
-
-    latency_only: int
-    success_rate_only: int
-    both_latency_and_success_rate: int
-    no_issues: int
-
-
 class ConclusionRow(TypedDict):
-    """Conclusion row data"""
-
     SpanName: str
     Issues: str
     AbnormalAvgDuration: float
@@ -165,47 +146,20 @@ class AnalysisMetrics:
             and self.issue_categories["both_latency_and_success_rate"] == 0
         )
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "total_endpoints": self.processed_endpoints,
-            "skipped_endpoints": self.skipped_endpoints,
-            "anomaly_count": self.anomaly_count,
-            "absolute_anomaly": self.absolute_anomaly,
-            "issue_categories": self.issue_categories.copy(),
-        }
-
 
 class AnalysisState(TypedDict):
-    """Analysis state"""
-
     conclusion_data: list[ConclusionRow]
     metrics: AnalysisMetrics
 
 
-class EndpointStats(TypedDict):
-    """Endpoint statistics data"""
-
-    timestamp: list[int]
-    duration: list[int]
-    status_code: list[int | str]
-    response_content_length: list[int]
-    request_content_length: list[int]
-    avg_duration: float | None
-    p90_duration: float | None
-    p95_duration: float | None
-    p99_duration: float | None
-    succ_rate: float | None
-
-
 class AnalysisResult(TypedDict):
-    """Analysis result"""
-
     datapack_name: str
     is_latency_only: bool
     total_endpoints: int
     anomaly_count: int
     issue_categories: dict[str, int]
     absolute_anomaly: bool
+    dataset_metrics: dict
 
 
 def calculate_anomaly_score(
@@ -299,16 +253,12 @@ def is_success_rate_significant(
     return return_result
 
 
-def read_dataframe(file: Path) -> pl.LazyFrame:
-    return pl.scan_parquet(file)
-
-
 def preprocess_trace(file: Path) -> dict[str, Any]:
     if not file.exists():
         logger.error(f"Trace file does not exist: {file}")
         return {}
 
-    df = read_dataframe(file)
+    df = pl.scan_parquet(file)
 
     entry_df = df.filter(
         (pl.col("ServiceName") == "loadgenerator") & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
@@ -464,14 +414,6 @@ def setup_paths_and_validation(in_p: Path | None, ou_p: Path | None) -> tuple[Pa
         logger.info(f"Created output directory: {output_path}")
 
     return input_path, output_path
-
-
-def initialize_analysis_state() -> AnalysisState:
-    """Initialize the analysis state with default values."""
-    return {
-        "conclusion_data": [],
-        "metrics": AnalysisMetrics(),
-    }
 
 
 def get_percentile_config() -> list[tuple[str, str, Any]]:
@@ -774,7 +716,10 @@ def run(
         return None
 
     # Initialize analysis state and configuration
-    state = initialize_analysis_state()
+    state = AnalysisState(
+        conclusion_data=[],
+        metrics=AnalysisMetrics(),
+    )
     percentiles = get_percentile_config()
 
     for k, v in abnormal_stat.items():
@@ -786,7 +731,6 @@ def run(
 
     save_analysis_results(state, output_path)  # legacy, @Lincyaw delete it in the future
 
-    # Get datapack name from input path
     datapack_name = input_path.name
 
     if convert:
@@ -800,6 +744,7 @@ def run(
         "anomaly_count": state["metrics"].anomaly_count,
         "issue_categories": state["metrics"].issue_categories,
         "absolute_anomaly": state["metrics"].absolute_anomaly,
+        "dataset_metrics": {},
     }
 
     with RCABenchClient() as client:
@@ -852,6 +797,10 @@ def run(
             ),
         )
         logger.info(f"Add analysis labels: response code: {resp.code}, message: {resp.message}")
+
+        calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name))
+        res = calculator.calculate_and_report()
+        result["dataset_metrics"] = res
 
     return result
 
@@ -995,31 +944,6 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
 
     logger.info(f"Final summary: {summary}")
     return summary
-
-
-@app.command()
-@timeit()
-def local_test(datapack: str):
-    input_path = Path("data") / "rcabench_dataset" / datapack
-    output_path = Path("temp") / "detector" / datapack
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    os.environ["INPUT_PATH"] = str(input_path)
-    os.environ["OUTPUT_PATH"] = str(output_path)
-
-    result = run(convert=False)
-
-    if result is None:
-        logger.error(f"Analysis failed for datapack: {datapack}")
-        return {}
-
-    logger.info(f"Analysis Results for {datapack}:")
-    logger.info(f"  - Is Latency Only: {result['is_latency_only']}")
-    logger.info(f"  - Total Endpoints: {result['total_endpoints']}")
-    logger.info(f"  - Anomaly Count: {result['anomaly_count']}")
-    logger.info(f"  - Issue Categories: {result['issue_categories']}")
-
-    return result
 
 
 @app.command()

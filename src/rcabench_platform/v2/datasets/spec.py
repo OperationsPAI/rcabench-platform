@@ -42,6 +42,137 @@ def get_datapack_folder(dataset: str, datapack: str) -> Path:
     return get_dataset_folder(dataset) / datapack
 
 
+def predefined_dependency() -> nx.DiGraph:
+    graph = nx.DiGraph()
+    predefined_edges = {
+        "ts-ui-dashboard": [
+            "ts-voucher-service",
+            "ts-travel-plan-service",
+            "ts-execute-service",
+        ],
+        "ts-admin-basic-info-service": [
+            "ts-config-service",
+            "ts-contacts-service",
+            "ts-price-service",
+            "ts-station-service",
+            "ts-train-service",
+        ],
+        "ts-admin-order-service": ["ts-order-other-service", "ts-order-service"],
+        "ts-admin-route-service": ["ts-route-service", "ts-station-service"],
+        "ts-admin-travel-service": [
+            "ts-route-service",
+            "ts-station-service",
+            "ts-train-service",
+            "ts-travel2-service",
+            "ts-travel-service",
+        ],
+        "ts-admin-user-service": ["ts-user-service"],
+        "ts-auth-service": ["ts-verification-code-service"],
+        "ts-basic-service": ["ts-price-service", "ts-route-service", "ts-station-service", "ts-train-service"],
+        "ts-cancel-service": [
+            "ts-inside-payment-service",
+            "ts-notification-service",
+            "ts-order-other-service",
+            "ts-order-service",
+            "ts-user-service",
+        ],
+        "ts-consign-service": ["ts-consign-price-service"],
+        "ts-execute-service": ["ts-order-other-service", "ts-order-service"],
+        "ts-food-delivery-service": ["ts-station-food-service"],
+        "ts-food-service": ["ts-station-food-service", "ts-train-food-service", "ts-travel-service"],
+        "ts-inside-payment-service": ["ts-order-other-service", "ts-order-service", "ts-payment-service"],
+        "ts-order-other-service": ["ts-station-service"],
+        "ts-order-service": ["ts-station-service"],
+        "ts-preserve-other-service": [
+            "ts-assurance-service",
+            "ts-basic-service",
+            "ts-consign-service",
+            "ts-contacts-service",
+            "ts-food-service",
+            "ts-order-other-service",
+            "ts-seat-service",
+            "ts-security-service",
+            "ts-station-service",
+            "ts-travel2-service",
+            "ts-user-service",
+        ],
+        "ts-preserve-service": [
+            "ts-assurance-service",
+            "ts-basic-service",
+            "ts-consign-service",
+            "ts-contacts-service",
+            "ts-food-service",
+            "ts-order-service",
+            "ts-seat-service",
+            "ts-security-service",
+            "ts-station-service",
+            "ts-travel-service",
+            "ts-user-service",
+        ],
+        "ts-rebook-service": [
+            "ts-inside-payment-service",
+            "ts-order-other-service",
+            "ts-order-service",
+            "ts-route-service",
+            "ts-seat-service",
+            "ts-train-service",
+            "ts-travel2-service",
+            "ts-travel-service",
+        ],
+        "ts-route-plan-service": ["ts-route-service", "ts-travel2-service", "ts-travel-service"],
+        "ts-seat-service": ["ts-config-service", "ts-order-other-service", "ts-order-service"],
+        "ts-security-service": ["ts-order-other-service", "ts-order-service"],
+        "ts-travel2-service": ["ts-basic-service", "ts-route-service", "ts-seat-service", "ts-train-service"],
+        "ts-travel-plan-service": [
+            "ts-route-plan-service",
+            "ts-seat-service",
+            "ts-train-service",
+            "ts-travel2-service",
+            "ts-travel-service",
+        ],
+        "ts-travel-service": ["ts-basic-service", "ts-route-service", "ts-seat-service", "ts-train-service"],
+        "ts-user-service": ["ts-auth-service"],
+        "loadgenerator": ["ts-ui-dashboard"],
+    }
+
+    # Add predefined edges to the graph
+    for source_service, target_services in predefined_edges.items():
+        for target_service in target_services:
+            graph.add_edge(source_service, target_service)
+
+    mysql_connected_services = [
+        "ts-assurance-service",
+        "ts-auth-service",
+        "ts-config-service",
+        "ts-consign-price-service",
+        "ts-consign-service",
+        "ts-contacts-service",
+        "ts-delivery-service",
+        "ts-food-delivery-service",
+        "ts-food-service",
+        "ts-inside-payment-service",
+        "ts-notification-service",
+        "ts-order-other-service",
+        "ts-order-service",
+        "ts-payment-service",
+        "ts-price-service",
+        "ts-route-service",
+        "ts-security-service",
+        "ts-station-food-service",
+        "ts-station-service",
+        "ts-train-food-service",
+        "ts-train-service",
+        "ts-travel2-service",
+        "ts-travel-service",
+        "ts-user-service",
+        "ts-wait-order-service",
+    ]
+
+    for service in mysql_connected_services:
+        graph.add_edge(service, "mysql")
+    return graph
+
+
 def get_dataset_list() -> list[str]:
     config = get_config()
     meta_folder = config.data / "meta"
@@ -133,7 +264,7 @@ def build_service_graph(trace_lf: pl.LazyFrame) -> nx.DiGraph:
         .collect()
     )
 
-    graph = nx.DiGraph()
+    graph = predefined_dependency()
 
     for parent_service, child_service in edges_df.iter_rows():
         graph.add_edge(parent_service, child_service)
@@ -197,6 +328,10 @@ def _compute_span_depths(trace_df: pl.DataFrame) -> dict[str, int]:
 
 
 class DatasetAnalyzer(ABC):
+    def __init__(self, datapack: str):
+        assert isinstance(datapack, str) and datapack.strip(), "datapack must be a non-empty string"
+        self.datapack: str = datapack
+
     @abstractmethod
     def get_all_services(self) -> list[str]:
         raise NotImplementedError
@@ -216,3 +351,6 @@ class DatasetAnalyzer(ABC):
     @abstractmethod
     def get_service_dependency_graph(self) -> nx.DiGraph:
         raise NotImplementedError
+
+    def get_datapack(self) -> str:
+        return self.datapack

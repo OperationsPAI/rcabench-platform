@@ -2,7 +2,13 @@ import json
 import statistics
 
 import networkx as nx
-from networkx.readwrite import json_graph
+from rcabench.openapi import (
+    DtoInjectionV2CustomLabelManageReq,
+    DtoLabelItem,
+    InjectionsApi,
+)
+
+from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
 
 from ..datasets.spec import DatasetAnalyzer
 from ..logging import logger
@@ -16,8 +22,6 @@ class DatasetMetricsCalculator:
         self.services = loader.get_all_services()
 
         for svc in self.root_services:
-            if svc == "mysql":
-                continue
             assert svc in self.graph, f"Service '{svc}' not found in graph"
 
     def compute_sdd(self, k: int = 1) -> float | list[float]:
@@ -205,3 +209,28 @@ class DatasetMetricsCalculator:
                     max_degree = degree
 
         return max_degree
+
+    def calculate_and_report(self):
+        results = {}
+        results["SDD@1"] = self.compute_sdd(k=1)
+        results["SDD@3"] = self.compute_sdd(k=3)
+        results["SDD@5"] = self.compute_sdd(k=5)
+        results["AC"] = self.compute_ac()
+        results["CPL"] = self.compute_cpl()
+        results["RootServiceDegree"] = self.get_root_cause_degree()
+
+        with RCABenchClient() as client:
+            api = InjectionsApi(client)
+            api.api_v2_injections_name_labels_patch(
+                name=self.loader.get_datapack(),
+                manage=DtoInjectionV2CustomLabelManageReq(
+                    add_labels=[
+                        DtoLabelItem(key="SDD@1", value=str(results["SDD@1"])),
+                        DtoLabelItem(key="SDD@3", value=str(results["SDD@3"])),
+                        DtoLabelItem(key="SDD@5", value=str(results["SDD@5"])),
+                        DtoLabelItem(key="CPL", value=str(results["CPL"])),
+                        DtoLabelItem(key="RootServiceDegree", value=str(results["RootServiceDegree"])),
+                    ]
+                ),
+            )
+        return results
