@@ -106,3 +106,30 @@ def get_groupby_stats(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     )
 
     return stats
+
+
+def get_fault_type_stats(df: pl.DataFrame) -> pl.DataFrame:
+    if df.height == 0 or "fault_type" not in df.columns:
+        return pl.DataFrame()
+
+    metrics = [
+        "trace_count",
+        "duration_seconds",
+        "qps",
+        "service_count",
+        "service_count_by_trace",
+        "service_coverage",
+        "total_log_lines",
+        "log_services_count",
+        "total_metric_count",
+        "unique_metrics",
+        "avg_trace_length",
+        "max_trace_length",
+        "min_trace_length",
+    ]
+    metrics = [m for m in metrics if m in df.columns]
+
+    stats = df.group_by("fault_type").agg(
+        [pl.len().alias("count"), *[pl.col(m).mean().alias(f"avg_{m}") for m in metrics]]
+    )
+    return stats
