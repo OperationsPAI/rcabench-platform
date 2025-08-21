@@ -4,9 +4,8 @@ __generated_with = "0.14.16"
 app = marimo.App(width="medium")
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
-    import json
     import os
     import sys
     import traceback
@@ -31,7 +30,7 @@ def _():
         ProjectsApi,
     )
 
-    from cli.dataset_analysis.dataset_analysis import Analyzer, Distribution
+    from cli.dataset_analysis.metric_cli import Analyzer, Distribution
     from rcabench_platform.v2.cli.main import app, logger
     from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
     from rcabench_platform.v2.datasets.train_ticket import extract_path
@@ -55,13 +54,69 @@ def _():
     )
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     DEFAULT_NAMESPACE = "ts"
+
     ALGORITHMS = ["baro", "simplerca", "microdig", "traceback"]
     DEGREES = ["absolute_anomaly", "may_anomaly", "no_anomaly"]
     METRICS = ["SDD@1", "CPL", "RootServiceDegree"]
-    return ALGORITHMS, DEFAULT_NAMESPACE, DEGREES, METRICS
+
+    FAULT_CLASSES: dict[str, list[str]] = {
+        "dnschaos": ["DNSError", "DNSRandom"],
+        "httpchaos": [
+            "HTTPRequestAbort",
+            "HTTPResponseAbort",
+            "HTTPRequestDelay",
+            "HTTPResponseDelay",
+            "HTTPResponseReplaceBody",
+            "HTTPResponsePatchBody",
+            "HTTPRequestReplacePath",
+            "HTTPRequestReplaceMethod",
+            "HTTPResponseReplaceCode",
+        ],
+        "jvmchaos": [
+            "JVMLatency",
+            "JVMReturn",
+            "JVMException",
+            "JVMGarbageCollector",
+            "JVMCPUStress",
+            "JVMMemoryStress",
+            "JVMMySQLLatency",
+            "JVMMySQLException",
+        ],
+        "networkchaos": [
+            "NetworkDelay",
+            "NetworkLoss",
+            "NetworkDuplicate",
+            "NetworkCorrupt",
+            "NetworkBandwidth",
+            "NetworkPartition",
+        ],
+        "podchaos": [
+            "PodKill",
+            "PodFailure",
+            "ContainerKill",
+        ],
+        "stresschaos": [
+            "MemoryStress",
+            "CPUStress",
+        ],
+        "timechaos": ["TimeSkew"],
+    }
+    return ALGORITHMS, DEFAULT_NAMESPACE, DEGREES, FAULT_CLASSES, METRICS
+
+
+@app.cell(hide_code=True)
+def _(FAULT_CLASSES: dict[str, list[str]], pl):
+    fault_classes_df = pl.DataFrame(
+        [
+            {"chaos_type": chaos_type, "fault_name": fault_name}
+            for chaos_type, fault_list in FAULT_CLASSES.items()
+            for fault_name in fault_list
+        ]
+    )
+    return (fault_classes_df,)
 
 
 @app.cell(hide_code=True)
@@ -202,569 +257,332 @@ def _(
         injections_dict, folder_path = prepare_injections_data(client=client)
         assert injections_dict is not None
         distributions_dict = get_distributions_dict(client=client, injections_dict=injections_dict)
-    return (distributions_dict,)
+    return distributions_dict, injections_dict
 
 
-@app.cell
+@app.cell(hide_code=True)
+def _(injections_dict: "dict[str, list[DtoInjectionV2Response]]", mo):
+    absolutely_stat = mo.stat(
+        value=str(len(injections_dict["absolute_anomaly"])),
+        label="Absolutely Anomaly",
+    )
+
+    may_stat = mo.stat(
+        value=str(len(injections_dict["may_anomaly"])),
+        label="May Anomaly",
+    )
+
+    no_stat = mo.stat(
+        value=str(len(injections_dict["no_anomaly"])),
+        label="No Anomaly",
+    )
+
+    mo.hstack([absolutely_stat, may_stat, no_stat], justify="center", gap="5rem")
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""## Visuliaze Injections Data""")
+    return
+
+
+@app.cell(hide_code=True)
 def _():
-    from cli.dataset_analysis.vis.models import BarMeta, BubbleMeta, HeatmapMeta, NewVisInjectionsConfig
-
-    return BarMeta, BubbleMeta, HeatmapMeta, NewVisInjectionsConfig
-
-
-@app.cell
-def _(BarMeta, BubbleMeta, HeatmapMeta, alt):
-    import matplotlib.pyplot as plt
-    import plotly.express as px
-    import plotly.graph_objects as go
     import polars as pl
 
-    def plot_bar(meta: BarMeta) -> alt.HConcatChart | alt.ConcatChart:
-        assert meta.data, "Data for bar chart cannot be empty"
+    from cli.dataset_analysis.vis.models import (
+        BarMeta,
+        BubbleMeta,
+        HeatmapMeta,
+        VisInjectionsConfig,
+        NewVisInjectionsConfig,
+    )
 
+    return BarMeta, NewVisInjectionsConfig, VisInjectionsConfig, pl
+
+
+@app.cell(hide_code=True)
+def _(BarMeta, alt, pl):
+    def plot_bar(meta: BarMeta, extra_legend: bool = False) -> alt.Chart:
         df = pl.DataFrame(meta.data)
         base = alt.Chart(data=df.to_pandas())
 
         degree_selection = alt.selection_point(fields=["degree"], bind="legend")
         degree_color = alt.Color(
-            "degree:N",
+            "degree",
             title="Degree",
             scale=alt.Scale(
                 domain=["absolute_anomaly", "may_anomaly", "no_anomaly"],
                 range=["#e74c3c", "#f39c12", "#2ecc71"],
             ),
         )
-        degree_opacity = alt.when(degree_selection).then(alt.value(0.9)).otherwise(alt.value(0.1))
+
+        degree_opacity = alt.when(degree_selection).then(alt.value(0.7)).otherwise(alt.value(0.1))
+
+        tooltip_fields = ["degree", "name", "count"]
+        x_axis_config = alt.Axis(labelAngle=-45)
+
+        if "chaos_type" in df.columns:
+            tooltip_fields.append("chaos_type:N")
 
         bar = (
             base.mark_bar(stroke="navy", strokeWidth=1, opacity=0.7)
             .encode(
                 x=alt.X(
-                    "name:N",
+                    "name",
                     title=meta.x_label,
                     axis=alt.Axis(labelAngle=-45),
                     sort="-y",
                 ),
-                y=alt.Y("count:Q", title="Injection Count"),
+                y=alt.Y("count", title="Injection Count"),
                 color=degree_color,
                 opacity=degree_opacity,
-                xOffset="degree:N",
-                tooltip=["degree:N", "name:N", "count:Q"],
+                xOffset="degree",
+                tooltip=tooltip_fields,
             )
-            .properties(width=800, height=400, title=meta.title)
+            .properties(width=850, height=300, title=meta.title)
+            .add_params(degree_selection)
         )
 
         return bar
 
-    def plot_heatmap(meta: HeatmapMeta) -> None:
-        plt.figure(figsize=(max(12, len(meta.x)), max(8, len(meta.y) * 0.5)))
-
-        im = plt.imshow(meta.matrix, cmap="YlOrRd", aspect="auto")
-
-        plt.xlabel(meta.x_label)
-        plt.ylabel(meta.y_label)
-        plt.title(meta.title)
-
-        plt.xticks(range(len(meta.x)), [str(f) for f in meta.x], rotation=45)
-        plt.yticks(range(len(meta.y)), meta.y)
-
-        cbar = plt.colorbar(im)
-        cbar.set_label("Injection Count")
-
-        for i in range(len(meta.y)):
-            for j in range(len(meta.x)):
-                value = meta.matrix[i, j]
-                if value == int(value):
-                    display_text = f"{int(value)}"
-                else:
-                    display_text = f"{value:.4f}"
-
-                if meta.matrix[i, j] > 0:
-                    plt.text(
-                        j,
-                        i,
-                        display_text,
-                        ha="center",
-                        va="center",
-                        color="white" if meta.matrix[i, j] > meta.matrix.max() / 2 else "black",
-                    )
-
-        plt.tight_layout()
-
-        plt.savefig(meta.save_path, dpi=300, bbox_inches="tight")
-
-    def plot_3d_bubble(meta: BubbleMeta) -> None:
-        colors = px.colors.qualitative.Set3
-        if len(meta.layer_datas) > len(colors):
-            colors = colors * ((len(meta.layer_datas) // len(colors)) + 1)
-
-        value_key_to_color = {key: colors[i % len(colors)] for i, key in enumerate(meta.layer_datas.keys())}
-
-        fig = go.Figure()
-
-        for value_key, layer_data in meta.layer_datas.items():
-            hover_texts = []
-            for item in layer_data.key_datas:
-                hover_text = (
-                    f"<b>Fault:</b> {item.fault}<br>"
-                    f"<b>{meta.mapping_key_name}:</b> {item.mapping_key}<br>"
-                    f"<b>{meta.metric} Value:</b> {item.value_key}<br>"
-                    f"<b>Count:</b> {item.count}<br>"
-                    f"<b>Numeric Value:</b> {item.metric_value:.4f}"
-                )
-                hover_texts.append(hover_text)
-
-            fig.add_trace(
-                go.Scatter3d(
-                    x=layer_data.x_list,
-                    y=layer_data.y_list,
-                    z=layer_data.z_list,
-                    mode="markers",
-                    name=f"Value: {value_key}",
-                    marker=dict(
-                        size=layer_data.sizes,
-                        color=value_key_to_color[value_key],
-                        opacity=0.8,
-                        sizemode="diameter",
-                        sizemin=5,
-                        line=dict(width=1, color="darkslategrey"),
-                    ),
-                    text=hover_texts,
-                    hovertemplate="%{text}<extra></extra>",
-                    showlegend=True,
-                )
-            )
-
-        fig.update_layout(
-            title=dict(
-                text=f"3D Distribution: {meta.metric} by Fault Type and Service",
-                x=0.5,
-                font=dict(size=16, family="Arial Black"),
-            ),
-            scene=dict(
-                xaxis=dict(
-                    title="Fault Types",
-                    tickvals=list(range(len(meta.x_texts))),
-                    ticktext=meta.x_texts,
-                    tickfont=dict(size=10),
-                ),
-                yaxis=dict(
-                    title=f"{meta.mapping_key_name}",
-                    tickvals=list(range(len(meta.y_texts))),
-                    ticktext=meta.y_texts,
-                    tickfont=dict(size=10),
-                ),
-                zaxis=dict(title=f"{meta.metric} Count", tickfont=dict(size=10)),
-                camera=dict(eye=dict(x=1.5, y=1.5, z=1.5)),
-            ),
-            width=1200,
-            height=800,
-            font=dict(family="Arial", size=12),
-            legend=dict(
-                x=0.02,
-                y=0.98,
-                bgcolor="rgba(255,255,255,0.8)",
-                bordercolor="rgba(0,0,0,0.2)",
-                borderwidth=1,
-                itemsizing="constant",
-            ),
-        )
-
-        fig.write_image(meta.save_path, width=1200, height=800, scale=2, engine="kaleido")
-
-    return pl, plot_bar
-
-
-@app.cell(hide_code=True)
-def _(Any, BarMeta, NewVisInjectionsConfig, alt, plot_bar):
-    class VisInjections:
-        config = NewVisInjectionsConfig()
-
-        def __init__(self, distributions_dict: dict[str, dict[str, Any]], metrics: list[str]):
-            self.distributions_dict = distributions_dict
-            self.metrics = metrics
-
-        def display_bars(
-            self,
-        ) -> dict[
-            str,
-            alt.HConcatChart | alt.ConcatChart | dict[str, alt.HConcatChart | alt.ConcatChart],
-        ]:
-            """
-            Display bar charts for fault, service distributions.
-            """
-
-            def _display_bar(
-                key: str,
-                x_label: str,
-                title: str,
-                extra_key: str | None = None,
-            ) -> alt.HConcatChart | alt.ConcatChart:
-                combined_data = []
-
-                for degree, distributions in self.distributions_dict.items():
-                    data: dict[str, int | dict[str, int]] = distributions.get(key, {})
-                    if not data:
-                        continue
-
-                    for name, count in data.items():
-                        if not isinstance(count, dict):
-                            combined_data.append(
-                                {
-                                    "degree": degree,
-                                    "name": name,
-                                    "count": count,
-                                }
-                            )
-                            continue
-
-                        for sub_name, sub_count in count.items():
-                            data_item: dict[str, Any] = {"degree": degree}
-                            data_item[sub_name] = sub_count
-                            combined_data.append(data_item)
-
-                return plot_bar(
-                    BarMeta(
-                        data=combined_data,
-                        x_label=x_label,
-                        y_label="Injection Count",
-                        title=title,
-                    )
-                )
-
-            bars: dict[
-                str,
-                alt.HConcatChart | alt.ConcatChart | dict[str, alt.HConcatChart | alt.ConcatChart],
-            ] = {}
-
-            for key, config in self.config.bar_configs.items():
-                bars[key] = _display_bar(key, config.x_label, config.title)
-
-            return bars
-
-    return (VisInjections,)
+    return (plot_bar,)
 
 
 @app.cell
 def _(
-    METRICS,
-    VisInjections,
+    Any,
+    BarMeta,
+    NewVisInjectionsConfig,
+    VisInjectionsConfig,
+    alt,
     distributions_dict: "dict[str, dict[str, Any]]",
-    logger,
+    plot_bar,
+):
+    class VisInjections:
+        def __init__(
+            self,
+            config: VisInjectionsConfig,
+            distributions_dict: dict[str, dict[str, Any]],
+        ):
+            self.config = config
+            self.distributions_dict = distributions_dict
+
+        def get_bar_data(self, key: str) -> list[dict[str, Any]]:
+            combined_data = []
+
+            for degree, distributions in self.distributions_dict.items():
+                data: dict[str, int] = distributions.get(key, {})
+                if not data:
+                    continue
+
+                for name, count in data.items():
+                    combined_data.append(
+                        {
+                            "degree": degree,
+                            "name": name,
+                            "count": count,
+                        }
+                    )
+
+            return combined_data
+
+        def get_heatmap_data(self, key: str) -> list[dict[str, Any]]:
+            combined_data = []
+
+            for degree, distributions in self.distributions_dict.items():
+                data: dict[str, int] = distributions.get(key, {})
+                if not data:
+                    continue
+
+                for name, count in data.items():
+                    combined_data.append(
+                        {
+                            "degree": degree,
+                            "name": name,
+                            "count": count,
+                        }
+                    )
+
+            return combined_data
+
+        def display_bar(self, bar_data: list[dict[str, Any]], key: str) -> alt.Chart:
+            """
+            Display bar charts for fault, service distributions.
+            """
+            bar_config = self.config.bar_configs[key]
+
+            return plot_bar(
+                BarMeta(
+                    data=bar_data,
+                    x_label=bar_config.x_label,
+                    y_label="Injection Count",
+                    title=bar_config.title,
+                ),
+                extra_legend=key == "faults",
+            )
+
+    config = NewVisInjectionsConfig()
+    processor = VisInjections(config=NewVisInjectionsConfig(), distributions_dict=distributions_dict)
+    return (processor,)
+
+
+@app.cell(hide_code=True)
+def _(Any, alt, pl, processor):
+    def display_bar(
+        key: str,
+        ori_bar_data: list[dict[str, Any]],
+        column_name: str,
+        options: list[str],
+        exclude: bool = False,
+    ) -> alt.Chart:
+        """
+        筛选数据
+
+        Args:
+            ori_bar_data: 原始数据
+            column_name: 要筛选的列名
+            options: 筛选选项
+            exclude: 如果为 True，则排除 options 中的值；如果为 False，则只保留 options 中的值
+
+        Returns:
+            筛选后的数据
+        """
+        df = pl.DataFrame(data=ori_bar_data)
+
+        if exclude:
+            filtered_df = df.filter(~pl.col(column_name).is_in(options))
+        else:
+            filtered_df = df.filter(pl.col(column_name).is_in(options))
+
+        filtered_bar_data = filtered_df.to_dicts()
+
+        return processor.display_bar(bar_data=filtered_bar_data, key=key)
+
+    return (display_bar,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""### Fault  Distribution""")
+    return
+
+
+@app.cell(hide_code=True)
+def _(fault_classes_df, mo, pl, processor):
+    faults_df = pl.DataFrame(data=processor.get_bar_data("faults"))
+    faults_merged_df = faults_df.join(fault_classes_df, left_on="name", right_on="fault_name", how="left")
+
+    chaoses_options: list[str] = faults_merged_df.get_column("chaos_type").unique().to_list()
+    chaoses_multiselect = mo.ui.multiselect(options=chaoses_options, value=chaoses_options)
+
+    def get_faults_options(chaoses: list[str]) -> list[str]:
+        filtered_df = fault_classes_df.filter(pl.col("chaos_type").is_in(chaoses))
+        return filtered_df["fault_name"].to_list()
+
+    return chaoses_multiselect, faults_merged_df, get_faults_options
+
+
+@app.cell(hide_code=True)
+def _(chaoses_multiselect, get_faults_options, mo):
+    faults_multiselect = mo.ui.multiselect(
+        options=get_faults_options(chaoses_multiselect.value),
+        value=get_faults_options(chaoses_multiselect.value),
+    )
+    return (faults_multiselect,)
+
+
+@app.cell(hide_code=True)
+def _(chaoses_multiselect, faults_multiselect, mo):
+    chaos_selector_card = mo.vstack(
+        [mo.md("### 🔥 混沌类型"), chaoses_multiselect, mo.md(f"*已选择 {len(chaoses_multiselect.value)} 种类型*")],
+        align="center",
+        gap="0.5rem",
+    )
+
+    fault_selector_card = mo.vstack(
+        [mo.md("### ⚡ 故障类型"), faults_multiselect, mo.md(f"*已选择 {len(faults_multiselect.value)} 种故障*")],
+        align="center",
+        gap="0.5rem",
+    )
+
+    faults_horizontal = mo.hstack([chaos_selector_card, fault_selector_card], justify="center", gap="2rem", wrap=True)
+    return (faults_horizontal,)
+
+
+@app.cell(hide_code=True)
+def _(
+    display_bar,
+    faults_horizontal,
+    faults_merged_df,
+    faults_multiselect,
     mo,
 ):
-    processor = VisInjections(distributions_dict=distributions_dict, metrics=METRICS)
-
-    bars = processor.display_bars()
-    if not bars:
-        logger.warning("No valid bars found for visualization")
-
-    mo.ui.altair_chart(bars["faults"])
-    return (bars,)
-
-
-@app.cell
-def _(bars, mo):
-    mo.md(f"""{mo.ui.altair_chart(bars["services"])}""")
-    return
-
-
-@app.cell
-def _(bars, mo):
-    mo.md(f"""{mo.ui.altair_chart(bars["metrics"]["SDD@1"])}""")
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""## Analyze SDD""")
-    return
-
-
-@app.cell
-def _(Any, DEGREES, distributions_dict: "dict[str, dict[str, Any]]", pl):
-    def analyze_sdd():
-        output_content: dict[str, dict[str, Any]] = {}
-
-        for degree in DEGREES:
-            sdd_datas: list[dict[str, Any]] = []
-
-            data = distributions_dict[degree].fault_service_metrics
-
-            for fault, mapping in data.items():
-                for mapping_key, metric_data in mapping.items():
-                    for metric, metric_stats in metric_data.items():
-                        if "SDD" in metric:
-                            for metric_value, count in metric_stats.items():
-                                sdd_datas.append(
-                                    {
-                                        "fault": fault,
-                                        "mapping_key": mapping_key,
-                                        "metric_value": float(metric_value),
-                                        "count": count,
-                                    }
-                                )
-
-            df = pl.DataFrame(data=sdd_datas)
-            if df.is_empty():
-                continue
-
-            df_le_filtered = df.filter(pl.col("metric_value") != 0)
-            df_le_sorted = df_le_filtered.sort("count", descending=True)
-
-            output_content[f"{degree}_le"] = df_le_sorted.to_dicts()
-
-            df_eq_filtered = df.filter(pl.col("metric_value") == 0)
-            df_eq_sorted = df_eq_filtered.sort("count", descending=True)
-
-            output_content[f"{degree}_eq"] = df_eq_sorted.to_dicts()
-
-        return output_content
-
-    return (analyze_sdd,)
-
-
-@app.cell
-def _(analyze_sdd, pl):
-    content = analyze_sdd()
-    df_ab_le = pl.DataFrame(data=content["absolute_anomaly_le"])
-    df_ab_eq = pl.DataFrame(data=content["absolute_anomaly_eq"])
-    return content, df_ab_eq, df_ab_le
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""### 检测是否有重叠""")
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""### SDD 数据分析""")
-    return
-
-
-@app.cell(hide_code=True)
-def _(Any, df_ab_eq, df_ab_le, mo, pl):
-    def check_overlap(df1: pl.DataFrame, df2: pl.DataFrame, name1: str, name2: str) -> dict[str, Any]:
-        df1_combinations = df1.select([pl.col("fault"), pl.col("mapping_key")]).unique()
-
-        df2_combinations = df2.select([pl.col("fault"), pl.col("mapping_key")]).unique()
-
-        overlap = df1_combinations.join(df2_combinations, on=["fault", "mapping_key"], how="inner")
-
-        df1_only = df1_combinations.join(df2_combinations, on=["fault", "mapping_key"], how="anti")
-
-        df2_only = df2_combinations.join(df1_combinations, on=["fault", "mapping_key"], how="anti")
-
-        return {
-            "overlap": overlap,
-            f"{name1}_only": df1_only,
-            f"{name2}_only": df2_only,
-            "overlap_count": len(overlap),
-            f"{name1}_total": df1_combinations.shape[0],
-            f"{name2}_total": df2_combinations.shape[0],
-            f"{name1}_only_count": df1_only.shape[0],
-            f"{name2}_only_count": df2_only.shape[0],
-        }
-
-    name1 = "ab_le"
-    name2 = "ab_eq"
-    overlap_result = check_overlap(df_ab_le, df_ab_eq, name1, name2)
-
-    mo.md(f"""
-        #### DataFrame 重叠检查结果
-
-        **总体情况:**
-
-        - df_{name1} (SDD≠0) 的 fault-mapping_key 组合数: {overlap_result[f"{name1}_total"]}
-        - df_{name2} (SDD=0) 的 fault-mapping_key 组合数: {overlap_result[f"{name2}_total"]}
-        - 重叠的组合数: {overlap_result["overlap_count"]}
-        - 仅在 df_{name1} 中的组合数: {overlap_result[f"{name1}_only_count"]}
-        - 仅在 df_{name2} 中的组合数: {overlap_result[f"{name2}_only_count"]}
-
-        **重叠比例:**
-
-        - df_{name1} 中重叠的比例: {overlap_result["overlap_count"] / overlap_result[f"{name1}_total"] * 100:.1f}%
-        - df_{name2} 中重叠的比例: {overlap_result["overlap_count"] / overlap_result[f"{name2}_total"] * 100:.1f}%
-
-        **分析结论:**
-
-        {"✅ 有重叠 - 相同的故障-服务组合在SDD=0和SDD≠0中都出现" if overlap_result["overlap_count"] > 0 else "❌ 无重叠 - 所有故障-服务组合要么只有SDD=0，要么只有SDD≠0"}
-        """)
-    return name1, name2, overlap_result
-
-
-@app.cell(hide_code=True)
-def _(mo, overlap_result, pl):
-    overlap_table_by_fault = mo.ui.table(
-        overlap_result["overlap"]
-        .group_by("fault")
-        .agg(
-            [
-                pl.col("mapping_key").alias("mapping_keys")  # 自动聚合为数组
-            ]
-        )
-        .sort("fault")
-        .to_pandas()
-    )
-
-    mo.md(f"""
-            #### 同时在 SDD=0 和 SDD≠0 中出现的组合
-
-            {overlap_table_by_fault}
-            """)
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo, name1, overlap_result, pl):
-    mo.md(
-        f"""
-    #### 仅在 df_{name1} (SDD≠0) 中的组合
-
-            {
-            mo.ui.table(
-                overlap_result[f"{name1}_only"]
-                .group_by("fault")
-                .agg(
-                    [
-                        pl.col("mapping_key").alias("mapping_keys")  # 自动聚合为数组
-                    ]
+    mo.vstack(
+        [
+            faults_horizontal,
+            mo.ui.altair_chart(
+                display_bar(
+                    key="faults",
+                    ori_bar_data=faults_merged_df.to_dict(),
+                    column_name="name",
+                    options=faults_multiselect.value,
                 )
-                .sort("fault")
-            )
-        }
-    """
+            ),
+        ]
     )
     return
 
 
 @app.cell(hide_code=True)
-def _(mo, name2, overlap_result, pl):
-    mo.md(
-        f"""
-    #### 仅在 df_{name2} (SDD=0) 中的组合
-
-            {
-            mo.ui.table(
-                overlap_result[f"{name2}_only"]
-                .group_by("fault")
-                .agg(
-                    [
-                        pl.col("mapping_key").alias("mapping_keys")  # 自动聚合为数组
-                    ]
-                )
-                .sort("fault")
-            )
-        }
-    """
-    )
+def _(mo):
+    mo.md(r"""### Service Distribuiton""")
     return
 
 
 @app.cell(hide_code=True)
-def _(DEGREES, mo):
-    degree_selector = mo.ui.dropdown(
-        options=DEGREES,
-        value=DEGREES[0],
-        label="选择异常标签进行分析 ",
-    )
+def _(mo, pl, processor):
+    services_bar_data = processor.get_bar_data("services")
 
-    mo.md(f"""
-            #### 选择异常标签
+    services_options: list[str] = pl.DataFrame(data=services_bar_data).get_column("name").unique().to_list()
 
-            {degree_selector}
-            """)
-    return (degree_selector,)
-
-
-@app.cell(hide_code=True)
-def _(degree_selector, df_ab_eq, df_ab_le, mo):
-    df_dict = {"ab_le": df_ab_le, "ab_eq": df_ab_eq}
-
-    condtion_selector_dict = {"absolute_anomaly": ["ab_le", "ab_eq"]}
-
-    condtion_selector = mo.ui.dropdown(
-        options=condtion_selector_dict[degree_selector.value],
-        value=condtion_selector_dict[degree_selector.value][0],
-        label="选择异常数据进行分析 ",
-    )
-
-    mo.md(f"""
-            #### 选择异常数据
-
-            {condtion_selector}
-
-            """)
-    return condtion_selector, df_dict
+    services_multiselect = mo.ui.multiselect(options=services_options, value=services_options)
+    return services_bar_data, services_multiselect
 
 
 @app.cell
-def _(condtion_selector, df_dict, mo, pl):
-    ori_data = df_dict[condtion_selector.value]
-
-    fault_summary_df: pl.DataFrame = (
-        ori_data.group_by("fault")
-        .agg(
-            [
-                pl.col("mapping_key").n_unique().alias("service_count"),
-                pl.col("count").mean().alias("avg_count"),
-                pl.col("count").max().alias("max_count"),
-            ]
-        )
-        .sort(["max_count", "avg_count"], descending=True)
+def _(display_bar, mo, services_bar_data, services_multiselect):
+    service_selector_card = mo.vstack(
+        [mo.md("### ⚡ 服务类型"), services_multiselect, mo.md(f"*已选择 {len(services_multiselect.value)} 种服务*")],
+        align="center",
+        gap="0.5rem",
     )
 
-    fault_summary_table = mo.ui.table(fault_summary_df.to_pandas())
-    return (fault_summary_df,)
+    mo.vstack(
+        [
+            service_selector_card,
+            mo.ui.altair_chart(
+                display_bar(
+                    key="services",
+                    ori_bar_data=services_bar_data,
+                    column_name="name",
+                    options=services_multiselect.value,
+                )
+            ),
+        ]
+    )
+    return
 
 
 @app.cell(hide_code=True)
-def _(fault_summary_df: "pl.DataFrame", mo):
-    all_faults = fault_summary_df["fault"].unique().sort().to_list()
-    fault_selector = mo.ui.dropdown(
-        options=all_faults, value=all_faults[0] if all_faults else None, label="选择故障类型进行深入分析:"
-    )
-
-    mo.md(f"""
-            #### 2. 选择故障类型
-
-            {fault_selector}
-
-            **可选故障类型:** {len(all_faults)} 个
-            """)
-    return (fault_selector,)
+def _(mo):
+    mo.md(r"""### Fault Services Distribution""")
+    return
 
 
-@app.cell(hide_code=True)
-def _(content, fault_selector, mo, pl):
-    selected_fault = fault_selector.value
-    fault_data = [item for item in content["absolute_anomaly_le"] if item["fault"] == selected_fault]
-
-    fault_df = pl.DataFrame(data=fault_data)
-
-    mapping_key_summary = (
-        fault_df.group_by(["mapping_key"])
-        .agg(
-            [
-                pl.col("count").mean().alias("avg_count"),
-                pl.col("count").max().alias("max_count"),
-            ]
-        )
-        .sort(["max_count", "avg_count", "mapping_key"], descending=True)
-    )
-
-    mapping_key_summary_table = mo.ui.table(mapping_key_summary.to_pandas())
-    mo.md(f"""
-                #### 3. 故障类型 **{selected_fault}** 的 Service 级别分析
-
-                总计有 {fault_df.get_column("count").sum()} 条数据
-
-                **包含 {fault_df["mapping_key"].n_unique()} 种 Service 在不同条件下的分布**
-
-                {mapping_key_summary_table}
-                """)
+@app.cell
+def _():
     return
 
 

@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
@@ -29,6 +30,27 @@ class AlgoMetrics(TypedDict):
 
     efficiency: float
     datapack_count: int
+
+
+@dataclass
+class AlgoMetricItem:
+    """
+    Data class to hold algorithm metric for a specific algorithm and datapack.
+    """
+
+    top1: float = 0.0
+    top3: float = 0.0
+    top5: float = 0.0
+    mrr: float = 0.0
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert the metric item to a dictionary."""
+        return {
+            "top1": self.top1,
+            "top3": self.top3,
+            "top5": self.top5,
+            "mrr": self.mrr,
+        }
 
 
 # =============================================================================
@@ -160,7 +182,7 @@ def alignment_score_multi_gt(
 
 def calculate_metrics_for_level(
     groundtruth_items: list[str], predictions: list[DtoGranularityRecord], level: str
-) -> dict[str, float]:
+) -> AlgoMetricItem:
     """Calculate metrics at a specific granularity level.
 
     Args:
@@ -172,12 +194,12 @@ def calculate_metrics_for_level(
         Dictionary containing top1, top3, top5, and mrr metrics
     """
     if not groundtruth_items or not predictions:
-        return {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
+        return AlgoMetricItem()
 
     level_predictions = [p for p in predictions if p.level == level]
 
     if not level_predictions:
-        return {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
+        return AlgoMetricItem()
 
     level_predictions.sort(key=lambda x: x.rank or float("inf"))
 
@@ -187,7 +209,7 @@ def calculate_metrics_for_level(
             hits.append(pred.rank or float("inf"))
 
     if not hits:
-        return {"top1": 0.0, "top3": 0.0, "top5": 0.0, "mrr": 0.0}
+        return AlgoMetricItem()
 
     min_rank = min(hits)
     top1 = 1.0 if min_rank <= 1 else 0.0
@@ -196,7 +218,7 @@ def calculate_metrics_for_level(
 
     mrr = 1.0 / min_rank
 
-    return {"top1": top1, "top3": top3, "top5": top5, "mrr": mrr}
+    return AlgoMetricItem(top1=top1, top3=top3, top5=top5, mrr=mrr)
 
 
 def calculate_alignment_score(
@@ -290,8 +312,8 @@ def get_metrics_by_dataset(
 ) -> list[AlgoMetrics]:
     evaluation = get_evaluation_by_dataset(algorithm, dataset, dataset_version, tag, base_url)
 
-    assert evaluation.items is not None
-    assert len(evaluation.items) > 0
+    assert evaluation is not None
+    assert len(evaluation) > 0
 
     level_metrics: defaultdict[str, dict[str, float]] = defaultdict(
         lambda: {
@@ -307,34 +329,36 @@ def get_metrics_by_dataset(
     )
     total_datapacks = 0
 
-    for item in evaluation.items:
-        assert item.datapack_name is not None
-        assert item.groundtruth is not None, f"Groundtruth is not found for datapack {item.datapack_name}"
-        assert item.predictions is not None, f"Predictions are not found for datapack {item.datapack_name}"
+    for resp in evaluation:
+        assert resp.items is not None, "Response items are None"
+        for item in resp.items:
+            assert item.datapack_name is not None
+            assert item.groundtruth is not None, f"Groundtruth is not found for datapack {item.datapack_name}"
+            assert item.predictions is not None, f"Predictions are not found for datapack {item.datapack_name}"
 
-        total_datapacks += 1
+            total_datapacks += 1
 
-        # Extract ground truth items for each granularity level
-        groundtruth_levels = {}
-        if item.groundtruth.service:
-            groundtruth_levels["service"] = item.groundtruth.service
-        if item.groundtruth.span:
-            groundtruth_levels["span"] = item.groundtruth.span
-        if item.groundtruth.pod:
-            groundtruth_levels["pod"] = item.groundtruth.pod
-        if item.groundtruth.container:
-            groundtruth_levels["container"] = item.groundtruth.container
-        if item.groundtruth.function:
-            groundtruth_levels["function"] = item.groundtruth.function
-        if item.groundtruth.metric:
-            groundtruth_levels["metric"] = item.groundtruth.metric
+            # Extract ground truth items for each granularity level
+            groundtruth_levels = {}
+            if item.groundtruth.service:
+                groundtruth_levels["service"] = item.groundtruth.service
+            if item.groundtruth.span:
+                groundtruth_levels["span"] = item.groundtruth.span
+            if item.groundtruth.pod:
+                groundtruth_levels["pod"] = item.groundtruth.pod
+            if item.groundtruth.container:
+                groundtruth_levels["container"] = item.groundtruth.container
+            if item.groundtruth.function:
+                groundtruth_levels["function"] = item.groundtruth.function
+            if item.groundtruth.metric:
+                groundtruth_levels["metric"] = item.groundtruth.metric
 
-        # Calculate metrics for each level
-        for level, groundtruth_items in groundtruth_levels.items():
-            metrics = calculate_metrics_for_level(groundtruth_items, item.predictions, level)
+            # Calculate metrics for each level
+            for level, groundtruth_items in groundtruth_levels.items():
+                metrics = calculate_metrics_for_level(groundtruth_items, item.predictions, level)
 
-            for metric_name, value in metrics.items():
-                level_metrics[level][metric_name] += value
+                for metric_name, value in metrics.to_dict().items():
+                    level_metrics[level][metric_name] += value
 
             # if level == "service":
             #     as_k = calculate_alignment_score(

@@ -4,8 +4,12 @@ from rcabench.openapi import (
     ApiClient,
     AuthenticationApi,
     Configuration,
-    DtoAlgorithmDatapackEvaluationResp,
-    DtoAlgorithmDatasetEvaluationResp,
+    DtoAlgorithmDatapackReq,
+    DtoAlgorithmDatapackResp,
+    DtoAlgorithmDatasetReq,
+    DtoAlgorithmDatasetResp,
+    DtoDatapackEvaluationBatchReq,
+    DtoDatasetEvaluationBatchReq,
     EvaluationApi,
 )
 from rcabench.openapi.models.dto_login_request import DtoLoginRequest
@@ -142,17 +146,17 @@ class RCABenchClient:
 
 def get_evaluation_by_datapack(
     algorithm: str, datapack: str, tag: str | None = None, base_url: str | None = None
-) -> DtoAlgorithmDatapackEvaluationResp:
+) -> list[DtoAlgorithmDatapackResp]:
     base_url = base_url or os.getenv("RCABENCH_BASE_URL")
     assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
     assert tag, "Tag must be specified."
 
     with RCABenchClient(base_url=base_url) as client:
         api = EvaluationApi(client)
-        resp = api.api_v2_evaluations_algorithms_algorithm_datapacks_datapack_get(
-            algorithm=algorithm,
-            datapack=datapack,
-            tag=tag,
+        resp = api.api_v2_evaluations_datapacks_post(
+            request=DtoDatapackEvaluationBatchReq(
+                items=[DtoAlgorithmDatapackReq(algorithm=algorithm, datapack=datapack, tag=tag)]
+            )
         )
 
     assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
@@ -166,18 +170,24 @@ def get_evaluation_by_dataset(
     dataset_version: str | None = None,
     tag: str | None = None,
     base_url: str | None = None,
-) -> DtoAlgorithmDatasetEvaluationResp:
+) -> list[DtoAlgorithmDatasetResp]:
     base_url = base_url or os.getenv("RCABENCH_BASE_URL")
     assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
     assert tag, "Tag must be specified."
 
     with RCABenchClient(base_url=base_url) as client:
         api = EvaluationApi(client)
-        resp = api.api_v2_evaluations_algorithms_algorithm_datasets_dataset_get(
-            algorithm=algorithm,
-            dataset=dataset,
-            dataset_version=dataset_version,
-            tag=tag,
+        resp = api.api_v2_evaluations_datasets_post(
+            request=DtoDatasetEvaluationBatchReq(
+                items=[
+                    DtoAlgorithmDatasetReq(
+                        algorithm=algorithm,
+                        dataset=dataset,
+                        dataset_version=dataset_version,
+                        tag=tag,
+                    )
+                ]
+            )
         )
 
     assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"

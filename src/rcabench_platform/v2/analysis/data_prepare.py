@@ -18,30 +18,77 @@ from rcabench.openapi import (
 
 from ..clients.rcabench_ import RCABenchClient
 from ..datasets.spec import calculate_trace_length
-from ..utils.fmap import fmap_processpool, fmap_threadpool
+from ..metrics.algo_metrics import AlgoMetricItem, calculate_metrics_for_level
+from ..utils.env import debug, getenv_int
+from ..utils.fmap import fmap_processpool
+from ..utils.fs import has_recent_file
+from ..utils.serde import load_pickle, save_pickle
+
+if debug():
+    _DEFAULT_ITEMS_CACHE_TIME = 600
+else:
+    _DEFAULT_ITEMS_CACHE_TIME = 0
+
+ITEMS_CACHE_TIME = getenv_int("ITEMS_CACHE_TIME", default=_DEFAULT_ITEMS_CACHE_TIME)
+
+
+@dataclass
+class InputItem:
+    injection: DtoInjectionV2Response
+    algo_evals: dict[str, Any] | None = None
 
 
 @dataclass
 class Item:
     # Required fields (no default values)
-    _node: HandlerNode
     _injection: DtoInjectionV2Response
+    _node: HandlerNode
 
     # Optional fields with default values
     fault_type: str = ""
     injected_service: str = ""
     is_pair: bool = False
-    metrics: dict[str, int] = field(default_factory=dict)
-    algo_evals: dict[str, list[DtoGranularityRecord]] = field(default_factory=dict)
-    service_names: set[str] = field(default_factory=set)
-    service_names_by_trace: set[str] = field(default_factory=set)  # trace
-    trace_length: Counter[int] = field(default_factory=Counter)
-    log_lines: dict[str, int] = field(default_factory=dict)  # service_name -> log_lines
-    metric_count: dict[str, int] = field(default_factory=dict)  # metric_name -> count
-    duration: timedelta = timedelta(seconds=0)  # duration in seconds
-    trace_count: int = 0  # number of traces
     anomaly_degree: Literal["absolute", "may", "no"] = "no"
     workload: Literal["trainticket"] = "trainticket"
+
+    # Algo Metric statistics
+    _algo_evals: dict[str, list[DtoGranularityRecord]] | None = None
+    algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
+
+    # Data statistics
+    duration: timedelta = timedelta(seconds=0)  # duration in seconds
+    trace_count: int = 0  # number of traces
+    service_names: set[str] = field(default_factory=set)
+    service_names_by_trace: set[str] = field(default_factory=set)  # trace
+
+    # Datapack Metric statistics
+    datapack_metric_values: dict[str, int] = field(default_factory=dict)  # metric_name -> value
+
+    # Injection Metric statistics
+    injection_metric_counts: dict[str, int] = field(default_factory=dict)  # metric_name -> count
+
+    # Log statistics
+    log_lines: dict[str, int] = field(default_factory=dict)  # service_name -> log_lines
+
+    # Trace depth statistics
+    trace_length: Counter[int] = field(default_factory=Counter)
+
+    def __post_init__(self):
+        if self._algo_evals is None:
+            self._algo_evals = {}
+            return
+
+        self.algo_metrics = {
+            algo: calculate_metrics_for_level(
+                groundtruth_items=[self.injected_service], predictions=predictions, level="service"
+            )
+            for algo, predictions in self._algo_evals.items()
+        }
+
+    @property
+    def node(self) -> HandlerNode:
+        """Return the HandlerNode instance associated with this item."""
+        return self._node
 
     @property
     def qps(self) -> float:
@@ -59,9 +106,69 @@ class Item:
     def service_coverage(self) -> float:
         return len(self.service_names_by_trace) / len(self.service_names)
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Item":
+        node = HandlerNode.from_dict(data["_node"])
+        injection = DtoInjectionV2Response.from_dict(data["_injection"])
 
-def get_conf(namespace: str, base_url: str | None = None) -> HandlerNode:
-    with RCABenchClient(base_url=base_url) as client:
+        algo_evals: dict[str, list[DtoGranularityRecord]] = {}
+        if data.get("_algo_evals"):
+            for algo, records_data in data["_algo_evals"].items():
+                algo_evals[algo] = [DtoGranularityRecord.from_dict(record) for record in records_data]
+
+        item = cls(
+            _injection=injection,
+            _node=node,
+            _algo_evals=algo_evals,
+            fault_type=data["fault_type"],
+            injected_service=data["injected_service"],
+            is_pair=data["is_pair"],
+            anomaly_degree=data["anomaly_degree"],
+            workload=data["workload"],
+            duration=timedelta(seconds=data["duration"]),
+            trace_count=data["trace_count"],
+            service_names=set(data["service_names"]),
+            service_names_by_trace=set(data["service_names_by_trace"]),
+            datapack_metric_values=data["datapack_metric_values"],
+            injection_metric_counts=data["injection_metric_counts"],
+            log_lines=data["log_lines"],
+            trace_length=Counter(data["trace_length"]),
+        )
+
+        return item
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Convert the Item instance to a dictionary.
+        """
+        algo_evals_dict = {}
+
+        if self._algo_evals:
+            for algo, records in self._algo_evals.items():
+                algo_evals_dict[algo] = [record.to_dict() for record in records]
+
+        return {
+            "_node": self._node.to_dict(),
+            "_injection": self._injection.to_dict(),
+            "_algo_evals": algo_evals_dict,
+            "fault_type": self.fault_type,
+            "injected_service": self.injected_service,
+            "is_pair": self.is_pair,
+            "anomaly_degree": self.anomaly_degree,
+            "workload": self.workload,
+            "duration": self.duration.total_seconds(),
+            "trace_count": self.trace_count,
+            "service_names": list(self.service_names),
+            "service_names_by_trace": list(self.service_names_by_trace),
+            "datapack_metric_values": self.datapack_metric_values,
+            "injection_metric_counts": self.injection_metric_counts,
+            "log_lines": self.log_lines,
+            "trace_length": dict(self.trace_length),
+        }
+
+
+def get_conf(namespace: str) -> HandlerNode:
+    with RCABenchClient() as client:
         injector = InjectionApi(client)
         resp = injector.api_v1_injections_conf_get(namespace=namespace)
         assert resp.data is not None
@@ -120,20 +227,16 @@ def get_individual_service(
 
 
 def process_item(
+    algo_evals: dict[str, list[DtoGranularityRecord]] | None,
     injection: DtoInjectionV2Response,
-    metrics: list[str],
     injection_mapping: DtoInjectionFieldMappingResp,
     injection_resources: HandlerResources,
+    metrics: list[str],
 ) -> Item | None:
     if not injection.engine_config or not injection.injection_name:
         return None
 
     datapack_path = Path("data/rcabench_dataset") / injection.injection_name / "converted"
-
-    node: HandlerNode
-    fault_type: str = ""
-    service: str = ""
-    is_pair: bool = False
 
     node = HandlerNode.from_json(str(injection.engine_config))
     fault = node.value
@@ -142,36 +245,24 @@ def process_item(
     fault_type = injection_mapping.fault_type[str(fault)]
     service, is_pair = get_individual_service(node, injection_mapping, injection_resources)
 
+    service_names: set[str] = set()
+    service_names_by_trace: set[str] = set()
+    trace_length: Counter[int] = Counter()
+    duration: timedelta = timedelta(seconds=0)
+    trace_count: int = 0
+
     assert injection.labels is not None
-    tags = [label.value for label in injection.labels if label.key == "tag"]
-    label_mapping = {label.key: label.value for label in injection.labels if label.key}
+    tags = [label.value for label in injection.labels if label.key == "tag" and label.value]
+    label_mapping = {label.key: label.value for label in injection.labels if label.key and label.value}
 
-    metric_values: dict[str, int] = {}
-
+    datapack_metric_values: dict[str, int] = {}
     for metric in metrics:
         value = 0
         value_str = label_mapping.get(metric)
         if value_str is not None:
             value = int(value_str)
 
-        metric_values[metric] = value
-
-    # algo_evals: dict[str, list[DtoGranularityRecord]] = {}
-    # if injection.injection_name is not None:
-    #     for algorithm in algorithms:
-    #         resp = evaluator.api_v2_evaluations_algorithms_algorithm_datapacks_datapack_get(
-    #             algorithm=algorithm,
-    #             datapack=injection.injection_name,
-    #         )
-    #         assert resp.data is not None and resp.data is not None, "Failed to get evaluation data"
-    #         assert resp.data.predictions is not None, "Predictions must not be None"
-    #         algo_evals[algorithm] = resp.data.predictions
-    service_names: set[str] = set()
-    service_names_by_trace: set[str] = set()
-    trace_length: Counter[int] = Counter()
-    log_lines: dict[str, int] = {}
-    duration: timedelta = timedelta(seconds=0)
-    trace_count: int = 0
+        datapack_metric_values[metric] = value
 
     metric_df = pl.concat(
         [
@@ -185,7 +276,9 @@ def process_item(
     service_names.update(set(metric_df.select("service_name").unique().collect().to_series().to_list()))
 
     metric_count_df = metric_df.select("metric").collect()
-    metric_count = dict(metric_count_df.group_by("metric").agg(pl.len().alias("count")).iter_rows())
+    injection_metric_counts: dict[str, int] = dict(
+        metric_count_df.group_by("metric").agg(pl.len().alias("count")).iter_rows()
+    )
 
     trace_df = pl.concat(
         [
@@ -221,7 +314,7 @@ def process_item(
     )
 
     log_service_counts = log_df.group_by("service_name").agg(pl.len().alias("count")).collect()
-    log_lines = {row["service_name"]: row["count"] for row in log_service_counts.iter_rows(named=True)}
+    log_lines: dict[str, int] = {row["service_name"]: row["count"] for row in log_service_counts.iter_rows(named=True)}
     log_service_names = set(log_df.select("service_name").unique().collect().to_series().to_list())
     service_names.update(log_service_names)
     service_names.remove("")
@@ -233,40 +326,65 @@ def process_item(
         anomaly_degree = "may"
 
     return Item(
-        _node=node,
+        _algo_evals=algo_evals,
         _injection=injection,
+        _node=node,
         fault_type=fault_type,
         injected_service=service,
         is_pair=is_pair,
-        metrics=metric_values,
-        service_names=service_names,
-        service_names_by_trace=service_names_by_trace,
-        trace_length=trace_length,
-        log_lines=log_lines,
-        metric_count=metric_count,
+        anomaly_degree=anomaly_degree,
         duration=duration,
         trace_count=trace_count,
-        anomaly_degree=anomaly_degree,
-        # algo_evals=algo_evals,
+        service_names=service_names,
+        service_names_by_trace=service_names_by_trace,
+        log_lines=log_lines,
+        datapack_metric_values=datapack_metric_values,
+        injection_metric_counts=injection_metric_counts,
+        trace_length=trace_length,
     )
 
 
-def wrapper(injection: dict, metrics: list[str], injection_mapping: dict, injection_resources: dict) -> Item | None:
-    injection_obj = DtoInjectionV2Response.from_dict(injection)
-    mapping = DtoInjectionFieldMappingResp.from_dict(injection_mapping)
-    resources = HandlerResources.from_dict(injection_resources)
-    return process_item(injection_obj, metrics, mapping, resources)
-
-
-def batch_process_item(injections: list[DtoInjectionV2Response], metrics: list[str], namespace: str) -> list[Item]:
+def batch_process_item(
+    input_items: list[InputItem],
+    metrics: list[str],
+    namespace: str,
+) -> list[Item]:
     injection_mapping, injection_resources = get_resources(namespace)
 
     tasks = [
-        functools.partial(process_item, injection, metrics, injection_mapping, injection_resources)
-        for injection in injections
+        functools.partial(
+            process_item,
+            input_item.algo_evals,
+            input_item.injection,
+            injection_mapping,
+            injection_resources,
+            metrics,
+        )
+        for input_item in input_items
     ]
     cpu = os.cpu_count()
     assert cpu is not None, "CPU count must not be None"
     res = fmap_processpool(tasks, parallel=cpu // 2, cpu_limit_each=2)
 
     return [i for i in res if i is not None]
+
+
+def build_items_with_cache(
+    output_pkl_path: Path,
+    input_items: list[InputItem],
+    metrics: list[str],
+    namespace: str,
+) -> list[Item]:
+    if not output_pkl_path.parent.exists():
+        output_pkl_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if ITEMS_CACHE_TIME:
+        if has_recent_file(output_pkl_path, seconds=ITEMS_CACHE_TIME):
+            return load_pickle(path=output_pkl_path)
+
+    items = batch_process_item(input_items, metrics, namespace)
+
+    if ITEMS_CACHE_TIME:
+        save_pickle(items, path=output_pkl_path)
+
+    return items
