@@ -19,8 +19,7 @@ def convert_traces(src: Path):
         pl.col("operationName").alias("span_name"),
         pl.col("parentSpanID").alias("parent_span_id"),
         pl.col("duration").cast(pl.UInt64).mul(1000).alias("duration"),
-        # Extract first digit of status code to fit in i8 range
-        pl.col("statusCode").cast(pl.String).str.slice(0, 1).cast(pl.Int8, strict=False).alias("attr.status_code"),
+        pl.col("statusCode").cast(pl.Int16, strict=False).alias("attr.status_code"),
     )
 
     return lf
