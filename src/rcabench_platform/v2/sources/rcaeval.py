@@ -111,7 +111,9 @@ def convert_logs(src: Path):
 
     # Then add attr.has_error based on the transformed message column
     # This ensures we're checking the complete message including any concatenated error info
-    lf = lf.with_columns(pl.col("message").str.contains(f"(?i){'|'.join(ERROR_KWS)}").alias("attr.has_error"))
+    lf = lf.with_columns(
+        pl.col("message").str.contains(f"(?i){'|'.join(ERROR_KWS)}").fill_null(False).alias("attr.has_error")
+    )
 
     return lf
 
