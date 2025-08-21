@@ -15,9 +15,7 @@ from rcabench.openapi import (
     ApiClient,
     DtoGranularityRecord,
     DtoInjectionFieldMappingResp,
-    DtoInjectionV2CustomLabelManageReq,
     DtoInjectionV2Response,
-    DtoLabelItem,
     EvaluationApi,
     HandlerNode,
     HandlerResources,
@@ -29,15 +27,15 @@ from rcabench_platform.v2.cli.main import app
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
 from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader
 from rcabench_platform.v2.datasets.rcaeval import RCAEvalAnalyzerLoader
-from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger
-from rcabench_platform.v2.metrics.algo_metrics import calculate_metrics_for_level
 from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 
 @dataclass
 class CountItem:
+    node: HandlerNode
+    injection: DtoInjectionV2Response
     node: HandlerNode
     injection: DtoInjectionV2Response
     fault_type: str = ""
