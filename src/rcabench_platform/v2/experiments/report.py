@@ -78,5 +78,7 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False):
             "AC@1",
             "AC@3",
             "AC@5",
+            "Avg@3",
+            "Avg@5",
         )
     )
