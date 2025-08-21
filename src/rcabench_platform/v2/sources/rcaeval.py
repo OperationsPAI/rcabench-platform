@@ -62,6 +62,9 @@ def convert_logs(src: Path):
     # Get column names to check for optional columns
     columns = lf.collect_schema().names()
 
+    # Error keywords to search for in messages
+    ERROR_KWS = ["error", "fail", "exception", "timeout", "refused"]
+
     # Base columns that should always exist
     base_select = [
         pl.from_epoch("timestamp", time_unit="ns").dt.replace_time_zone("UTC").alias("time"),
@@ -104,7 +107,12 @@ def convert_logs(src: Path):
     if "log_template" in columns:
         base_select.append(pl.col("log_template").cast(pl.String).alias("attr.log_template"))
 
+    # First apply the select to get the transformed columns
     lf = lf.select(base_select)
+
+    # Then add attr.has_error based on the transformed message column
+    # This ensures we're checking the complete message including any concatenated error info
+    lf = lf.with_columns(pl.col("message").str.contains(f"(?i){'|'.join(ERROR_KWS)}").alias("attr.has_error"))
 
     return lf
 
