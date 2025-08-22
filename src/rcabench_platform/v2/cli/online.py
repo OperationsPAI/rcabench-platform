@@ -19,13 +19,13 @@ from rcabench.openapi import (
 )
 from rcabench.rcabench import RCABenchSDK
 
+from rcabench_platform.v2.analysis.data_prepare import get_execution_item
+
 from ..clients.k8s import download_kube_info
 from ..clients.rcabench_ import RCABenchClient
 from ..config import get_config
 from ..logging import logger, timeit
-from ..metrics.algo_metrics import (
-    get_algorithms_metrics_across_datasets,
-)
+from ..metrics.algo_metrics import get_algorithms_metrics_across_datasets
 from ..utils.dataframe import print_dataframe
 from ..utils.serde import save_json
 
@@ -133,7 +133,7 @@ class AlgoSpec(TypedDict):
     tag: str | None
 
 
-def parse_algorithm_spec(algo_string: str, default_tag: str | None = None) -> AlgoSpec:
+def parse_algorithm_spec(algo_string: str) -> AlgoSpec:
     """
     Parse algorithm specification string.
 
@@ -148,6 +148,7 @@ def parse_algorithm_spec(algo_string: str, default_tag: str | None = None) -> Al
     Returns:
         AlgoSpec with name, image, and tag fields
     """
+    default_tag = "latest"
     algo_string = algo_string.strip()
 
     # Check if this looks like a docker image (contains '/')
@@ -198,7 +199,7 @@ def submit_execution(
     assert project, "Project name must be specified."
     assert tag, "Tag must be specified."
 
-    parsed_algorithms = [parse_algorithm_spec(algo, tag) for algo in algorithms]
+    parsed_algorithms = [parse_algorithm_spec(algo) for algo in algorithms]
 
     dataset_list = [dataset.strip()] if dataset and dataset.strip() else []
     dataset_version_list = [dataset_version.strip()] if dataset_version and dataset_version.strip() else []
@@ -403,6 +404,125 @@ def cross_dataset_metrics(
 
     df = pl.DataFrame(metrics)
     print_dataframe(df)
+
+
+@app.command(name="guda")
+def get_unevaluated_datapack_algo(
+    algorithms: Annotated[list[str], typer.Argument(help="List of algorithm names")],
+    dataset_id: Annotated[int | None, typer.Option("--dataset-id", "-d", help="Dataset ID")] = None,
+    project_id: Annotated[int | None, typer.Option("--project-id", "-p", help="Project ID")] = None,
+):
+    _, run_status_map = get_execution_item(algorithms, dataset_id, project_id, ["absolute_anomaly"])
+
+    data = []
+    for datapack_name, algorithm_name in run_status_map["absolute_anomaly"]:
+        data.append({"algorithm": algorithm_name, "datapack": datapack_name})
+
+    df = pl.DataFrame(data)
+    print_dataframe(df)
+    return run_status_map["absolute_anomaly"]
+
+
+@app.command(name="submit-unevaluated")
+@timeit()
+def submit_unevaluated_execution(
+    algorithms: Annotated[list[str], typer.Argument(help="List of algorithm names")],
+    tag: Annotated[str, typer.Option("--tag", help="Tag for the execution")],
+    project: Annotated[str | None, typer.Option("-p", "--project", help="Project name")] = None,
+    dataset_id: Annotated[int | None, typer.Option("--dataset-id", "-d", help="Dataset ID")] = None,
+    project_id: Annotated[int | None, typer.Option("--project-id", "-pid", help="Project ID")] = None,
+    envs: Annotated[list[str] | None, typer.Option("--env")] = None,
+    base_url: Annotated[str | None, typer.Option("--base-url")] = None,
+):
+    if project is None:
+        project = "pair_diagnosis"
+    logger.info("Fetching unevaluated datapack-algorithm pairs...")
+    unevaluated_pairs = get_unevaluated_datapack_algo(algorithms, dataset_id, project_id)
+
+    if not unevaluated_pairs:
+        logger.info("No unevaluated datapack-algorithm pairs found")
+        return
+
+    logger.info(f"Found {len(unevaluated_pairs)} unevaluated datapack-algorithm pairs")
+
+    # Parse environment variables
+    env_vars: dict[str, str] = {}
+    if envs is not None:
+        for env in envs:
+            if "=" not in env:
+                raise ValueError(f"Invalid environment variable format: `{env}`. Expected 'key=value'.")
+            key, value = env.split("=", 1)
+            env_vars[key] = value
+
+    # Build algorithm specifications
+    parsed_algorithms = [parse_algorithm_spec(algo) for algo in algorithms]
+
+    # Build execution request payloads
+    payloads: list[DtoAlgorithmExecutionRequest] = []
+
+    # Group unevaluated pairs by algorithm
+    algo_datapack_map: dict[str, list[str]] = {}
+    for datapack_name, algorithm_name in unevaluated_pairs:
+        if algorithm_name not in algo_datapack_map:
+            algo_datapack_map[algorithm_name] = []
+        algo_datapack_map[algorithm_name].append(datapack_name)
+
+    with RCABenchClient(base_url=base_url) as client:
+        api = AlgorithmsApi(client)
+
+        for algorithm_spec in parsed_algorithms:
+            algorithm_name = algorithm_spec["name"]
+
+            if algorithm_name not in algo_datapack_map:
+                logger.warning(f"Algorithm {algorithm_name} has no unevaluated datapacks")
+                continue
+
+            for datapack in algo_datapack_map[algorithm_name]:
+                payload = DtoAlgorithmExecutionRequest(
+                    algorithm=DtoAlgorithmItem(
+                        name=algorithm_spec["name"], image=algorithm_spec["image"], tag=algorithm_spec["tag"]
+                    ),
+                    datapack=datapack,
+                    env_vars=env_vars,
+                    project_name=project,
+                )
+                payloads.append(payload)
+
+        if not payloads:
+            logger.warning("No valid execution payloads")
+            return
+
+        logger.info(f"Submitting {len(payloads)} execution tasks...")
+
+        resp = api.api_v2_algorithms_execute_post(
+            request=DtoBatchAlgorithmExecutionRequest(
+                executions=payloads,
+                project_name=project,
+                labels=DtoExecutionLabels(tag=tag),
+            )
+        )
+        assert resp.data is not None
+
+        executions = resp.data.executions
+        assert executions is not None
+
+        data = []
+        for i, execution in enumerate(executions):
+            row = {
+                "Index": i + 1,
+                "Datapack": execution.datapack_id,
+                "Dataset": execution.dataset_id,
+                "Algorithm": execution.algorithm_id,
+                "Status": execution.status,
+                "Task ID": execution.task_id,
+                "Trace ID": execution.trace_id,
+            }
+            data.append(row)
+
+        df = pl.DataFrame(data)
+        print_dataframe(df)
+
+        logger.info(f"✅ Successfully submitted {len(executions)} execution tasks")
 
 
 def main():
