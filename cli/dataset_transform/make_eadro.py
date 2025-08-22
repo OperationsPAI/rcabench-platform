@@ -11,12 +11,7 @@ import polars as pl
 import typer
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import (
-    DatapackLoader,
-    DatasetLoader,
-    Label,
-    convert_dataset,
-)
+from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label, convert_dataset
 from rcabench_platform.v2.utils.serde import load_json
 
 
@@ -34,7 +29,7 @@ def trace_process(filepath: Path) -> pd.DataFrame:
                 "time": span["startTime"],
                 "duration": np.uint64(span["duration"]),
                 "span_name": str(span["operationName"]),
-                "parent_span_id": (str(span["references"][0]["spanID"]) if span["references"] else ""),
+                "parent_span_id": str(span["references"][0]["spanID"]) if span["references"] else "",
                 "service_name": str(service_name_dict[span["processID"]]),
             }
             all_span_list.append(span_data)
@@ -117,7 +112,7 @@ def log_process_TT(filepath: Path) -> pd.DataFrame:
                     raise ValueError("Time pattern not found")
                 time_str = time_match.group(1)
                 dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S.%f")
-                time_utc = pd.to_datetime(dt, utc=True)  # Force convert to pandas UTC type
+                time_utc = pd.to_datetime(dt, utc=True)  # 强制转成 pandas UTC 类型
                 temp = log_line.split(time_str)[-1]
                 level = temp[2:].split(" ")[0]
                 message_match = re.search(message_pattern, log_line)
@@ -170,8 +165,8 @@ def load_fault_list(file_path: Path) -> list[dict[str, Any]]:
         current_time = start_time
         while current_time + interval <= end_time:
             normal_case = {
-                "injection_name": "",
-                "fault_type": "",
+                "injection_name": "normal",
+                "fault_type": "normal",
                 "fault_start_time": "",
                 "fault_end_time": "",
                 "normal_start_time": current_time.isoformat(),
@@ -220,7 +215,7 @@ class EadroDatapackLoader(DatapackLoader):
     def labels(self) -> list[Label]:
         labels = []
         event = self.fault_info
-        labels.append(Label(level="service", name=event.get("injection_name", "")))
+        labels.append(Label(level="service", name=event.get("injection_name", "unknown")))
         return labels
 
     def data(self) -> dict[str, Any]:
@@ -349,57 +344,59 @@ class EadroDatasetLoader(DatasetLoader):
         self.datapack_infos = self._discover_datapacks()
 
     def _discover_datapacks(self) -> list[dict[str, Any]]:
-        dataset_path = os.path.join(self.source_dir, self.dataset_name, self.dataset_name, "data")
+        dataset_path_abnormal = os.path.join(self.source_dir, self.dataset_name, self.dataset_name, "data")
+        dataset_path_normal = os.path.join(self.source_dir, self.dataset_name, self.dataset_name, "no_fault")
+
         datapack_infos = []
+        for dataset_path in [dataset_path_abnormal, dataset_path_normal]:
+            for item in os.listdir(dataset_path):
+                item_path = os.path.join(dataset_path, item)
+                if os.path.isdir(item_path) and item.startswith(("SN.", "TT.")):
+                    fault_file = f"{'SN' if item.startswith('SN') else 'TT'}.fault-{item[3:]}.json"
+                    fault_file_path = os.path.join(dataset_path, fault_file)
 
-        for item in os.listdir(dataset_path):
-            item_path = os.path.join(dataset_path, item)
-            if os.path.isdir(item_path) and item.startswith(("SN.", "TT.")):
-                fault_file = f"{'SN' if item.startswith('SN') else 'TT'}.fault-{item[3:]}.json"
-                fault_file_path = os.path.join(dataset_path, fault_file)
+                    if os.path.exists(fault_file_path):
+                        fault_list = load_fault_list(Path(fault_file_path))
+                        for i, fault in enumerate(fault_list):
+                            normal_start = fault.get("normal_start_time")
+                            normal_end = fault.get("normal_end_time")
+                            fault_start = fault.get("fault_start_time")
+                            fault_end = fault.get("fault_end_time")
+                            datapack_info = {}
+                            if fault_start and fault_end:
+                                start_time = pd.to_datetime(fault_start)
+                                if not start_time:
+                                    continue
+                                end_time = pd.to_datetime(fault_end)
+                                if not end_time:
+                                    continue
 
-                if os.path.exists(fault_file_path):
-                    fault_list = load_fault_list(Path(fault_file_path))
-                    for i, fault in enumerate(fault_list):
-                        normal_start = fault.get("normal_start_time")
-                        normal_end = fault.get("normal_end_time")
-                        fault_start = fault.get("fault_start_time")
-                        fault_end = fault.get("fault_end_time")
-                        datapack_info = {}
-                        if fault_start and fault_end:
-                            start_time = pd.to_datetime(fault_start)
-                            if not start_time:
-                                continue
-                            end_time = pd.to_datetime(fault_end)
-                            if not end_time:
-                                continue
+                                datapack_info = {
+                                    "folder_path": item_path,
+                                    "fault_info": fault,
+                                    "start_time": start_time,
+                                    "end_time": end_time,
+                                    "dataset_name": self.dataset_name,
+                                    "fault_file": fault_file_path,
+                                }
 
-                            datapack_info = {
-                                "folder_path": item_path,
-                                "fault_info": fault,
-                                "start_time": start_time,
-                                "end_time": end_time,
-                                "dataset_name": self.dataset_name,
-                                "fault_file": fault_file_path,
-                            }
+                            elif normal_start and normal_end:
+                                start_time = pd.to_datetime(normal_start)
+                                if not start_time:
+                                    continue
+                                end_time = pd.to_datetime(normal_end)
+                                if not end_time:
+                                    continue
 
-                        elif normal_start and normal_end:
-                            start_time = pd.to_datetime(normal_start)
-                            if not start_time:
-                                continue
-                            end_time = pd.to_datetime(normal_end)
-                            if not end_time:
-                                continue
-
-                            datapack_info = {
-                                "folder_path": item_path,
-                                "fault_info": fault,
-                                "start_time": start_time,
-                                "end_time": end_time,
-                                "dataset_name": self.dataset_name,
-                                "fault_file": fault_file_path,
-                            }
-                        datapack_infos.append(datapack_info)
+                                datapack_info = {
+                                    "folder_path": item_path,
+                                    "fault_info": fault,
+                                    "start_time": start_time,
+                                    "end_time": end_time,
+                                    "dataset_name": self.dataset_name,
+                                    "fault_file": fault_file_path,
+                                }
+                            datapack_infos.append(datapack_info)
         return datapack_infos
 
     def name(self) -> str:
@@ -438,10 +435,7 @@ def create_link(
         help="Source path where the Eadro dataset is located (default: /mnt/jfs/Eadro/)",
     ),
     target_path: str = typer.Option(
-        "data/eadro",
-        "--target-path",
-        "-t",
-        help="Target path where the symbolic link will be created (default: data)",
+        "data/eadro", "--target-path", "-t", help="Target path where the symbolic link will be created (default: data)"
     ),
 ):
     """We suposse the file layout as:
