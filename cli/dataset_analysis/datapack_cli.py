@@ -18,6 +18,7 @@ from rcabench.openapi import (
     ProjectsApi,
 )
 
+from rcabench_platform.v2.analysis.aggregation import aggregate, get_fault_type_stats
 from rcabench_platform.v2.analysis.data_prepare import InputItem, build_items_with_cache
 from rcabench_platform.v2.analysis.datapacks_analysis import (
     Distribution,
@@ -25,10 +26,11 @@ from rcabench_platform.v2.analysis.datapacks_analysis import (
 )
 from rcabench_platform.v2.cli.main import app, logger
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.utils.dataframe import format_dataframe
 
 DEFAULT_NAMESPACE = "ts"
 ALGORITHMS = ["baro", "simplerca", "microdig", "traceback"]
-DEGREES = ["absolute_anomaly", "may_anomaly", "no_anomaly"]
+DEGREES = ["absolute_anomaly"]  # , "may_anomaly", "no_anomaly"]
 METRICS = ["SDD@1", "CPL", "RootServiceDegree"]
 
 
@@ -184,6 +186,17 @@ def visualize(dataset_id: int | None = None, project_id: int | None = None) -> N
                 metrics=METRICS,
                 namespace=DEFAULT_NAMESPACE,
             )
+
+            df = aggregate(count_items)
+
+            format_dataframe(df, "html", output_file=f"temp/res_{degree}_raw.html")
+            format_dataframe(df, "csv", output_file=f"temp/res_{degree}_raw.csv")
+
+            agg_df = get_fault_type_stats(df)
+
+            format_dataframe(agg_df, "html", output_file=f"temp/res_{degree}.html")
+            format_dataframe(agg_df, "csv", output_file=f"temp/res_{degree}.csv")
+
             distributions[degree] = get_datapacks_distribution(
                 count_items=count_items, metrics=METRICS, namespace=DEFAULT_NAMESPACE
             )

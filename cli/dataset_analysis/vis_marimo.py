@@ -295,8 +295,8 @@ def _():
         BarMeta,
         BubbleMeta,
         HeatmapMeta,
-        VisInjectionsConfig,
         NewVisInjectionsConfig,
+        VisInjectionsConfig,
     )
 
     return BarMeta, NewVisInjectionsConfig, VisInjectionsConfig, pl

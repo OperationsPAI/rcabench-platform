@@ -45,6 +45,9 @@ def aggregate(items: list[Item]) -> pl.DataFrame:
         for metric_name, metric_value in item.datapack_metric_values.items():
             row[f"datapack_metric_{metric_name}"] = metric_value
 
+        for algo_name, metric in item.algo_metrics.items():
+            row[f"algo_{algo_name}"] = metric.to_dict()
+
         data_rows.append(row)
 
     df = pl.DataFrame(data_rows)
@@ -73,9 +76,33 @@ def get_fault_type_stats(df: pl.DataFrame) -> pl.DataFrame:
     ]
     metrics = [m for m in metrics if m in df.columns]
 
-    stats = df.group_by("fault_type").agg(
-        [pl.len().alias("count"), *[pl.col(m).mean().alias(f"avg_{m}") for m in metrics]]
-    )
+    # Find datapack metric columns
+    datapack_metrics = [col for col in df.columns if col.startswith("datapack_metric_")]
+
+    # Find algorithm columns and extract algorithm metrics
+    algo_cols = [col for col in df.columns if col.startswith("algo_")]
+
+    agg_exprs = [pl.len().alias("count")]
+
+    # Add basic metrics aggregation
+    agg_exprs.extend([pl.col(m).mean().alias(f"avg_{m}") for m in metrics])
+
+    # Add datapack metrics aggregation
+    agg_exprs.extend([pl.col(dm).mean().alias(f"avg_{dm}") for dm in datapack_metrics])
+
+    # Add algorithm metrics aggregation
+    # Since algo columns contain dictionaries, we need to extract specific metrics
+    for algo_col in algo_cols:
+        # Extract top1, top3, top5, mrr from the algorithm dictionary
+        for metric in ["top1", "top3", "top5", "mrr"]:
+            agg_exprs.append(
+                pl.col(algo_col)
+                .map_elements(lambda x: x.get(metric, 0.0) if isinstance(x, dict) else 0.0, return_dtype=pl.Float64)
+                .mean()
+                .alias(f"avg_{algo_col}_{metric}")
+            )
+
+    stats = df.group_by("fault_type").agg(agg_exprs)
     return stats
 
 
@@ -88,19 +115,38 @@ def get_groupby_stats(df: pl.DataFrame, group_cols: list[str]) -> pl.DataFrame:
     if not existing_group_cols:
         return pl.DataFrame()
 
+    # Find datapack metric columns
+    datapack_metrics = [col for col in df.columns if col.startswith("datapack_metric_")]
+
+    # Find algorithm columns
+    algo_cols = [col for col in df.columns if col.startswith("algo_")]
+
     # Basic statistics
-    stats = df.group_by(existing_group_cols).agg(
-        [
-            pl.len().alias("count"),
-            pl.col("trace_count").mean().alias("avg_trace_count"),
-            pl.col("duration_seconds").mean().alias("avg_duration_seconds"),
-            pl.col("qps").mean().alias("avg_qps"),
-            pl.col("service_count").mean().alias("avg_service_count"),
-            pl.col("service_coverage").mean().alias("avg_service_coverage"),
-            pl.col("total_log_lines").sum().alias("total_log_lines"),
-            pl.col("total_metric_count").sum().alias("total_metric_count"),
-        ]
-    )
+    agg_exprs = [
+        pl.len().alias("count"),
+        pl.col("trace_count").mean().alias("avg_trace_count"),
+        pl.col("duration_seconds").mean().alias("avg_duration_seconds"),
+        pl.col("qps").mean().alias("avg_qps"),
+        pl.col("service_count").mean().alias("avg_service_count"),
+        pl.col("service_coverage").mean().alias("avg_service_coverage"),
+        pl.col("total_log_lines").sum().alias("total_log_lines"),
+        pl.col("total_metric_count").sum().alias("total_metric_count"),
+    ]
+
+    # Add datapack metrics aggregation
+    agg_exprs.extend([pl.col(dm).mean().alias(f"avg_{dm}") for dm in datapack_metrics])
+
+    # Add algorithm metrics aggregation
+    for algo_col in algo_cols:
+        for metric in ["top1", "top3", "top5", "mrr"]:
+            agg_exprs.append(
+                pl.col(algo_col)
+                .map_elements(lambda x: x.get(metric, 0.0) if isinstance(x, dict) else 0.0, return_dtype=pl.Float64)
+                .mean()
+                .alias(f"avg_{algo_col}_{metric}")
+            )
+
+    stats = df.group_by(existing_group_cols).agg(agg_exprs)
 
     return stats
 
@@ -127,9 +173,16 @@ def get_summary_stats(df: pl.DataFrame) -> pl.DataFrame:
         "min_trace_length",
     ]
 
+    # Find datapack metric columns
+    datapack_metrics = [col for col in df.columns if col.startswith("datapack_metric_")]
+
     # Filter existing columns
     existing_numeric_cols = [col for col in numeric_cols if col in df.columns]
+    existing_datapack_cols = [col for col in datapack_metrics if col in df.columns]
 
-    summary = df.select(existing_numeric_cols).describe()
+    # Combine all numeric columns
+    all_numeric_cols = existing_numeric_cols + existing_datapack_cols
+
+    summary = df.select(all_numeric_cols).describe()
 
     return summary

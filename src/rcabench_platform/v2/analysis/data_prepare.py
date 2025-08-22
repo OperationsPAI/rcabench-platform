@@ -22,6 +22,7 @@ from ..metrics.algo_metrics import AlgoMetricItem, calculate_metrics_for_level
 from ..utils.env import debug, getenv_int
 from ..utils.fmap import fmap_processpool
 from ..utils.fs import has_recent_file
+from ..utils.profiler import global_profiler, print_profiler_stats
 from ..utils.serde import load_pickle, save_pickle
 
 if debug():
@@ -233,97 +234,102 @@ def process_item(
     injection_resources: HandlerResources,
     metrics: list[str],
 ) -> Item | None:
+    profiler = global_profiler
+
     if not injection.engine_config or not injection.injection_name:
         return None
 
     datapack_path = Path("data/rcabench_dataset") / injection.injection_name / "converted"
+    with profiler.profile("prepare"):
+        node = HandlerNode.from_json(str(injection.engine_config))
+        fault = node.value
+        assert fault is not None, "Node value must not be None"
+        assert injection_mapping.fault_type is not None, "Fault type mapping must not be None"
+        fault_type = injection_mapping.fault_type[str(fault)]
+        service, is_pair = get_individual_service(node, injection_mapping, injection_resources)
 
-    node = HandlerNode.from_json(str(injection.engine_config))
-    fault = node.value
-    assert fault is not None, "Node value must not be None"
-    assert injection_mapping.fault_type is not None, "Fault type mapping must not be None"
-    fault_type = injection_mapping.fault_type[str(fault)]
-    service, is_pair = get_individual_service(node, injection_mapping, injection_resources)
+        service_names: set[str] = set()
+        service_names_by_trace: set[str] = set()
+        trace_length: Counter[int] = Counter()
+        duration: timedelta = timedelta(seconds=0)
+        trace_count: int = 0
 
-    service_names: set[str] = set()
-    service_names_by_trace: set[str] = set()
-    trace_length: Counter[int] = Counter()
-    duration: timedelta = timedelta(seconds=0)
-    trace_count: int = 0
+        assert injection.labels is not None
+        tags = [label.value for label in injection.labels if label.key == "tag" and label.value]
+        label_mapping = {label.key: label.value for label in injection.labels if label.key and label.value}
 
-    assert injection.labels is not None
-    tags = [label.value for label in injection.labels if label.key == "tag" and label.value]
-    label_mapping = {label.key: label.value for label in injection.labels if label.key and label.value}
+        datapack_metric_values: dict[str, int] = {}
+        for metric in metrics:
+            value = 0
+            value_str = label_mapping.get(metric)
+            if value_str is not None:
+                value = int(value_str)
 
-    datapack_metric_values: dict[str, int] = {}
-    for metric in metrics:
-        value = 0
-        value_str = label_mapping.get(metric)
-        if value_str is not None:
-            value = int(value_str)
+            datapack_metric_values[metric] = value
 
-        datapack_metric_values[metric] = value
+        metric_df = pl.concat(
+            [
+                pl.scan_parquet(datapack_path / "normal_metrics.parquet"),
+                pl.scan_parquet(datapack_path / "abnormal_metrics.parquet"),
+                pl.scan_parquet(datapack_path / "normal_metrics_sum.parquet"),
+                pl.scan_parquet(datapack_path / "abnormal_metrics_sum.parquet"),
+            ]
+        )
+    with profiler.profile("scan_metric"):
+        service_names.update(set(metric_df.select("service_name").unique().collect().to_series().to_list()))
 
-    metric_df = pl.concat(
-        [
-            pl.scan_parquet(datapack_path / "normal_metrics.parquet"),
-            pl.scan_parquet(datapack_path / "abnormal_metrics.parquet"),
-            pl.scan_parquet(datapack_path / "normal_metrics_sum.parquet"),
-            pl.scan_parquet(datapack_path / "abnormal_metrics_sum.parquet"),
-        ]
-    )
+        metric_count_df = metric_df.select("metric").collect()
+        injection_metric_counts: dict[str, int] = dict(
+            metric_count_df.group_by("metric").agg(pl.len().alias("count")).iter_rows()
+        )
+    with profiler.profile("scan_trace"):
+        trace_df = pl.concat(
+            [
+                pl.scan_parquet(datapack_path / "normal_traces.parquet"),
+                pl.scan_parquet(datapack_path / "abnormal_traces.parquet"),
+            ]
+        )
 
-    service_names.update(set(metric_df.select("service_name").unique().collect().to_series().to_list()))
+        trace_service_names = set(trace_df.select("service_name").unique().collect().to_series().to_list())
+        service_names_by_trace.update(trace_service_names)
+        service_names.update(trace_service_names)
 
-    metric_count_df = metric_df.select("metric").collect()
-    injection_metric_counts: dict[str, int] = dict(
-        metric_count_df.group_by("metric").agg(pl.len().alias("count")).iter_rows()
-    )
+        trace_count = (
+            trace_df.filter((pl.col("parent_span_id") == "").or_(pl.col("parent_span_id").is_null()))
+            .select(pl.len())
+            .collect()
+            .item()
+        )
 
-    trace_df = pl.concat(
-        [
-            pl.scan_parquet(datapack_path / "normal_traces.parquet"),
-            pl.scan_parquet(datapack_path / "abnormal_traces.parquet"),
-        ]
-    )
+        trace_spans = trace_df.select(["trace_id", "span_id", "parent_span_id"]).collect()
+        depth_results = calculate_trace_length(trace_spans)
+        trace_length = Counter(depth_results)
 
-    trace_service_names = set(trace_df.select("service_name").unique().collect().to_series().to_list())
-    service_names_by_trace.update(trace_service_names)
-    service_names.update(trace_service_names)
+        min_time = trace_df.select(pl.col("time").min().alias("min_time")).collect().item()
+        max_time = trace_df.select(pl.col("time").max().alias("max_time")).collect().item()
+        duration = max_time - min_time
 
-    trace_count = (
-        trace_df.filter((pl.col("parent_span_id") == "").or_(pl.col("parent_span_id").is_null()))
-        .select(pl.len())
-        .collect()
-        .item()
-    )
+    with profiler.profile("scan_log"):
+        log_df = pl.concat(
+            [
+                pl.scan_parquet(datapack_path / "normal_logs.parquet"),
+                pl.scan_parquet(datapack_path / "abnormal_logs.parquet"),
+            ]
+        )
 
-    trace_spans = trace_df.select(["trace_id", "span_id", "parent_span_id"]).collect()
-    depth_results = calculate_trace_length(trace_spans)
-    trace_length = Counter(depth_results)
+        log_service_counts = log_df.group_by("service_name").agg(pl.len().alias("count")).collect()
+        log_lines: dict[str, int] = {
+            row["service_name"]: row["count"] for row in log_service_counts.iter_rows(named=True)
+        }
+        log_service_names = set(log_df.select("service_name").unique().collect().to_series().to_list())
+        service_names.update(log_service_names)
+        service_names.remove("")
 
-    min_time = trace_df.select(pl.col("time").min().alias("min_time")).collect().item()
-    max_time = trace_df.select(pl.col("time").max().alias("max_time")).collect().item()
-    duration = max_time - min_time
-
-    log_df = pl.concat(
-        [
-            pl.scan_parquet(datapack_path / "normal_logs.parquet"),
-            pl.scan_parquet(datapack_path / "abnormal_logs.parquet"),
-        ]
-    )
-
-    log_service_counts = log_df.group_by("service_name").agg(pl.len().alias("count")).collect()
-    log_lines: dict[str, int] = {row["service_name"]: row["count"] for row in log_service_counts.iter_rows(named=True)}
-    log_service_names = set(log_df.select("service_name").unique().collect().to_series().to_list())
-    service_names.update(log_service_names)
-    service_names.remove("")
-
-    anomaly_degree = "no"
-    if "absolute_anomaly" in tags:
-        anomaly_degree = "absolute"
-    elif "may_anomaly" in tags:
-        anomaly_degree = "may"
+        anomaly_degree = "no"
+        if "absolute_anomaly" in tags:
+            anomaly_degree = "absolute"
+        elif "may_anomaly" in tags:
+            anomaly_degree = "may"
 
     return Item(
         _algo_evals=algo_evals,
@@ -362,11 +368,15 @@ def batch_process_item(
         )
         for input_item in input_items
     ]
+
     cpu = os.cpu_count()
     assert cpu is not None, "CPU count must not be None"
     res = fmap_processpool(tasks, parallel=cpu // 2, cpu_limit_each=2)
 
-    return [i for i in res if i is not None]
+    filtered_results = [i for i in res if i is not None]
+
+    print_profiler_stats()
+    return filtered_results
 
 
 def build_items_with_cache(
