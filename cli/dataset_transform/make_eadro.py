@@ -220,8 +220,7 @@ class EadroDatapackLoader(DatapackLoader):
     def labels(self) -> list[Label]:
         labels = []
         event = self.fault_info
-        labels.append(Label(level="pod", name=event.get("name", "unknown")))
-        labels.append(Label(level="type", name=event.get("fault", "unknown")))
+        labels.append(Label(level="service", name=event.get("injection_name", "")))
         return labels
 
     def data(self) -> dict[str, Any]:
