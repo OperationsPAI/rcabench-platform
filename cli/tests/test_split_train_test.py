@@ -1,10 +1,12 @@
 #!/usr/bin/env -S uv run -s
+from pathlib import Path
+
 from rcabench.openapi import DatasetsApi, DtoDatasetV2CreateReq, DtoInjectionRef, InjectionsApi
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
 from rcabench_platform.v2.config import get_config
-from rcabench_platform.v2.datasets.rcabench import rcabench_split_train_test
+from rcabench_platform.v2.datasets.rcabench import rcabench_split_train_test, valid
 from rcabench_platform.v2.datasets.spec import delete_dataset, get_datapack_list
 
 
@@ -110,23 +112,27 @@ def get_datapack(tag: str = "absolute_anomaly") -> list[str]:
         injection_api = InjectionsApi(client)
         resp = injection_api.api_v2_injections_get(tags=[tag], page=1, size=10000)
         assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
-        return [item.injection_name for item in resp.data.items if item.injection_name is not None]
+        return [
+            item.injection_name
+            for item in resp.data.items
+            if item.injection_name is not None and valid(Path("data") / "rcabench_dataset" / item.injection_name)
+        ]
 
 
 @app.command()
-def build_anomaly():
+def build_anomaly(date: str):
     datapacks = get_datapack()
     with RCABenchClient(base_url=get_config().base_url) as client:
         datasets_api = DatasetsApi(client)
 
-    # create_dataset(
-    #     datasets_api=datasets_api,
-    #     name="pair-diag",
-    #     dataset_type="all",
-    #     version="all-8.15",
-    #     description="all the dataset until 8.15 for study",
-    #     datapacks=datapacks,
-    # )
+    create_dataset(
+        datasets_api=datasets_api,
+        name="pair-diag",
+        dataset_type="all",
+        version=f"all-{date}",
+        description=f"all the dataset until {date} for study",
+        datapacks=datapacks,
+    )
 
     train_datapacks, test_datapacks = rcabench_split_train_test(
         datapacks=datapacks,
@@ -139,7 +145,7 @@ def build_anomaly():
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="train",
-        version="study-train",
+        version=f"study-train{date}",
         description="training dataset for study",
         datapacks=train_datapacks,
     )
@@ -148,7 +154,7 @@ def build_anomaly():
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="test",
-        version="study-test",
+        version=f"study-test{date}",
         description="test dataset for study",
         datapacks=test_datapacks,
     )

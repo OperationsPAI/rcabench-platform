@@ -426,7 +426,9 @@ def get_unevaluated_datapack_algo(
 @app.command(name="submit-unevaluated")
 @timeit()
 def submit_unevaluated_execution(
-    algorithms: Annotated[list[str], typer.Argument(help="List of algorithm names")],
+    algorithms: Annotated[
+        list[str], typer.Argument(help="List of algorithm names, only support algoname:tag. e.g., baro:acfdb44")
+    ],
     tag: Annotated[str, typer.Option("--tag", help="Tag for the execution")],
     project: Annotated[str | None, typer.Option("-p", "--project", help="Project name")] = None,
     dataset_id: Annotated[int | None, typer.Option("--dataset-id", "-d", help="Dataset ID")] = None,
@@ -437,7 +439,7 @@ def submit_unevaluated_execution(
     if project is None:
         project = "pair_diagnosis"
     logger.info("Fetching unevaluated datapack-algorithm pairs...")
-    unevaluated_pairs = get_unevaluated_datapack_algo(algorithms, dataset_id, project_id)
+    unevaluated_pairs = get_unevaluated_datapack_algo([i.split(":")[0] for i in algorithms], dataset_id, project_id)
 
     if not unevaluated_pairs:
         logger.info("No unevaluated datapack-algorithm pairs found")

@@ -6,6 +6,7 @@ import polars as pl
 from dotenv import load_dotenv
 
 from rcabench_platform.v2.analysis.aggregation import aggregate, get_fault_type_stats
+from rcabench_platform.v2.analysis.algo_performance_visualization import create_algorithm_performance_report
 from rcabench_platform.v2.analysis.data_prepare import (
     build_items_with_cache,
     get_execution_item,
@@ -36,7 +37,7 @@ def visualize(dataset_id: int | None = None, project_id: int | None = None) -> N
         return
 
     distributions: dict[str, Distribution] = {}
-    items, _ = get_execution_item(ALGORITHMS, dataset_id, project_id)
+    items, _ = get_execution_item(ALGORITHMS, dataset_id, project_id, DEGREES)
 
     for degree, input_items in items.items():
         count_items = build_items_with_cache(
@@ -52,6 +53,8 @@ def visualize(dataset_id: int | None = None, project_id: int | None = None) -> N
         format_dataframe(df, "csv", output_file=f"temp/res_{degree}_raw.csv")
 
         agg_df = get_fault_type_stats(df)
+
+        create_algorithm_performance_report(agg_df, Path("temp/algo"))
 
         format_dataframe(agg_df, "html", output_file=f"temp/res_{degree}.html")
         format_dataframe(agg_df, "csv", output_file=f"temp/res_{degree}.csv")

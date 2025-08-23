@@ -551,13 +551,11 @@ def build_items_with_cache(
     if not output_pkl_path.parent.exists():
         output_pkl_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if ITEMS_CACHE_TIME:
-        if has_recent_file(output_pkl_path, seconds=ITEMS_CACHE_TIME):
-            return load_pickle(path=output_pkl_path)
+    if has_recent_file(output_pkl_path, seconds=3600):
+        return load_pickle(path=output_pkl_path)
 
     items = batch_process_item(input_items, metrics, namespace)
 
-    if ITEMS_CACHE_TIME:
-        save_pickle(items, path=output_pkl_path)
+    save_pickle(items, path=output_pkl_path)
 
     return items
