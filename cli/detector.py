@@ -2,7 +2,7 @@
 import functools
 import json
 import os
-import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -691,6 +691,7 @@ def save_analysis_results(state: AnalysisState, output_path: Path) -> AnalysisSt
 def run(
     in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True, online: bool = True
 ) -> AnalysisResult | None:
+    start_time = datetime.now()
     input_path, output_path = setup_paths_and_validation(in_p, ou_p)
     if not valid(input_path)[1]:
         return None
@@ -752,10 +753,12 @@ def run(
         injection_api = InjectionsApi(client)
 
         if online:
+            duration = datetime.now() - start_time
             resp = algo_api.api_v2_algorithms_algorithm_id_executions_execution_id_detectors_post(
                 algorithm_id=algorithm_id,  # type: ignore
                 execution_id=execution_id,  # type: ignore
                 request=DtoDetectorResultRequest(
+                    duration=duration.seconds,
                     results=[
                         DtoDetectorResultItem(
                             issues=i["Issues"],
@@ -772,7 +775,7 @@ def run(
                             normal_succ_rate=i["NormalSuccRate"],
                         )
                         for i in state["conclusion_data"]
-                    ]
+                    ],
                 ),
             )
             logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")

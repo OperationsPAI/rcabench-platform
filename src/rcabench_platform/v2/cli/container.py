@@ -1,8 +1,8 @@
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-import polars as pl
 import typer
 from rcabench.openapi import AlgorithmsApi, DtoGranularityResultEnhancedRequest, DtoGranularityResultItem
 
@@ -42,6 +42,7 @@ def run(
 
     a = global_algorithm_registry()[algorithm]()
 
+    start_time = datetime.now()
     answers = a(
         AlgorithmArgs(
             dataset="rcabench",
@@ -50,6 +51,7 @@ def run(
             output_folder=output_path,
         )
     )
+    duration = datetime.now() - start_time
 
     result_rows = [{"level": ans.level, "result": ans.name, "rank": ans.rank, "confidence": 0} for ans in answers]
 
@@ -70,6 +72,7 @@ def run(
             algorithm_id=algorithm_id,
             execution_id=execution_id,
             request=DtoGranularityResultEnhancedRequest(
+                duration=duration.seconds,
                 results=[
                     DtoGranularityResultItem(
                         level=row["level"],
@@ -78,7 +81,7 @@ def run(
                         confidence=row["confidence"],
                     )
                     for row in result_rows
-                ]
+                ],
             ),
         )
         logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
