@@ -1,5 +1,3 @@
-from collections import Counter, defaultdict
-from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -9,24 +7,14 @@ from rcabench.openapi import HandlerNode
 from ..logging import logger
 from .data_prepare import Item, get_conf
 
+# Constants
 MIN_DEPTH_FOR_RANGE = 2
+DATAPACK_METRIC_PREFIX = "datapack_metric_"
 
-
-@dataclass
-class CoverageItem:
-    fault_type: str
-    injected_service: str
-    is_pair: bool
-    range_num: int = 0
-    attribute_covers: dict[str, bool] = field(default_factory=dict)
-
-    @property
-    def coverage(self) -> float:
-        return len(self.attribute_covers) / self.range_num if self.range_num > 0 else 0.0
-
-    @property
-    def key(self) -> str:
-        return f"{self.fault_type}-{self.injected_service}"
+# Column names used throughout the module
+FAULT_TYPE_COL = "fault_type"
+INJECTED_SERVICE_COL = "injected_service"
+IS_PAIR_COL = "is_pair"
 
 
 @dataclass
@@ -65,342 +53,245 @@ class Distribution:
         }
 
 
-def get_coverage_items(count_items: list[Item], reference: HandlerNode) -> list[CoverageItem]:
-    """
-    Generate coverage items from count items and reference node.
-
-    Args:
-        count_items: List of items to process for coverage calculation
-        reference: Reference handler node containing the full configuration tree
-
-    Returns:
-        List of coverage items with calculated ranges and attribute covers
-
-    Raises:
-        ValueError: If reference node has no children
-    """
-
-    class RangeProcessor:
-        default_value = 0
-
-        @staticmethod
-        def __call__(node: HandlerNode, **kwargs) -> int:
-            return node.range[1] - node.range[0] + 1 if node.range else 0
-
-        @staticmethod
-        def combine(results: list[int]) -> int:
-            return sum(results)
-
-    class CoverageProcessor:
-        default_value = {}
-
-        @staticmethod
-        def __call__(node: HandlerNode, **kwargs) -> dict[str, bool]:
-            return {f"{kwargs['key']}-{node.value}": True}
-
-        @staticmethod
-        def combine(results: list[dict]) -> dict[str, bool]:
-            combined = {}
-            for result in results:
-                combined.update(result)
-            return combined
-
-    def _traverse_node(node: HandlerNode, key: str, processor: RangeProcessor | CoverageProcessor) -> Any:
-        int_key = int(key)
-
-        if node.children is None:
-            return processor(node, key=key) if int_key > MIN_DEPTH_FOR_RANGE else processor.default_value
-
-        results = []
-        for child_key, child_node in node.children.items():
-            results.append(_traverse_node(child_node, child_key, processor))
-
-        return processor.combine(results)
-
-    if reference.children is None:
-        raise ValueError("Reference node must have children to calculate coverage items")
-
-    fault_range_mapping: dict[str, int] = {
-        key: _traverse_node(node, key, RangeProcessor()) for key, node in reference.children.items()
-    }
-
-    coverage_item_dict: dict[str, CoverageItem] = {}
-    for count_item in count_items:
-        key = f"{count_item.fault_type}-{count_item.injected_service}"
-        attribute_covers = _traverse_node(count_item.node, str(count_item.node.value), CoverageProcessor())
-
-        if key not in coverage_item_dict:
-            coverage_item_dict[key] = CoverageItem(
-                fault_type=count_item.fault_type,
-                injected_service=count_item.injected_service,
-                is_pair="->" in count_item.injected_service,
-                range_num=fault_range_mapping[str(count_item.node.value)],
-                attribute_covers=attribute_covers,
-            )
-        else:
-            coverage_item_dict[key].attribute_covers.update(attribute_covers)
-
-    return list(coverage_item_dict.values())
-
-
-def get_datapacks_distribution(count_items: list[Item], metrics: list[str], namespace: str) -> Distribution:
-    """
-    Generate comprehensive distribution analysis from count items.
-
-    Args:
-        count_items: List of items to analyze
-        reference: Optional reference handler node for coverage analysis
-
-    Returns:
-        Distribution object containing all calculated distributions and coverages
-    """
+def get_datapacks_distribution(df: pl.DataFrame, metrics: list[str]) -> Distribution:
+    if df.height == 0:
+        return Distribution()
 
     distribution = Distribution()
 
-    # Basic distributions
-    distribution.faults = calculate_faults_distribution(count_items)
-    distribution.services = calculate_services_distribution(count_items)
-    distribution.pairs = calculate_pairs_distribution(count_items)
+    # Basic distributions using DataFrame operations
+    distribution.faults = _get_single_column_distribution(df, FAULT_TYPE_COL)
+    distribution.services = _get_single_column_distribution(df, INJECTED_SERVICE_COL)
+    distribution.pairs = get_pairs_distribution(df)
 
     # Composite distributions
-    distribution.fault_services = calculate_fault_services_distribution(count_items)
-    distribution.fault_pairs = calculate_fault_pairs_distribution(count_items)
+    distribution.fault_services = _get_fault_target_distribution(df, is_pair=False)
+    distribution.fault_pairs = _get_fault_target_distribution(df, is_pair=True)
 
-    # Coverage analysis
-    reference = get_conf(namespace)
-    coverage_items = get_coverage_items(count_items, reference)
-    distribution.fault_service_attribute_coverages = calculate_fault_service_attribute_coverages(coverage_items)
-    distribution.fault_pair_attribute_coverages = calculate_fault_pair_attribute_coverages(coverage_items)
-
-    # Datapack Metric distributions
-    distribution.fault_service_metrics = calculate_groupby_datapack_metric_distributions(count_items, metrics)
+    # Datapack metric distributions
+    distribution.fault_service_metrics = get_fault_service_metrics_distribution(df, metrics)
 
     return distribution
 
 
-def calculate_distribution(
-    items: list[Item], extractor: Callable[[Item], str], filter_func: Callable[[Item], bool] | None = None
-) -> dict[str, int]:
-    """
-    Generic function to calculate distribution of extracted values from items.
-
-    Args:
-        items: List of items to process
-        extractor: Function to extract value from each item
-        filter_func: Optional function to filter items before processing
-
-    Returns:
-        Dict mapping extracted values to their counts
-    """
-    if filter_func:
-        items = [item for item in items if filter_func(item)]
-
-    values = [extractor(item) for item in items if extractor(item)]
-    return dict(Counter(values))
+def _validate_dataframe_columns(df: pl.DataFrame, required_columns: list[str]) -> bool:
+    return df.height > 0 and all(col in df.columns for col in required_columns)
 
 
-def calculate_faults_distribution(count_items: list[Item]) -> dict[str, int]:
-    """
-    Calculate the distribution of fault types.
+def _get_single_column_distribution(df: pl.DataFrame, column_name: str) -> dict[str, int]:
+    if not _validate_dataframe_columns(df, [column_name]):
+        return {}
 
-    Args:
-        count_items: List of items to analyze
-
-    Returns:
-        Dict mapping fault types to their occurrence counts
-    """
-    return calculate_distribution(count_items, lambda item: item.fault_type)
+    counts = df.group_by(column_name).agg(pl.len().alias("count"))
+    return {row[column_name]: row["count"] for row in counts.iter_rows(named=True)}
 
 
-def calculate_services_distribution(count_items: list[Item]) -> dict[str, int]:
-    """
-    Calculate the distribution of injected services.
+def get_pairs_distribution(df: pl.DataFrame) -> dict[str, PairStats]:
+    if not _validate_dataframe_columns(df, [INJECTED_SERVICE_COL, IS_PAIR_COL]):
+        return {}
 
-    Args:
-        count_items: List of items to analyze
+    # Filter for pairs only
+    pairs_df = df.filter(pl.col(IS_PAIR_COL))
 
-    Returns:
-        Dict mapping service names to their occurrence counts
-    """
-    return calculate_distribution(count_items, lambda item: item.injected_service)
+    if pairs_df.height == 0:
+        return {}
 
+    # Split pairs and calculate degrees
+    pairs_with_split = pairs_df.with_columns(
+        [
+            pl.col(INJECTED_SERVICE_COL).str.split("->").list.get(0).alias("source_service"),
+            pl.col(INJECTED_SERVICE_COL).str.split("->").list.get(1).alias("target_service"),
+        ]
+    ).filter((pl.col("source_service").is_not_null()) & (pl.col("target_service").is_not_null()))
 
-def calculate_pairs_distribution(count_items: list[Item]) -> dict[str, PairStats]:
-    """
-    Calculate the distribution of service pairs with in/out degree statistics.
+    if pairs_with_split.height == 0:
+        return {}
 
-    Args:
-        count_items: List of items to analyze
+    # Calculate out degrees (source services)
+    out_degrees = (
+        pairs_with_split.group_by("source_service")
+        .agg(pl.len().alias("out_degree"))
+        .rename({"source_service": "service"})
+    )
 
-    Returns:
-        Dict mapping service names to their pair statistics (in_degree, out_degree)
-    """
-    pairs_distribution: dict[str, PairStats] = defaultdict(PairStats)
+    # Calculate in degrees (target services)
+    in_degrees = (
+        pairs_with_split.group_by("target_service")
+        .agg(pl.len().alias("in_degree"))
+        .rename({"target_service": "service"})
+    )
 
-    for item in filter(lambda x: x.is_pair, count_items):
-        if "->" not in item.injected_service:
-            continue
+    # Merge degrees
+    all_services = out_degrees.join(in_degrees, on="service", how="full").fill_null(0)
 
-        source, target = item.injected_service.split("->", 1)
-        pairs_distribution[source].out_degree += 1
-        pairs_distribution[target].in_degree += 1
+    pairs_stats = {}
+    for row in all_services.iter_rows(named=True):
+        pairs_stats[row["service"]] = PairStats(in_degree=row.get("in_degree", 0), out_degree=row.get("out_degree", 0))
 
-    return dict(pairs_distribution)
-
-
-def calculate_fault_targets_distribution(count_items: list[Item], is_pair: bool) -> dict[str, dict[str, int]]:
-    """
-    Generic function to calculate the distribution of fault-target combinations.
-
-    Args:
-        count_items: List of items to analyze
-        is_pair: If True, analyze pairs; if False, analyze individual services
-
-    Returns:
-        Dict mapping fault types to dict of targets and their counts
-    """
-    fault_targets = defaultdict(list)
-
-    for item in count_items:
-        if item.fault_type and item.injected_service and item.is_pair == is_pair:
-            fault_targets[item.fault_type].append(item.injected_service)
-
-    return {fault_type: dict(Counter(targets)) for fault_type, targets in fault_targets.items()}
+    return pairs_stats
 
 
-def calculate_fault_services_distribution(count_items: list[Item]) -> dict[str, dict[str, int]]:
-    """
-    Calculate the distribution of fault-service combinations.
+def _get_fault_target_distribution(df: pl.DataFrame, is_pair: bool) -> dict[str, dict[str, int]]:
+    if not _validate_dataframe_columns(df, [FAULT_TYPE_COL, INJECTED_SERVICE_COL]):
+        return {}
 
-    Args:
-        count_items: List of items to analyze
+    # Filter based on is_pair flag
+    filtered_df = df.filter(pl.col(IS_PAIR_COL) == is_pair)
 
-    Returns:
-        Dict mapping fault types to dict of services and their counts
-    """
-    return calculate_fault_targets_distribution(count_items, is_pair=False)
+    if filtered_df.height == 0:
+        return {}
 
+    fault_target_counts = filtered_df.group_by([FAULT_TYPE_COL, INJECTED_SERVICE_COL]).agg(pl.len().alias("count"))
 
-def calculate_fault_pairs_distribution(count_items: list[Item]) -> dict[str, dict[str, int]]:
-    """
-    Calculate the distribution of fault-pair combinations.
+    result = {}
+    for row in fault_target_counts.iter_rows(named=True):
+        fault_type = row[FAULT_TYPE_COL]
+        target = row[INJECTED_SERVICE_COL]
+        count = row["count"]
 
-    Args:
-        count_items: List of items to analyze
+        if fault_type not in result:
+            result[fault_type] = {}
+        result[fault_type][target] = count
 
-    Returns:
-        Dict mapping fault types to dict of service pairs and their counts
-    """
-    return calculate_fault_targets_distribution(count_items, is_pair=True)
-
-
-def calculate_coverage_by_type(coverage_items: list[CoverageItem], is_pair: bool) -> dict[str, dict[str, float]]:
-    """
-    Generic function to calculate coverage by target type.
-
-    Args:
-        coverage_items: List of coverage items to analyze
-        is_pair: If True, analyze pairs; if False, analyze individual services
-
-    Returns:
-        Dict mapping fault types to dict of targets and their coverage percentages
-    """
-    result = defaultdict(dict)
-
-    for item in coverage_items:
-        if item.is_pair == is_pair:
-            result[item.fault_type][item.injected_service] = item.coverage
-
-    return dict(result)
+    return result
 
 
-def calculate_fault_service_attribute_coverages(coverage_items: list[CoverageItem]) -> dict[str, dict[str, float]]:
-    """
-    Calculate fault-service attribute coverage percentages.
+class _NodeProcessor:
+    @staticmethod
+    def __call__(node: HandlerNode, **kwargs) -> Any:
+        raise NotImplementedError
 
-    Args:
-        coverage_items: List of coverage items to analyze
-
-    Returns:
-        Dict mapping fault types to dict of services and their coverage percentages
-    """
-    return calculate_coverage_by_type(coverage_items, is_pair=False)
+    @staticmethod
+    def combine(results: list) -> Any:
+        raise NotImplementedError
 
 
-def calculate_fault_pair_attribute_coverages(coverage_items: list[CoverageItem]) -> dict[str, dict[str, float]]:
-    """
-    Calculate fault-pair attribute coverage percentages.
+class _RangeProcessor(_NodeProcessor):
+    @staticmethod
+    def __call__(node: HandlerNode, **kwargs) -> int:
+        return node.range[1] - node.range[0] + 1 if node.range else 0
 
-    Args:
-        coverage_items: List of coverage items to analyze
-
-    Returns:
-        Dict mapping fault types to dict of service pairs and their coverage percentages
-    """
-    return calculate_coverage_by_type(coverage_items, is_pair=True)
+    @staticmethod
+    def combine(results: list[int]) -> int:
+        return sum(results)
 
 
-def calculate_groupby_datapack_metric_distributions(
-    count_items: list[Item], metrics: list[str]
+class _CoverageProcessor(_NodeProcessor):
+    @staticmethod
+    def __call__(node: HandlerNode, **kwargs) -> dict[str, bool]:
+        return {f"{kwargs['key']}-{node.value}": True}
+
+    @staticmethod
+    def combine(results: list[dict]) -> dict[str, bool]:
+        combined = {}
+        for result in results:
+            combined.update(result)
+        return combined
+
+
+def _traverse_node(node: HandlerNode, key: str, processor: _NodeProcessor) -> Any:
+    int_key = int(key)
+
+    if node.children is None:
+        if int_key > MIN_DEPTH_FOR_RANGE:
+            return processor(node, key=key)
+        else:
+            # Return appropriate default value based on processor type
+            if isinstance(processor, _RangeProcessor):
+                return 0
+            elif isinstance(processor, _CoverageProcessor):
+                return {}
+            else:
+                return {}
+
+    results = []
+    for child_key, child_node in node.children.items():
+        results.append(_traverse_node(child_node, child_key, processor))
+
+    return processor.combine(results)
+
+
+def _get_fault_target_coverages(coverage_df: pl.DataFrame, is_pair: bool) -> dict[str, dict[str, float]]:
+    if coverage_df.height == 0:
+        return {}
+
+    # Filter based on is_pair flag
+    filtered_coverage = coverage_df.filter(pl.col(IS_PAIR_COL) == is_pair)
+
+    result = {}
+    for row in filtered_coverage.iter_rows(named=True):
+        fault_type = row[FAULT_TYPE_COL]
+        target = row[INJECTED_SERVICE_COL]
+        coverage = row["coverage"]
+
+        if fault_type not in result:
+            result[fault_type] = {}
+        result[fault_type][target] = coverage
+
+    return result
+
+
+def get_fault_service_coverages(coverage_df: pl.DataFrame) -> dict[str, dict[str, float]]:
+    return _get_fault_target_coverages(coverage_df, is_pair=False)
+
+
+def get_fault_pair_coverages(coverage_df: pl.DataFrame) -> dict[str, dict[str, float]]:
+    return _get_fault_target_coverages(coverage_df, is_pair=True)
+
+
+def get_fault_service_metrics_distribution(
+    df: pl.DataFrame, metrics: list[str]
 ) -> dict[str, dict[str, dict[str, dict[str, int]]]]:
-    """
-    Calculate the distributions of fault-service metrics grouped by fault type and service.
-
-    Args:
-        count_items: List of items containing metric data
-        metrics: List of metric names to analyze
-
-    Returns:
-        Dict mapping fault types to dict of services to dict of metrics to dict of values and counts
-    """
-    fault_service_metrics: dict[str, dict[str, dict[str, dict[str, int]]]] = {}
-
-    data: list[dict[str, Any]] = []
-    for count_item in count_items:
-        if count_item.is_pair:
-            for key, value in count_item.datapack_metric_values.items():
-                data.append(
-                    {
-                        "fault_type": count_item.fault_type,
-                        "service": count_item.injected_service,
-                        "metric_name": key,
-                        "metric_value": value,
-                    }
-                )
-
-    if not data:
+    if df.height == 0:
         return {}
 
-    lf = pl.LazyFrame(data=data)
-    metrics_filter = pl.col("metric_name").is_in(metrics)
-    filtered_lf = lf.filter(metrics_filter)
+    # Filter for pairs only (as per original logic)
+    pairs_df = df.filter(pl.col(IS_PAIR_COL))
 
-    collected_data = filtered_lf.collect()
-    if collected_data.is_empty():
+    if pairs_df.height == 0:
         return {}
 
-    for (fault_type_object, service_object), group_df in collected_data.group_by(["fault_type", "service"]):
-        fault_type = str(fault_type_object)
-        service = str(service_object)
+    # Find datapack metric columns
+    datapack_metric_cols = [col for col in df.columns if col.startswith(DATAPACK_METRIC_PREFIX)]
 
-        if fault_type not in fault_service_metrics:
-            fault_service_metrics[fault_type] = {}
+    # Filter metrics that actually exist in the DataFrame
+    available_metrics = []
+    for metric in metrics:
+        metric_col = f"{DATAPACK_METRIC_PREFIX}{metric}"
+        if metric_col in datapack_metric_cols:
+            available_metrics.append(metric)
 
-        if service not in fault_service_metrics[fault_type]:
-            fault_service_metrics[fault_type][service] = {}
+    if not available_metrics:
+        return {}
 
-        for metric in metrics:
-            metric_data = group_df.filter(pl.col("metric_name") == metric)
+    result = {}
 
-            if metric_data.is_empty():
-                continue
+    # Group by fault type and service to get metric distributions
+    for (fault_type_obj, service_obj), group_df in pairs_df.group_by([FAULT_TYPE_COL, INJECTED_SERVICE_COL]):
+        fault_type = str(fault_type_obj)
+        service = str(service_obj)
 
-            distribution_stats = metric_data.group_by("metric_value").agg(pl.len().alias("count")).sort("metric_value")
+        if fault_type not in result:
+            result[fault_type] = {}
 
-            distribution_dict = {
-                str(row["metric_value"]): row["count"] for row in distribution_stats.iter_rows(named=True)
-            }
+        if service not in result[fault_type]:
+            result[fault_type][service] = {}
 
-            fault_service_metrics[fault_type][service][metric] = distribution_dict
+        # For each metric, calculate value distribution
+        for metric in available_metrics:
+            metric_col = f"{DATAPACK_METRIC_PREFIX}{metric}"
 
-    return fault_service_metrics
+            # Get value counts for this metric
+            metric_values = group_df.select(metric_col).to_series()
+            value_counts = metric_values.value_counts().sort("count", descending=True)
+
+            # Convert to the expected format
+            distribution_dict = {}
+            for row in value_counts.iter_rows(named=True):
+                value = str(row[metric_col])
+                count = row["count"]
+                distribution_dict[value] = count
+
+            result[fault_type][service][metric] = distribution_dict
+
+    return result

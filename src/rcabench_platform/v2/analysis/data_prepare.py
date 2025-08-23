@@ -60,7 +60,7 @@ class Item:
     anomaly_degree: Literal["absolute", "may", "no"] = "no"
     workload: Literal["trainticket"] = "trainticket"
 
-    # Algo Metric statistics
+    # Algo Metric statistics  TODO: @Lincyaw @rainysteven1 add execution time of the algo
     _algo_evals: dict[str, list[DtoGranularityRecord]] | None = None
     algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
 
@@ -114,66 +114,6 @@ class Item:
     @property
     def service_coverage(self) -> float:
         return len(self.service_names_by_trace) / len(self.service_names)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Item":
-        node = HandlerNode.from_dict(data["_node"])
-        injection = DtoInjectionV2Response.from_dict(data["_injection"])
-
-        algo_evals: dict[str, list[DtoGranularityRecord]] = {}
-        if data.get("_algo_evals"):
-            for algo, records_data in data["_algo_evals"].items():
-                algo_evals[algo] = [DtoGranularityRecord.from_dict(record) for record in records_data]
-
-        item = cls(
-            _injection=injection,
-            _node=node,
-            _algo_evals=algo_evals,
-            fault_type=data["fault_type"],
-            injected_service=data["injected_service"],
-            is_pair=data["is_pair"],
-            anomaly_degree=data["anomaly_degree"],
-            workload=data["workload"],
-            duration=timedelta(seconds=data["duration"]),
-            trace_count=data["trace_count"],
-            service_names=set(data["service_names"]),
-            service_names_by_trace=set(data["service_names_by_trace"]),
-            datapack_metric_values=data["datapack_metric_values"],
-            injection_metric_counts=data["injection_metric_counts"],
-            log_lines=data["log_lines"],
-            trace_length=Counter(data["trace_length"]),
-        )
-
-        return item
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Convert the Item instance to a dictionary.
-        """
-        algo_evals_dict = {}
-
-        if self._algo_evals:
-            for algo, records in self._algo_evals.items():
-                algo_evals_dict[algo] = [record.to_dict() for record in records]
-
-        return {
-            "_node": self._node.to_dict(),
-            "_injection": self._injection.to_dict(),
-            "_algo_evals": algo_evals_dict,
-            "fault_type": self.fault_type,
-            "injected_service": self.injected_service,
-            "is_pair": self.is_pair,
-            "anomaly_degree": self.anomaly_degree,
-            "workload": self.workload,
-            "duration": self.duration.total_seconds(),
-            "trace_count": self.trace_count,
-            "service_names": list(self.service_names),
-            "service_names_by_trace": list(self.service_names_by_trace),
-            "datapack_metric_values": self.datapack_metric_values,
-            "injection_metric_counts": self.injection_metric_counts,
-            "log_lines": self.log_lines,
-            "trace_length": dict(self.trace_length),
-        }
 
 
 def get_conf(namespace: str) -> HandlerNode:

@@ -6,6 +6,8 @@ from typing import Literal
 import pandas as pd
 import polars as pl
 
+from ..logging import logger
+
 
 def assert_columns(df: pl.DataFrame, cols: list[str]) -> None:
     for col in cols:
@@ -121,7 +123,7 @@ def format_dataframe(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(result)
-        print(f"Output saved to: {output_path}")
+        logger.info(f"Output saved to: {output_path}")
 
     return result
 
