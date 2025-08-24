@@ -186,8 +186,8 @@ def get_stats_by_group(df: pl.DataFrame, group_specs: list[GroupSpec] | None = N
     # Add algorithm metrics aggregation
     # Since algo columns contain dictionaries, we need to extract specific metrics
     for algo_col in algo_cols:
-        # Extract top1, top3, top5, mrr from the algorithm dictionary
-        for metric in ["top1", "top3", "top5", "mrr"]:
+        # Extract top1, top3, top5, avg3, avg5, mrr, time from the algorithm dictionary
+        for metric in ["top1", "top3", "top5", "avg3", "avg5", "mrr", "time"]:
             agg_exprs.append(
                 pl.col(algo_col)
                 .map_elements(

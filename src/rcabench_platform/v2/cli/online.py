@@ -29,7 +29,7 @@ from ..metrics.algo_metrics import get_algorithms_metrics_across_datasets
 from ..utils.dataframe import print_dataframe
 from ..utils.serde import save_json
 
-app = typer.Typer()
+app = typer.Typer(pretty_exceptions_enable=False)
 
 
 @app.command()
@@ -143,34 +143,38 @@ def parse_algorithm_spec(algo_string: str) -> AlgoSpec:
 
     Args:
         algo_string: Algorithm specification string
-        default_tag: Default tag to use if not specified
 
     Returns:
         AlgoSpec with name, image, and tag fields
     """
-    default_tag = "latest"
     algo_string = algo_string.strip()
 
-    # Check if this looks like a docker image (contains '/')
-    if "/" in algo_string:
-        # This is an image:tag format
-        if ":" in algo_string:
-            image, tag = algo_string.rsplit(":", 1)
-            # Extract name from image path (last part after /)
-            name = image.split("/")[-1]
-            return AlgoSpec(name=name.strip(), image=image.strip(), tag=tag.strip())
-        else:
-            # Image without tag, use default tag
-            # Extract name from image path (last part after /)
-            name = algo_string.split("/")[-1]
-            return AlgoSpec(name=name, image=algo_string, tag=default_tag)
-    else:
-        # This is an algorithm name format
-        if ":" in algo_string:
-            name, tag = algo_string.split(":", 1)
-            return AlgoSpec(name=name.strip(), image=None, tag=tag.strip())
-        else:
-            return AlgoSpec(name=algo_string, image=None, tag=default_tag)
+    def get_default_tag(algorithm_name: str) -> str | None:
+        with RCABenchClient() as client:
+            try:
+                api = ContainersApi(client)
+                resp = api.api_v2_containers_name_name_latest_get(name=algorithm_name)
+                assert resp.data is not None
+                logger.info(f"found latest tag: {algorithm_name}:{resp.data.tag}")
+                return resp.data.tag
+            except Exception:
+                return None
+
+    is_docker_image = "/" in algo_string
+    has_tag = ":" in algo_string
+
+    if has_tag:
+        base_part, tag = algo_string.rsplit(":", 1)
+        name = base_part.split("/")[-1] if is_docker_image else base_part
+        image = base_part if is_docker_image else None
+        return AlgoSpec(name=name.strip(), image=image.strip() if image else None, tag=tag.strip())
+
+    # No tag specified, need to get default tag
+    name = algo_string.split("/")[-1] if is_docker_image else algo_string
+    image = algo_string if is_docker_image else None
+    default_tag = get_default_tag(name.strip())
+
+    return AlgoSpec(name=name.strip(), image=image.strip() if image else None, tag=default_tag)
 
 
 @app.command()
@@ -215,10 +219,10 @@ def submit_execution(
             key, value = env.split("=", 1)
             env_vars[key] = value
 
-    payloads: list[DtoAlgorithmExecutionRequest] = []
     with RCABenchClient(base_url=base_url) as client:
         api = AlgorithmsApi(client)
         for algorithm_spec in parsed_algorithms:
+            payloads: list[DtoAlgorithmExecutionRequest] = []
             if dataset_list:
                 for dataset, dataset_version in zip(dataset_list, dataset_version_list):
                     payload = DtoAlgorithmExecutionRequest(

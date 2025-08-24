@@ -44,7 +44,8 @@ ITEMS_CACHE_TIME = getenv_int("ITEMS_CACHE_TIME", default=_DEFAULT_ITEMS_CACHE_T
 @dataclass
 class InputItem:
     injection: DtoInjectionV2Response
-    algo_evals: dict[str, Any] | None = None
+    algo_durations: dict[str, float]  # algorithm -> execution_duration
+    algo_evals: dict[str, list[DtoGranularityRecord]] | None = None
 
 
 @dataclass
@@ -62,6 +63,7 @@ class Item:
 
     # Algo Metric statistics  TODO: @Lincyaw @rainysteven1 add execution time of the algo
     _algo_evals: dict[str, list[DtoGranularityRecord]] | None = None
+    _algo_durations: dict[str, float] = field(default_factory=dict)
     algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
 
     # Data statistics
@@ -87,12 +89,15 @@ class Item:
             self._algo_evals = {}
             return
 
-        self.algo_metrics = {
-            algo: calculate_metrics_for_level(
+        self.algo_metrics = {}
+        for algo, predictions in self._algo_evals.items():
+            metric_item = calculate_metrics_for_level(
                 groundtruth_items=[self.injected_service], predictions=predictions, level="service"
             )
-            for algo, predictions in self._algo_evals.items()
-        }
+
+            if algo in self._algo_durations:
+                metric_item.time = self._algo_durations[algo]
+            self.algo_metrics[algo] = metric_item
 
     @property
     def node(self) -> HandlerNode:
@@ -310,10 +315,15 @@ def get_execution_item(
                     continue
 
                 algo_evals: dict[str, list[DtoGranularityRecord]] = {}
+                algo_durations: dict[str, float] = {}
 
                 for row in group_df.iter_rows(named=True):
                     algorithm: str = row["algorithm"]
                     predictions = row.get("predictions", [])
+                    execution_duration = float(row["execution_duration"])
+
+                    algo_durations[algorithm] = execution_duration
+
                     if not predictions:
                         run_status_map[degree].append((datapack, algorithm))
                         continue
@@ -324,6 +334,7 @@ def get_execution_item(
                     InputItem(
                         algo_evals=algo_evals if algo_evals else None,
                         injection=injection,
+                        algo_durations=algo_durations,
                     )
                 )
 
@@ -332,6 +343,7 @@ def get_execution_item(
 
 def process_item(
     algo_evals: dict[str, list[DtoGranularityRecord]] | None,
+    algo_durations: dict[str, float],
     injection: DtoInjectionV2Response,
     injection_mapping: DtoInjectionFieldMappingResp,
     injection_resources: HandlerResources,
@@ -436,6 +448,7 @@ def process_item(
 
     return Item(
         _algo_evals=algo_evals,
+        _algo_durations=algo_durations,
         _injection=injection,
         _node=node,
         fault_type=fault_type,
@@ -464,6 +477,7 @@ def batch_process_item(
         functools.partial(
             process_item,
             input_item.algo_evals,
+            input_item.algo_durations,
             input_item.injection,
             injection_mapping,
             injection_resources,

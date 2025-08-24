@@ -206,24 +206,6 @@ def algo_perf_scatter_by_fault_category(
     df: pl.DataFrame,
     output_file: Path | None = None,
 ) -> None:
-    def _get_time_bucket(time_value):
-        if time_value is None:
-            return None
-        if time_value <= 1:
-            return "≤1s"
-        elif time_value <= 10:
-            return "<=10s"
-        elif time_value <= 100:
-            return "<=100s"
-        elif time_value <= 1000:
-            return "<=1000s"
-        else:
-            return ">1000s"
-
-    def _get_bucket_position(bucket):
-        bucket_positions = {"≤1s": 0.5, "<=10s": 1.5, "<=100s": 2.5, "<=1000s": 3.5, ">1000s": 4.5}
-        return bucket_positions.get(bucket, 0)
-
     if df.height == 0:
         logger.warning("No data available to generate scatter chart")
         return
@@ -236,14 +218,15 @@ def algo_perf_scatter_by_fault_category(
 
     algo_mrr_cols = [col for col in df.columns if col.startswith("avg_algo_") and col.endswith("_mrr")]
 
-    time_related_cols = [col for col in df.columns if "duration" in col.lower() or "time" in col.lower()]
+    # Use algorithm execution time instead of dataset duration
+    algo_time_cols = [col for col in df.columns if col.startswith("avg_algo_") and col.endswith("_time")]
 
     if not algo_mrr_cols:
         logger.warning("No algorithm MRR data found")
         return
 
-    if not time_related_cols:
-        logger.warning("No time-related data found")
+    if not algo_time_cols:
+        logger.warning("No algorithm time data found")
         return
 
     algorithms = set()
@@ -270,6 +253,18 @@ def algo_perf_scatter_by_fault_category(
         logger.warning("No fault category or SDD@1 groups found")
         return
 
+    # Find the maximum time value across all algorithms for y-axis scaling
+    max_time_overall = 0
+    for algo in algorithms:
+        time_col = f"avg_algo_{algo}_time"
+        if time_col in df.columns:
+            time_values = df[time_col].drop_nulls().to_list()
+            if time_values:
+                max_time_overall = max(max_time_overall, max(time_values))
+
+    # Set y-axis maximum as max_time + 1, minimum as 0
+    y_max = max_time_overall + 1 if max_time_overall > 0 else 10
+
     n_rows = len(sdd_groups)
     n_cols = len(fault_categories)
 
@@ -287,8 +282,6 @@ def algo_perf_scatter_by_fault_category(
 
     colors = cm.get_cmap("tab10")(np.linspace(0, 1, len(algorithms)))
     algo_colors = {algo: colors[i] for i, algo in enumerate(algorithms)}
-
-    time_col = time_related_cols[0]
 
     for row_idx, sdd_group in enumerate(sdd_groups):
         for col_idx, fault_category in enumerate(fault_categories):
@@ -318,12 +311,12 @@ def algo_perf_scatter_by_fault_category(
                 )
                 ax.set_xticks([])
                 ax.set_yticks([])
-                # continue
+                continue
 
-            max_time_value = 0
             has_valid_data = False
             for algo in algorithms:
                 mrr_col = f"avg_algo_{algo}_mrr"
+                time_col = f"avg_algo_{algo}_time"  # Use algorithm-specific time column
 
                 if mrr_col in group_data.columns and time_col in group_data.columns:
                     mrr_values = group_data[mrr_col].to_list()
@@ -332,12 +325,12 @@ def algo_perf_scatter_by_fault_category(
                     for mrr_value, time_value in zip(mrr_values, time_values):
                         if mrr_value is not None and time_value is not None:
                             has_valid_data = True
-                            time_bucket = _get_time_bucket(time_value)
-                            bucket_position = _get_bucket_position(time_bucket)
+                            # Use real time value directly
+                            real_time_value = max(time_value, 0.001)
 
                             ax.scatter(
                                 mrr_value,
-                                bucket_position,
+                                real_time_value,
                                 color=algo_colors[algo],
                                 label=algo if row_idx == 0 and col_idx == 0 else "",
                                 s=50,
@@ -345,7 +338,6 @@ def algo_perf_scatter_by_fault_category(
                                 edgecolors="black",
                                 linewidth=0.5,
                             )
-                            max_time_value = max(max_time_value, bucket_position)
 
             if not has_valid_data:
                 ax.text(
@@ -361,20 +353,22 @@ def algo_perf_scatter_by_fault_category(
                 )
                 ax.set_xticks([])
                 ax.set_yticks([])
-                # continue
+                continue
 
-            if max_time_value > 0:
-                ax.text(0.02, 0.98, "Time(s)", transform=ax.transAxes, fontsize=7, va="top", ha="left", alpha=0.7)
-                ax.text(0.98, 0.02, "MRR", transform=ax.transAxes, fontsize=7, va="bottom", ha="right", alpha=0.7)
+            ax.text(0.02, 0.98, "Time(s)", transform=ax.transAxes, fontsize=7, va="top", ha="left", alpha=0.7)
+            ax.text(0.98, 0.02, "MRR", transform=ax.transAxes, fontsize=7, va="bottom", ha="right", alpha=0.7)
 
             ax.grid(True, alpha=0.3)
 
             ax.set_xlim(-0.05, 1.05)
-            ax.set_ylim(0, 5)
-            ax.set_yticks([0.5, 1.5, 2.5, 3.5, 4.5])
+
+            # Use logarithmic scale for y-axis to handle large range of time values
+            ax.set_yscale("log")
+            ax.set_ylim(0.001, y_max)
 
             if col_idx == 0:
-                ax.set_yticklabels(["≤1", "≤1e1", "≤1e2", "≤1e3", ">1e3"], fontsize=8)
+                # Let matplotlib handle the log scale ticks and labels automatically
+                pass
             else:
                 ax.set_yticklabels([])
 

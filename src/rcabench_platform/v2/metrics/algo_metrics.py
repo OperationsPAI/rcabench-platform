@@ -22,6 +22,10 @@ class AlgoMetrics(TypedDict):
     top3: float
     top5: float
 
+    avg3: float
+    avg5: float
+    time: float
+
     mrr: float
 
     as1: float
@@ -34,22 +38,23 @@ class AlgoMetrics(TypedDict):
 
 @dataclass
 class AlgoMetricItem:
-    """
-    Data class to hold algorithm metric for a specific algorithm and datapack.
-    """
-
     top1: float = 0.0
     top3: float = 0.0
     top5: float = 0.0
+    avg3: float = 0.0
+    avg5: float = 0.0
     mrr: float = 0.0
+    time: float = 0.0
 
     def to_dict(self) -> dict[str, float]:
-        """Convert the metric item to a dictionary."""
         return {
             "top1": self.top1,
             "top3": self.top3,
             "top5": self.top5,
+            "avg3": self.avg3,
+            "avg5": self.avg5,
             "mrr": self.mrr,
+            "time": self.time,
         }
 
 
@@ -216,9 +221,16 @@ def calculate_metrics_for_level(
     top3 = 1.0 if min_rank <= 3 else 0.0
     top5 = 1.0 if min_rank <= 5 else 0.0
 
+    # Calculate avg3 and avg5: average rank of hits within top-3 and top-5
+    hits_within_3 = [rank for rank in hits if rank <= 3]
+    hits_within_5 = [rank for rank in hits if rank <= 5]
+
+    avg3 = sum(hits_within_3) / len(hits_within_3) if hits_within_3 else 0.0
+    avg5 = sum(hits_within_5) / len(hits_within_5) if hits_within_5 else 0.0
+
     mrr = 1.0 / min_rank
 
-    return AlgoMetricItem(top1=top1, top3=top3, top5=top5, mrr=mrr)
+    return AlgoMetricItem(top1=top1, top3=top3, top5=top5, avg3=avg3, avg5=avg5, mrr=mrr)
 
 
 def calculate_alignment_score(
@@ -320,6 +332,9 @@ def get_metrics_by_dataset(
             "top1": 0.0,
             "top3": 0.0,
             "top5": 0.0,
+            "avg3": 0.0,
+            "avg5": 0.0,
+            "time": 0.0,
             "mrr": 0.0,
             "as1": 0.0,
             "as3": 0.0,
@@ -338,27 +353,15 @@ def get_metrics_by_dataset(
 
             total_datapacks += 1
 
-            # Extract ground truth items for each granularity level
-            groundtruth_levels = {}
+            # Only consider service level groundtruth
             if item.groundtruth.service:
-                groundtruth_levels["service"] = item.groundtruth.service
-            if item.groundtruth.span:
-                groundtruth_levels["span"] = item.groundtruth.span
-            if item.groundtruth.pod:
-                groundtruth_levels["pod"] = item.groundtruth.pod
-            if item.groundtruth.container:
-                groundtruth_levels["container"] = item.groundtruth.container
-            if item.groundtruth.function:
-                groundtruth_levels["function"] = item.groundtruth.function
-            if item.groundtruth.metric:
-                groundtruth_levels["metric"] = item.groundtruth.metric
-
-            # Calculate metrics for each level
-            for level, groundtruth_items in groundtruth_levels.items():
+                level = "service"
+                groundtruth_items = item.groundtruth.service
                 metrics = calculate_metrics_for_level(groundtruth_items, item.predictions, level)
 
                 for metric_name, value in metrics.to_dict().items():
                     level_metrics[level][metric_name] += value
+                level_metrics[level]["time"] += item.execution_duration or 0.0
 
             # if level == "service":
             #     as_k = calculate_alignment_score(
@@ -379,7 +382,6 @@ def get_metrics_by_dataset(
 
             #     level_metrics[level]["efficiency"] = level_metrics[level].get("efficiency", 0.0) + eff
 
-    # Average metrics across all datapacks
     result_metrics = []
     for level, metrics in level_metrics.items():
         if total_datapacks > 0:
@@ -391,6 +393,9 @@ def get_metrics_by_dataset(
                 "as1": metrics["as1"] / total_datapacks,
                 "as3": metrics["as3"] / total_datapacks,
                 "as5": metrics["as5"] / total_datapacks,
+                "avg3": metrics["avg3"] / total_datapacks,
+                "avg5": metrics["avg5"] / total_datapacks,
+                "time": metrics["time"] / total_datapacks,
                 "efficiency": metrics["efficiency"] / total_datapacks,
             }
         else:
@@ -402,6 +407,9 @@ def get_metrics_by_dataset(
                 "as1": 0.0,
                 "as3": 0.0,
                 "as5": 0.0,
+                "avg3": 0.0,
+                "avg5": 0.0,
+                "time": 0.0,
                 "efficiency": 0.0,
             }
 
@@ -411,6 +419,9 @@ def get_metrics_by_dataset(
                 top1=round(avg_metrics["top1"], 3),
                 top3=round(avg_metrics["top3"], 3),
                 top5=round(avg_metrics["top5"], 3),
+                avg3=round(avg_metrics["avg3"], 3),
+                avg5=round(avg_metrics["avg5"], 3),
+                time=round(avg_metrics["time"], 3),
                 mrr=round(avg_metrics["mrr"], 3),
                 as1=round(avg_metrics["as1"], 3),
                 as3=round(avg_metrics["as3"], 3),
