@@ -113,6 +113,7 @@ def run_single(
     finished.touch()
 
     if submit_result:
+        assert runtime is not None
         with RCABenchClient(base_url=get_config().base_url) as client:
             algorithms_api = AlgorithmsApi(client)
             injections_api = InjectionsApi(client)
@@ -157,6 +158,7 @@ def run_single(
             resp = algorithms_api.api_v2_algorithms_algorithm_id_results_post(
                 algorithm_id=algorithm_id,
                 request=DtoGranularityResultEnhancedRequest(
+                    duration=runtime,
                     datapack_id=datapack_id,
                     results=[
                         DtoGranularityResultItem(

@@ -72,7 +72,7 @@ def run(
             algorithm_id=algorithm_id,
             execution_id=execution_id,
             request=DtoGranularityResultEnhancedRequest(
-                duration=duration.seconds,
+                duration=duration.total_seconds(),
                 results=[
                     DtoGranularityResultItem(
                         level=row["level"],

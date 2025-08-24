@@ -758,7 +758,7 @@ def run(
                 algorithm_id=algorithm_id,  # type: ignore
                 execution_id=execution_id,  # type: ignore
                 request=DtoDetectorResultRequest(
-                    duration=duration.seconds,
+                    duration=duration.total_seconds(),
                     results=[
                         DtoDetectorResultItem(
                             issues=i["Issues"],
