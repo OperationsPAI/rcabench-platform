@@ -120,9 +120,9 @@ def calculate_sampler_performance(
         Dictionary containing performance metrics:
         - controllability (RoD): Rate of Deviation
         - comprehensiveness (CR): Coverage Rate
-        - proportion_anomaly (PRO_anomaly): Proportion of detector flagged traces
+        - proportion_anomaly (PRO_anomaly): Proportion of detector flagged spans in abnormal traces
         - proportion_rare (PRO_rare): Proportion of rare traces (< 5% frequency)
-        - proportion_common (PRO_common): Proportion of common but non-detector traces
+        - proportion_common (PRO_common): Proportion of common spans (including detector spans in normal traces)
         - actual_sampling_rate: Actual sampling rate achieved
         - runtime_per_span_ms: Runtime per span in milliseconds
     """
@@ -227,22 +227,24 @@ def calculate_sampler_performance(
     comprehensiveness = sampled_entry_types / total_entry_types if total_entry_types > 0 else 0.0
 
     # Calculate proportions
-    # PRO_anomaly: detector flagged spans
-    detector_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(list(detector_spans)))
-    proportion_anomaly = len(detector_sampled) / sampled_count if sampled_count > 0 else 0.0
+    # PRO_anomaly: detector flagged spans in abnormal traces only
+    abnormal_sampled = sampled_traces_info.filter(pl.col("is_abnormal"))
+    abnormal_detector_sampled = abnormal_sampled.filter(pl.col("entry_span").is_in(list(detector_spans)))
+    proportion_anomaly = len(abnormal_detector_sampled) / len(abnormal_sampled) if len(abnormal_sampled) > 0 else 0.0
 
-    # PRO_rare: rare spans (< 5% frequency)
+    # PRO_rare: rare spans (< 5% frequency) in all sampled traces
     rare_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(rare_spans))
     proportion_rare = len(rare_sampled) / sampled_count if sampled_count > 0 else 0.0
 
-    # PRO_common: common spans that are not flagged by detector
-    common_spans = [
-        span
-        for span in entry_span_counts["entry_span"].to_list()
-        if span not in rare_spans and span not in detector_spans
-    ]
+    # PRO_common: common spans that are not flagged by detector in all sampled traces
+    # Note: detector spans in normal traces should be considered as common (not anomalous)
+    common_spans = [span for span in entry_span_counts["entry_span"].to_list() if span not in rare_spans]
+    # For common spans calculation, we include detector spans from normal traces
     common_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(common_spans))
-    proportion_common = len(common_sampled) / sampled_count if sampled_count > 0 else 0.0
+    # Exclude detector spans from abnormal traces (those are counted in PRO_anomaly)
+    abnormal_detector_traces = abnormal_sampled.filter(pl.col("entry_span").is_in(list(detector_spans)))
+    common_sampled_count = len(common_sampled) - len(abnormal_detector_traces)
+    proportion_common = common_sampled_count / sampled_count if sampled_count > 0 else 0.0
 
     return {
         "sampled_count": sampled_count,
