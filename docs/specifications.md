@@ -46,9 +46,9 @@ Sampler performance is evaluated using the following metrics:
   - $N_t$': number of sampled trace types (entry spans)
   - $N_t$: total number of trace types
 + **Proportion (PRO)**: Three proportion metrics
-  - PRO_anomaly: proportion of detector-flagged spans sampled
+  - PRO_anomaly: proportion of detector-flagged spans in abnormal traces only
   - PRO_rare: proportion of rare entry spans sampled (< 5% frequency)
-  - PRO_common: proportion of common but non-detector spans sampled
+  - PRO_common: proportion of common spans (including detector spans in normal traces)
 + **Runtime**: Algorithm runtime per span in millisecondsa
 + **Actual Sampling Rate**: Achieved sampling rate
 
