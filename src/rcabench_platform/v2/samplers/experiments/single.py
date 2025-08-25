@@ -164,16 +164,37 @@ def calculate_sampler_performance(
         ]
     )
 
-    # Add parsed span names (entry points)
-    traces_with_entry_lf = combined_traces_lf.with_columns(
+    # Select entry spans using the same logic as detector:
+    # 1. First try loadgenerator service with null/empty parent_span_id
+    # 2. Fallback to ts-ui-dashboard with null/empty parent_span_id
+    # 3. Finally try any service with null/empty parent_span_id
+    entry_traces_lf = combined_traces_lf.filter(pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+
+    # Try loadgenerator first
+    loadgen_entries_lf = entry_traces_lf.filter(pl.col("service_name") == "loadgenerator")
+    loadgen_count = loadgen_entries_lf.select(pl.len()).collect().item()
+
+    if loadgen_count > 0:
+        selected_entries_lf = loadgen_entries_lf
+    else:
+        # Fallback to ts-ui-dashboard
+        ui_entries_lf = entry_traces_lf.filter(pl.col("service_name") == "ts-ui-dashboard")
+        ui_count = ui_entries_lf.select(pl.len()).collect().item()
+
+        if ui_count > 0:
+            selected_entries_lf = ui_entries_lf
+        else:
+            # Use all root spans from any service
+            selected_entries_lf = entry_traces_lf
+
+    # Add parsed span names and get unique entry spans per trace
+    traces_with_entry_lf = selected_entries_lf.with_columns(
         pl.col("span_name").map_elements(extract_path, return_dtype=pl.String).alias("entry_span")
     )
 
-    # Get unique entry spans per trace (focusing on entry points)
-    trace_entries_lf = (
-        traces_with_entry_lf.filter(pl.col("parent_span_id").is_null())  # Entry spans typically have no parent
-        .group_by("trace_id")
-        .agg([pl.first("entry_span").alias("entry_span"), pl.first("is_abnormal").alias("is_abnormal")])
+    # Get one entry span per trace (first occurrence)
+    trace_entries_lf = traces_with_entry_lf.group_by("trace_id").agg(
+        [pl.first("entry_span").alias("entry_span"), pl.first("is_abnormal").alias("is_abnormal")]
     )
 
     trace_entries_df = trace_entries_lf.collect()
@@ -194,8 +215,7 @@ def calculate_sampler_performance(
     if conclusion_path.exists():
         detector_df = pl.read_parquet(conclusion_path)
         if len(detector_df) > 0 and "SpanName" in detector_df.columns:
-            # Parse detector span names
-            detector_spans = set(detector_df["SpanName"].map_elements(extract_path, return_dtype=pl.String).to_list())
+            detector_spans = set(detector_df["SpanName"].to_list())
 
     # Join sampled traces with entry information
     sampled_trace_ids = set(sampled_df["trace_id"].to_list())
