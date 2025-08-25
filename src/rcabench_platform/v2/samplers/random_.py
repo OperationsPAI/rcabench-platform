@@ -38,14 +38,22 @@ class RandomSampler(TraceSampler):
         if self.seed is not None:
             random.seed(self.seed)
 
-        # Load traces data to get all trace_ids
-        traces_file = args.input_folder / "traces.parquet"
-        if not traces_file.exists():
-            raise FileNotFoundError(f"Traces file not found: {traces_file}")
+        # Load traces data from both normal and abnormal files
+        normal_traces_file = args.input_folder / "normal_traces.parquet"
+        abnormal_traces_file = args.input_folder / "abnormal_traces.parquet"
 
-        # Read unique trace_ids from traces
-        traces_lf = pl.scan_parquet(traces_file)
-        unique_traces = traces_lf.select("trace_id").unique().collect()
+        if not normal_traces_file.exists():
+            raise FileNotFoundError(f"Normal traces file not found: {normal_traces_file}")
+        if not abnormal_traces_file.exists():
+            raise FileNotFoundError(f"Abnormal traces file not found: {abnormal_traces_file}")
+
+        # Read unique trace_ids from both normal and abnormal traces
+        normal_traces_lf = pl.scan_parquet(normal_traces_file)
+        abnormal_traces_lf = pl.scan_parquet(abnormal_traces_file)
+
+        # Combine and get unique trace_ids
+        combined_traces_lf = pl.concat([normal_traces_lf.select("trace_id"), abnormal_traces_lf.select("trace_id")])
+        unique_traces = combined_traces_lf.unique().collect()
         trace_ids = unique_traces["trace_id"].to_list()
 
         # Generate random scores for all traces
