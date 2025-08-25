@@ -21,8 +21,7 @@ class RandomSampler(TraceSampler):
         self.seed = seed
 
     def needs_cpu_count(self) -> int | None:
-        """Random sampler only needs a single CPU core."""
-        return 1
+        return 4
 
     def __call__(self, args: SamplerArgs) -> list[SampleResult]:
         """
