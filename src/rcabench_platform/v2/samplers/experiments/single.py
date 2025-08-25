@@ -120,11 +120,11 @@ def calculate_sampler_performance(
         Dictionary containing performance metrics:
         - controllability (RoD): Rate of Deviation
         - comprehensiveness (CR): Coverage Rate
-        - proportion_anomaly (PRO_anomaly): Proportion of anomaly traces
-        - proportion_rare (PRO_rare): Proportion of rare traces
-        - proportion_detector (PRO_detector): Proportion of detector flagged traces
+        - proportion_anomaly (PRO_anomaly): Proportion of detector flagged traces
+        - proportion_rare (PRO_rare): Proportion of rare traces (< 5% frequency)
+        - proportion_common (PRO_common): Proportion of common but non-detector traces
         - actual_sampling_rate: Actual sampling rate achieved
-        - runtime_per_span_ns: Runtime per span in nanoseconds
+        - runtime_per_span_ms: Runtime per span in milliseconds
     """
     # Load traces to get total counts
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
@@ -151,9 +151,9 @@ def calculate_sampler_performance(
             "comprehensiveness": 0.0,
             "proportion_anomaly": 0.0,
             "proportion_rare": 0.0,
-            "proportion_detector": 0.0,
+            "proportion_common": 0.0,
             "actual_sampling_rate": actual_sampling_rate,
-            "runtime_per_span_ns": runtime * 1e9 / total_traces if runtime and total_traces > 0 else None,
+            "runtime_per_span_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
         }
 
     # Load full traces with parsed span names for analysis
@@ -227,14 +227,22 @@ def calculate_sampler_performance(
     comprehensiveness = sampled_entry_types / total_entry_types if total_entry_types > 0 else 0.0
 
     # Calculate proportions
-    anomaly_sampled = sampled_traces_info.filter(pl.col("is_abnormal"))
-    proportion_anomaly = len(anomaly_sampled) / sampled_count if sampled_count > 0 else 0.0
+    # PRO_anomaly: detector flagged spans
+    detector_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(list(detector_spans)))
+    proportion_anomaly = len(detector_sampled) / sampled_count if sampled_count > 0 else 0.0
 
+    # PRO_rare: rare spans (< 5% frequency)
     rare_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(rare_spans))
     proportion_rare = len(rare_sampled) / sampled_count if sampled_count > 0 else 0.0
 
-    detector_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(list(detector_spans)))
-    proportion_detector = len(detector_sampled) / sampled_count if sampled_count > 0 else 0.0
+    # PRO_common: common spans that are not flagged by detector
+    common_spans = [
+        span
+        for span in entry_span_counts["entry_span"].to_list()
+        if span not in rare_spans and span not in detector_spans
+    ]
+    common_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(common_spans))
+    proportion_common = len(common_sampled) / sampled_count if sampled_count > 0 else 0.0
 
     return {
         "sampled_count": sampled_count,
@@ -245,7 +253,7 @@ def calculate_sampler_performance(
         "comprehensiveness": comprehensiveness,
         "proportion_anomaly": proportion_anomaly,
         "proportion_rare": proportion_rare,
-        "proportion_detector": proportion_detector,
+        "proportion_common": proportion_common,
         "actual_sampling_rate": actual_sampling_rate,
-        "runtime_per_span_ns": runtime * 1e9 / total_traces if runtime and total_traces > 0 else None,
+        "runtime_per_span_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
     }
