@@ -27,7 +27,7 @@ def print_dataframe(df: pl.DataFrame) -> None:
 
 def format_dataframe(
     df: pl.DataFrame | pd.DataFrame,
-    output_format: Literal["display", "latex", "csv", "formatted_text", "html"] = "display",
+    output_format: Literal["display", "latex", "csv", "formatted_text", "html", "png"] = "display",
     output_file: str | Path | None = None,
     merge_columns: list[str] | None = None,
     wrap_text: bool = False,
@@ -47,6 +47,7 @@ def format_dataframe(
             - 'csv': Export as CSV format
             - 'formatted_text': Export as formatted text (no width limit)
             - 'html': Export as HTML table format
+            - 'png': Export as PNG image format
         output_file: Output file path, if None returns string or displays directly
         merge_columns: List of column names to merge cells (consecutive same values will be cleared)
         wrap_text: Whether to enable smart text wrapping
@@ -70,12 +71,25 @@ def format_dataframe(
 
         # Export as HTML file with merged columns
         format_dataframe(df, 'html', 'table.html', merge_columns=['group'])
+
+        # Export as PNG image file with intelligent row width adjustment
+        format_dataframe(df, 'png', 'table.png', dpi=300, max_cell_width=25)
     """
     # Convert to pandas DataFrame for unified processing
     if isinstance(df, pl.DataFrame):
         pdf = df.to_pandas()
     else:
         pdf = df.copy()
+
+    # Format numeric columns to 2 decimal places
+    for col in pdf.select_dtypes(include=["float64", "float32", "int64", "int32"]).columns:
+        if pdf[col].dtype.kind in "fi":  # float or int
+            # Round float columns to 2 decimal places
+            if pdf[col].dtype.kind == "f":
+                pdf[col] = pdf[col].round(2)
+            # Convert int columns to float with 2 decimal places for display
+            else:
+                pdf[col] = pdf[col].astype(float).round(2)
 
     # Apply smart text wrapping
     if wrap_text:
@@ -111,6 +125,12 @@ def format_dataframe(
         result = _export_csv(pdf, **kwargs)
     elif output_format == "html":
         result = _export_html(pdf, merge_columns=merge_columns, **kwargs)
+    elif output_format == "png":
+        # For PNG, we need to handle file saving differently
+        if not output_file:
+            raise ValueError("output_file must be specified for PNG format")
+        _export_png(pdf, output_file, merge_columns=merge_columns, **kwargs)
+        return None  # PNG format doesn't return string content
     else:  # formatted_text
         # For formatted text, merge cells by clearing duplicates
         if merge_columns:
@@ -118,7 +138,7 @@ def format_dataframe(
         result = _export_formatted_text(pdf, max_rows=max_rows, max_cols=max_cols, **kwargs)
 
     # Save to file or return string
-    if output_file:
+    if output_file and output_format != "png":  # PNG format handles file saving internally
         output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
@@ -392,3 +412,142 @@ def _export_formatted_text(df: pd.DataFrame, max_rows: int | None = None, max_co
         default_kwargs["max_colwidth"],
     ):
         return str(df)
+
+
+def _export_png(df: pd.DataFrame, output_file: str | Path, merge_columns: list[str] | None = None, **kwargs) -> None:
+    """Export DataFrame as PNG image using matplotlib with intelligent row width adjustment"""
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.table import Table
+    except ImportError:
+        raise ImportError("matplotlib is required for PNG export. Install with: pip install matplotlib")
+
+    # Default parameters for PNG export
+    default_kwargs = {
+        "figsize": None,  # Will be calculated automatically
+        "dpi": 300,
+        "bbox_inches": "tight",
+        "facecolor": "white",
+        "edgecolor": "none",
+        "title": None,
+        "title_fontsize": 14,
+        "header_color": "#f0f0f0",
+        "alternate_row_color": "#f9f9f9",
+        "font_size": 10,
+        "max_cell_width": 30,  # Maximum characters per cell before wrapping
+        "min_figsize": (8, 6),  # Minimum figure size
+        "max_figsize": (20, 16),  # Maximum figure size
+    }
+    default_kwargs.update(kwargs)
+
+    # Handle merged columns by replacing consecutive duplicates with empty strings
+    if merge_columns:
+        df = _merge_consecutive_cells(df, merge_columns)
+
+    # Apply intelligent text wrapping to all string columns
+    df_wrapped = df.copy()
+    max_cell_width = default_kwargs["max_cell_width"]
+
+    for col in df_wrapped.select_dtypes(include=["object"]).columns:
+        df_wrapped[col] = (
+            df_wrapped[col]
+            .astype(str)
+            .apply(lambda x: _smart_wrap_text(x, max_cell_width) if len(str(x)) > max_cell_width else str(x))
+        )
+
+    # Calculate optimal figure size based on data dimensions
+    num_rows, num_cols = len(df_wrapped), len(df_wrapped.columns)
+
+    # Calculate maximum content width and height
+    max_content_lines = 1
+    for col in df_wrapped.select_dtypes(include=["object"]).columns:
+        for val in df_wrapped[col]:
+            if isinstance(val, str) and "\n" in val:
+                max_content_lines = max(max_content_lines, len(val.split("\n")))
+
+    # Calculate figure size based on content
+    base_width = max(6, min(20, num_cols * 2.5))
+    base_height = max(4, min(16, (num_rows + 1) * 0.5 * max_content_lines))
+
+    # Apply size constraints
+    min_width, min_height = default_kwargs["min_figsize"]
+    max_width, max_height = default_kwargs["max_figsize"]
+
+    optimal_figsize = (max(min_width, min(max_width, base_width)), max(min_height, min(max_height, base_height)))
+
+    # Use provided figsize if specified, otherwise use calculated size
+    figsize = default_kwargs["figsize"] or optimal_figsize
+
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.axis("off")
+
+    # Add title if specified
+    if default_kwargs["title"]:
+        fig.suptitle(default_kwargs["title"], fontsize=default_kwargs["title_fontsize"], y=0.95)
+
+    # Create table
+    table_data = []
+
+    # Add header
+    table_data.append(list(df_wrapped.columns))
+
+    # Add data rows
+    for _, row in df_wrapped.iterrows():
+        table_data.append([str(val) if not pd.isna(val) else "" for val in row])
+
+    # Create matplotlib table
+    table = ax.table(
+        cellText=table_data[1:],  # Data rows
+        colLabels=table_data[0],  # Headers
+        cellLoc="center",
+        loc="center",
+    )
+
+    # Style the table
+    table.auto_set_font_size(False)
+    table.set_fontsize(default_kwargs["font_size"])
+
+    # Calculate scale factor based on content
+    scale_x = min(2.0, max(0.8, figsize[0] / (num_cols * 2)))
+    scale_y = min(3.0, max(1.0, max_content_lines * 1.2))
+    table.scale(scale_x, scale_y)
+
+    # Style header row
+    num_cols = len(df_wrapped.columns)
+    for i in range(num_cols):
+        table[(0, i)].set_facecolor(default_kwargs["header_color"])
+        table[(0, i)].set_text_props(weight="bold")
+        # Enable text wrapping for header cells
+        table[(0, i)].set_text_props(wrap=True)
+
+    # Style data rows with alternating colors
+    num_rows = len(df_wrapped) + 1  # +1 for header
+    for i in range(1, num_rows):
+        for j in range(num_cols):
+            cell = table[(i, j)]
+            if i % 2 == 0:
+                cell.set_facecolor(default_kwargs["alternate_row_color"])
+            else:
+                cell.set_facecolor("white")
+            # Enable text wrapping for data cells
+            cell.set_text_props(wrap=True)
+            # Adjust cell height for multi-line content
+            cell_text = table_data[i][j]
+            if isinstance(cell_text, str) and "\n" in cell_text:
+                cell.set_height(cell.get_height() * len(cell_text.split("\n")))
+
+    # Save the figure
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    plt.savefig(
+        output_path,
+        dpi=default_kwargs["dpi"],
+        bbox_inches=default_kwargs["bbox_inches"],
+        facecolor=default_kwargs["facecolor"],
+        edgecolor=default_kwargs["edgecolor"],
+    )
+    plt.close(fig)  # Close figure to free memory
+
+    logger.info(f"PNG table saved to: {output_path}")

@@ -7,75 +7,60 @@ import numpy as np
 import polars as pl
 
 from ..logging import logger
-from .aggregation import GroupSpec
 
 
 def algo_perf_by_groups(
     df: pl.DataFrame,
-    group_specs: list[GroupSpec] | None = None,
     output_file: Path | None = None,
-    title_prefix: str = "",
 ) -> None:
     if df.height == 0:
         logger.warning("No data available to generate chart")
         return
 
-    if group_specs is None:
-        group_cols = [col for col in df.columns if col.startswith("group_")]
-        if not group_cols:
-            logger.warning("No group columns found in data")
-            return
-        group_title = " × ".join([col.replace("group_", "") for col in group_cols])
-    else:
-        group_cols = [f"group_{spec['column']}" for spec in group_specs]
-
-        missing_cols = [col for col in group_cols if col not in df.columns]
-        if missing_cols:
-            logger.warning(f"Missing group columns {missing_cols} in data")
-            return
-
-        group_descriptions = [spec["column"] for spec in group_specs]
-        group_title = " × ".join(group_descriptions)
-
-    algo_metric_cols = [
-        col for col in df.columns if col.startswith("avg_algo_") and col.endswith(("_top1", "_top3", "_top5", "_mrr"))
-    ]
-
-    if not algo_metric_cols:
-        logger.warning("No algorithm performance metric data found")
+    # Check if we have the required columns for the new structure
+    if "algorithm" not in df.columns:
+        logger.warning("No 'algorithm' column found in data")
         return
 
-    algorithms = set()
-    metrics = ["top1", "top3", "top5", "mrr"]
+    # Identify group columns (exclude algorithm and metric columns)
+    metric_cols = ["top1", "top3", "top5", "mrr", "time", "avg3", "avg5", "count"]
+    group_cols = [col for col in df.columns if col not in ["algorithm"] + metric_cols]
 
-    for col in algo_metric_cols:
-        parts = col.split("_")
-        if len(parts) >= 4:
-            algo_name = "_".join(parts[2:-1])  # Extract algorithm name
-            algorithms.add(algo_name)
+    if not group_cols:
+        logger.warning("No group columns found in data")
+        return
 
-    algorithms = sorted(list(algorithms))
+    group_title = " × ".join(group_cols)
+
+    # Check for metric columns
+    available_metrics = [col for col in ["top1", "top3", "top5", "mrr"] if col in df.columns]
+    if not available_metrics:
+        logger.warning("No performance metric data found")
+        return
+
+    algorithms = df["algorithm"].unique().to_list()
+    algorithms = sorted([algo for algo in algorithms if algo is not None])
 
     if not algorithms:
         logger.warning("No valid algorithm data found")
         return
 
+    # Get unique group combinations
     if len(group_cols) == 1:
         groups = df.select(group_cols[0]).unique().to_pandas()[group_cols[0]].tolist()
-        groups = [combo for combo in groups if combo is not None]
-        groups = _sort_groups_by_specs(groups, group_specs, single_column=True)
+        groups = sorted([combo for combo in groups if combo is not None])
     else:
         group_df = df.select(group_cols).unique().to_pandas()
         groups = [tuple(row) for row in group_df.values if not any(val is None for val in row)]
-        groups = _sort_groups_by_specs(groups, group_specs, single_column=False)
+        groups = sorted(groups)
 
     if not groups:
         logger.warning("No group data found")
         return
 
     # Set color mapping for metrics
-    colors = cm.get_cmap("Set1")(np.linspace(0, 1, len(metrics)))
-    metric_colors = {metric: colors[i] for i, metric in enumerate(metrics)}
+    colors = cm.get_cmap("Set1")(np.linspace(0, 1, len(available_metrics)))
+    metric_colors = {metric: colors[i] for i, metric in enumerate(available_metrics)}
 
     # Calculate subplot layout
     n_groups = len(groups)
@@ -125,20 +110,21 @@ def algo_perf_by_groups(
 
         # Prepare data
         x_pos = np.arange(len(algorithms))
-        bar_width = 0.8 / len(metrics)  # Width of each bar
+        bar_width = 0.8 / len(available_metrics)  # Width of each bar
 
-        for metric_idx, metric in enumerate(metrics):
+        for metric_idx, metric in enumerate(available_metrics):
             values = []
 
             for algorithm in algorithms:
-                col_name = f"avg_algo_{algorithm}_{metric}"
-                if col_name in group_data.columns:
-                    value = group_data[col_name].to_list()[0]
+                # Filter data for this algorithm
+                algo_data = group_data.filter(pl.col("algorithm") == algorithm)
+                if algo_data.height > 0 and metric in algo_data.columns:
+                    value = algo_data[metric].to_list()[0]
                     values.append(value if value is not None else 0.0)
                 else:
                     values.append(0.0)
 
-            x_positions = x_pos + (metric_idx - len(metrics) / 2 + 0.5) * bar_width
+            x_positions = x_pos + (metric_idx - len(available_metrics) / 2 + 0.5) * bar_width
 
             ax.bar(
                 x_positions,
@@ -170,10 +156,10 @@ def algo_perf_by_groups(
     # Add legend to the figure
     if n_groups > 0:
         fig.legend(
-            [metric.upper() for metric in metrics],
+            [metric.upper() for metric in available_metrics],
             loc="upper center",
             bbox_to_anchor=(0.5, 0.98),
-            ncol=len(metrics),
+            ncol=len(available_metrics),
             fontsize=12,
         )
 
@@ -182,10 +168,7 @@ def algo_perf_by_groups(
     fig.text(0.02, 0.5, "Performance Score", ha="center", va="center", rotation=90, fontsize=12, fontweight="bold")
 
     # Add title with grouping information
-    if title_prefix:
-        chart_title = f"{title_prefix}Algorithm Performance by {group_title}"
-    else:
-        chart_title = f"Algorithm Performance by {group_title}"
+    chart_title = f"Algorithm Performance by {group_title}"
     fig.suptitle(chart_title, fontsize=14, fontweight="bold", y=0.99)
 
     plt.tight_layout()
@@ -210,60 +193,46 @@ def algo_perf_scatter_by_fault_category(
         logger.warning("No data available to generate scatter chart")
         return
 
-    required_group_cols = ["group_fault_category", "group_SDD@1"]
-    missing_cols = [col for col in required_group_cols if col not in df.columns]
+    # Check for required columns in new structure
+    required_cols = ["fault_category", "sdd_category", "algorithm"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
-        logger.warning(f"Missing required group columns {missing_cols} in data")
+        logger.warning(f"Missing required columns {missing_cols} in data")
         return
 
-    algo_mrr_cols = [col for col in df.columns if col.startswith("avg_algo_") and col.endswith("_mrr")]
-
-    # Use algorithm execution time instead of dataset duration
-    algo_time_cols = [col for col in df.columns if col.startswith("avg_algo_") and col.endswith("_time")]
-
-    if not algo_mrr_cols:
-        logger.warning("No algorithm MRR data found")
+    # Check for MRR and time metrics
+    if "mrr" not in df.columns:
+        logger.warning("No MRR data found")
         return
 
-    if not algo_time_cols:
-        logger.warning("No algorithm time data found")
+    if "time" not in df.columns:
+        logger.warning("No time data found")
         return
 
-    algorithms = set()
-    for col in algo_mrr_cols:
-        parts = col.split("_")
-        if len(parts) >= 4:
-            algo_name = "_".join(parts[2:-1])
-            algorithms.add(algo_name)
-
-    algorithms = sorted(list(algorithms))
+    algorithms = df["algorithm"].unique().to_list()
+    algorithms = sorted([algo for algo in algorithms if algo is not None])
     if not algorithms:
         logger.warning("No valid algorithm data found")
         return
 
-    fault_categories = df.select("group_fault_category").unique().to_pandas()["group_fault_category"].tolist()
-    fault_categories = [cat for cat in fault_categories if cat is not None]
-    fault_categories = sorted(fault_categories)
+    fault_categories = df["fault_category"].unique().to_list()
+    fault_categories = sorted([cat for cat in fault_categories if cat is not None])
 
-    sdd_groups = df.select("group_SDD@1").unique().to_pandas()["group_SDD@1"].tolist()
-    sdd_groups = [sdd for sdd in sdd_groups if sdd is not None]
-    sdd_groups = sorted(sdd_groups)
+    sdd_groups = df["sdd_category"].unique().to_list()
+    sdd_groups = sorted([sdd for sdd in sdd_groups if sdd is not None])
 
     if not fault_categories or not sdd_groups:
-        logger.warning("No fault category or SDD@1 groups found")
+        logger.warning("No fault category or SDD groups found")
         return
 
     # Find the maximum time value across all algorithms for y-axis scaling
     max_time_overall = 0
-    for algo in algorithms:
-        time_col = f"avg_algo_{algo}_time"
-        if time_col in df.columns:
-            time_values = df[time_col].drop_nulls().to_list()
-            if time_values:
-                max_time_overall = max(max_time_overall, max(time_values))
+    time_values = df["time"].drop_nulls().to_list()
+    if time_values:
+        max_time_overall = max(time_values)
 
     # Set y-axis maximum as max_time + 1, minimum as 0
-    y_max = max_time_overall + 1 if max_time_overall > 0 else 10
+    y_max = max_time_overall + 10 if max_time_overall > 0 else 10
 
     n_rows = len(sdd_groups)
     n_cols = len(fault_categories)
@@ -293,9 +262,7 @@ def algo_perf_scatter_by_fault_category(
             if col_idx == 0:
                 ax.set_ylabel(f"SDD: {sdd_group}", fontsize=9, fontweight="bold")
 
-            group_data = df.filter(
-                (pl.col("group_fault_category") == fault_category) & (pl.col("group_SDD@1") == sdd_group)
-            )
+            group_data = df.filter((pl.col("fault_category") == fault_category) & (pl.col("sdd_category") == sdd_group))
 
             if group_data.height == 0:
                 ax.text(
@@ -315,12 +282,12 @@ def algo_perf_scatter_by_fault_category(
 
             has_valid_data = False
             for algo in algorithms:
-                mrr_col = f"avg_algo_{algo}_mrr"
-                time_col = f"avg_algo_{algo}_time"  # Use algorithm-specific time column
+                # Filter data for this algorithm
+                algo_data = group_data.filter(pl.col("algorithm") == algo)
 
-                if mrr_col in group_data.columns and time_col in group_data.columns:
-                    mrr_values = group_data[mrr_col].to_list()
-                    time_values = group_data[time_col].to_list()
+                if algo_data.height > 0:
+                    mrr_values = algo_data["mrr"].to_list()
+                    time_values = algo_data["time"].to_list()
 
                     for mrr_value, time_value in zip(mrr_values, time_values):
                         if mrr_value is not None and time_value is not None:
@@ -364,7 +331,7 @@ def algo_perf_scatter_by_fault_category(
 
             # Use logarithmic scale for y-axis to handle large range of time values
             ax.set_yscale("log")
-            ax.set_ylim(0.001, y_max)
+            ax.set_ylim(0.1, y_max)
 
             if col_idx == 0:
                 # Let matplotlib handle the log scale ticks and labels automatically
@@ -396,46 +363,3 @@ def algo_perf_scatter_by_fault_category(
         logger.info(f"Scatter chart saved to: {output_file}")
 
     plt.show()
-
-
-def _sort_groups_by_specs(groups, group_specs, single_column=True):
-    if not group_specs:
-        if single_column:
-            return sorted(groups, key=lambda x: str(x))
-        else:
-            return sorted(groups, key=lambda x: tuple(str(val) for val in x))
-
-    def _get_sort_key_for_value(value, spec):
-        if spec["type"] == "categorical":
-            return str(value)
-        elif spec["type"] == "numeric_bins":
-            if isinstance(value, str) and value.startswith("["):
-                try:
-                    lower_bound = float(value.split(",")[0][1:])
-                    return lower_bound
-                except (ValueError, IndexError):
-                    return str(value)
-            else:
-                return str(value)
-        else:
-            return str(value)
-
-    if single_column:
-        spec = group_specs[0] if group_specs else None
-        if spec:
-            return sorted(groups, key=lambda x: _get_sort_key_for_value(x, spec))
-        else:
-            return sorted(groups, key=lambda x: str(x))
-    else:
-
-        def _get_multi_sort_key(group_tuple):
-            sort_keys = []
-            for i, value in enumerate(group_tuple):
-                if i < len(group_specs):
-                    spec = group_specs[i]
-                    sort_keys.append(_get_sort_key_for_value(value, spec))
-                else:
-                    sort_keys.append(str(value))
-            return tuple(sort_keys)
-
-        return sorted(groups, key=_get_multi_sort_key)

@@ -120,8 +120,8 @@ def get_datapack(tag: str = "absolute_anomaly") -> list[str]:
 
 
 @app.command()
-def build_anomaly(date: str):
-    datapacks = get_datapack()
+def build_anomaly(date: str, anomaly_type: str):
+    datapacks = get_datapack(anomaly_type)
     with RCABenchClient(base_url=get_config().base_url) as client:
         datasets_api = DatasetsApi(client)
 
@@ -129,8 +129,8 @@ def build_anomaly(date: str):
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="all",
-        version=f"all-{date}",
-        description=f"all the dataset until {date} for study",
+        version=f"all-{anomaly_type}-{date}",
+        description=f"all the {anomaly_type} dataset until {date} for study",
         datapacks=datapacks,
     )
 
@@ -145,7 +145,7 @@ def build_anomaly(date: str):
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="train",
-        version=f"study-train{date}",
+        version=f"study-{anomaly_type}-train{date}",
         description="training dataset for study",
         datapacks=train_datapacks,
     )
@@ -154,7 +154,7 @@ def build_anomaly(date: str):
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="test",
-        version=f"study-test{date}",
+        version=f"study-{anomaly_type}-test{date}",
         description="test dataset for study",
         datapacks=test_datapacks,
     )

@@ -1,27 +1,9 @@
-from typing import Literal, TypedDict
-
+import duckdb
 import numpy as np
 import polars as pl
 
+from ..logging import logger
 from .data_prepare import Item
-
-
-class CategoricalGroupSpec(TypedDict):
-    type: Literal["categorical"]
-    column: Literal["fault_type", "fault_category", "injected_service", "is_pair", "anomaly_degree", "SDD@1"]
-
-
-class NumericBinsGroupSpec(TypedDict):
-    type: Literal["numeric_bins"]
-    column: Literal[
-        "SDD@1",
-        "CPL",
-        "RootServiceDegree",
-    ]
-    bins: list[float] | None
-
-
-GroupSpec = CategoricalGroupSpec | NumericBinsGroupSpec
 
 FAULT_TYPE_MAPPING = {
     # Pod/container-level faults
@@ -65,7 +47,7 @@ FAULT_TYPE_MAPPING = {
 }
 
 
-def aggregate(items: list[Item], group_specs: list[GroupSpec] | None = None) -> pl.DataFrame:
+def aggregate(items: list[Item]) -> pl.DataFrame:
     if not items:
         return pl.DataFrame()
 
@@ -121,181 +103,274 @@ def aggregate(items: list[Item], group_specs: list[GroupSpec] | None = None) -> 
 
     df = pl.DataFrame(data_rows)
 
-    if group_specs:
-        df = _add_grouping_columns(df, group_specs)
-
     return df
 
 
-def get_stats_by_group(df: pl.DataFrame, group_specs: list[GroupSpec] | None = None) -> pl.DataFrame:
-    if df.height == 0:
-        return pl.DataFrame()
+class DuckDBAggregator:
+    def __init__(self, df: pl.DataFrame):
+        self.conn = duckdb.connect(":memory:")
+        processed_df = self._flatten_algo_columns(df)
+        self.conn.register("data", processed_df.to_arrow())
 
-    if group_specs is None:
-        group_cols = [col for col in df.columns if col.startswith("group_")]
-        if not group_cols:
-            return pl.DataFrame()
-    else:
-        group_cols = []
-        for spec in group_specs:
-            group_col_name = f"group_{spec['column']}"
-            group_cols.append(group_col_name)
+    def print_schema(self) -> None:
+        try:
+            schema_result = self.conn.execute("DESCRIBE data").fetchdf()
+            print("Data Table Schema:")
+            print("=" * 60)
+            print(f"{'Column Name':<30} {'Type':<15} {'Null':<10}")
+            print("-" * 60)
 
-    missing_cols = [col for col in group_cols if col not in df.columns]
-    if missing_cols:
-        print(f"Warning: Missing columns {missing_cols}, skipping them")
-        group_cols = [col for col in group_cols if col in df.columns]
+            for _, row in schema_result.iterrows():
+                column_name = row["column_name"]
+                column_type = row["column_type"]
+                null_allowed = row["null"]
+                print(f"{column_name:<30} {column_type:<15} {null_allowed:<10}")
 
-    if not group_cols:
-        return pl.DataFrame()
+            print("-" * 60)
+            print(f"Total {len(schema_result)} columns")
+            print("=" * 60)
 
-    metrics = [
-        "trace_count",
-        "duration_seconds",
-        "qps",
-        "service_count",
-        "service_count_by_trace",
-        "service_coverage",
-        "total_log_lines",
-        "log_services_count",
-        "total_metric_count",
-        "unique_metrics",
-        "avg_trace_length",
-        "max_trace_length",
-        "min_trace_length",
-        "SDD@1",
-        "CPL",
-        "RootServiceDegree",
-    ]
-    metrics = [m for m in metrics if m in df.columns]
+        except Exception as e:
+            logger.error(f"Failed to get schema information: {e}")
 
-    # Find datapack metric columns
-    datapack_metrics = [col for col in df.columns if col.startswith("datapack_metric_")]
+    def _flatten_algo_columns(self, df: pl.DataFrame) -> pl.DataFrame:
+        algo_cols = [col for col in df.columns if col.startswith("algo_")]
 
-    # Find algorithm columns and extract algorithm metrics
-    algo_cols = [col for col in df.columns if col.startswith("algo_")]
+        if not algo_cols:
+            return df
 
-    agg_exprs = [pl.len().alias("count")]
+        expr_list = []
 
-    # Add basic metrics aggregation
-    agg_exprs.extend([pl.col(m).mean().alias(f"avg_{m}") for m in metrics])
+        for col in df.columns:
+            if not col.startswith("algo_"):
+                expr_list.append(pl.col(col))
 
-    # Add datapack metrics aggregation
-    agg_exprs.extend([pl.col(dm).mean().alias(f"avg_{dm}") for dm in datapack_metrics])
-
-    # Add algorithm metrics aggregation
-    # Since algo columns contain dictionaries, we need to extract specific metrics
-    for algo_col in algo_cols:
-        # Extract top1, top3, top5, avg3, avg5, mrr, time from the algorithm dictionary
-        for metric in ["top1", "top3", "top5", "avg3", "avg5", "mrr", "time"]:
-            agg_exprs.append(
-                pl.col(algo_col)
-                .map_elements(
-                    lambda x, m=metric: x.get(m, 0.0) if isinstance(x, dict) else 0.0, return_dtype=pl.Float64
+        algo_fields = ["top1", "top3", "top5", "avg3", "avg5", "mrr", "time"]
+        for algo_col in algo_cols:
+            for field_name in algo_fields:
+                new_col_name = f"{algo_col}_{field_name}"
+                expr_list.append(
+                    pl.col(algo_col)
+                    .map_elements(
+                        lambda x, field=field_name: x.get(field, 0.0) if isinstance(x, dict) else 0.0,
+                        return_dtype=pl.Float64,
+                    )
+                    .alias(new_col_name)
                 )
-                .mean()
-                .alias(f"avg_{algo_col}_{metric}")
+
+        try:
+            flattened_df = df.select(expr_list)
+            return flattened_df
+        except Exception as e:
+            logger.error(f"Warning: Failed to flatten algo columns, excluding them: {e}")
+            non_algo_cols = [col for col in df.columns if not col.startswith("algo_")]
+            return df.select(non_algo_cols)
+
+    def custom_sql(self, sql_query: str) -> pl.DataFrame:
+        result_arrow = self.conn.execute(sql_query).arrow()
+        result_df = pl.from_arrow(result_arrow)
+
+        if not isinstance(result_df, pl.DataFrame):
+            raise TypeError(f"Expected DataFrame, got {type(result_df)}")
+
+        return result_df
+
+    def _group_by_analysis(self, group_column_sql: str, group_column_name: str) -> pl.DataFrame:
+        return self._multi_group_by_analysis([group_column_sql], [group_column_name])
+
+    def _multi_group_by_analysis(self, group_columns_sql: list[str], group_column_names: list[str]) -> pl.DataFrame:
+        if len(group_columns_sql) != len(group_column_names):
+            raise ValueError("group_columns_sql and group_column_names must have the same length")
+
+        algo_columns = self._get_algo_columns()
+
+        algo_aggregations = []
+        for col in algo_columns:
+            if col.endswith(("_top1", "_top3", "_top5", "_mrr", "_time")):
+                col_parts = col.replace("algo_", "").rsplit("_", 1)
+                if len(col_parts) == 2:
+                    algo_name, metric_type = col_parts
+                    alias = f"avg_{algo_name}_{metric_type}"
+                    algo_aggregations.append(f"AVG({col}) as {alias}")
+
+        algo_agg_sql = ",\n            ".join(algo_aggregations)
+
+        select_columns = []
+        for i, (sql_expr, col_name) in enumerate(zip(group_columns_sql, group_column_names)):
+            select_columns.append(f"{sql_expr} as {col_name}")
+
+        select_clause = ",\n            ".join(select_columns)
+        group_clause = ",\n            ".join(group_column_names)
+
+        base_sql = f"""
+        SELECT 
+            {select_clause},
+            COUNT(*) as count"""
+
+        if algo_agg_sql:
+            sql = (
+                base_sql
+                + ",\n            "
+                + algo_agg_sql
+                + f"""
+        FROM data 
+        GROUP BY {group_clause}
+        ORDER BY count DESC
+        """
+            )
+        else:
+            sql = (
+                base_sql
+                + f"""
+        FROM data 
+        GROUP BY {group_clause}
+        ORDER BY count DESC
+        """
             )
 
-    stats = df.group_by(group_cols).agg(agg_exprs)
-    return stats
+        raw_result = self.custom_sql(sql)
 
+        return self._post_process_multi_analysis_results(raw_result, group_column_names)
 
-def _add_grouping_columns(df: pl.DataFrame, group_specs: list[GroupSpec]) -> pl.DataFrame:
-    for spec in group_specs:
-        group_col_name = f"group_{spec['column']}"
+    def _post_process_multi_analysis_results(
+        self, raw_result: pl.DataFrame, group_column_names: list[str]
+    ) -> pl.DataFrame:
+        if raw_result.height == 0:
+            return pl.DataFrame()
 
-        if spec["type"] == "categorical":
-            if spec["column"] in df.columns:
-                df = df.with_columns(pl.col(spec["column"]).cast(pl.String).alias(group_col_name))
-        elif spec["type"] == "numeric_bins":
-            if spec["column"] in df.columns:
-                df = _add_numeric_bins(df, spec["column"], spec.get("bins"), group_col_name)
+        algo_cols = [col for col in raw_result.columns if col.startswith("avg_")]
 
-    return df
+        if not algo_cols:
+            return raw_result
 
+        algorithms = set()
+        metrics = set()
 
-def _add_numeric_bins(
-    df: pl.DataFrame,
-    numeric_col: str,
-    bins: list[float] | None = None,
-    bin_col_name: str = "numeric_bin",
-) -> pl.DataFrame:
-    if df.height == 0 or numeric_col not in df.columns:
-        return df
+        for col in algo_cols:
+            parts = col.replace("avg_", "").rsplit("_", 1)
+            if len(parts) == 2:
+                algo_name, metric_type = parts
+                algorithms.add(algo_name)
+                metrics.add(metric_type)
 
-    # Filter out null values for binning calculation but preserve original df structure
-    df_filtered = df.filter(pl.col(numeric_col).is_not_null())
+        algorithms = sorted(list(algorithms))
+        metrics = sorted(list(metrics))
 
-    if df_filtered.height == 0:
-        return df
+        result_rows = []
 
-    # Create bins
-    if bins is None:
-        # Automatic binning - create 5 bins based on data distribution
-        min_val = df_filtered[numeric_col].min()
-        max_val = df_filtered[numeric_col].max()
+        for row in raw_result.iter_rows(named=True):
+            count = row["count"]
 
-        if min_val is None or max_val is None:
-            return df
+            for algo in algorithms:
+                algo_row = {"count": count, "algorithm": algo}
 
-        try:
-            # Handle different data types
-            if isinstance(min_val, (int, float)):
-                min_val_float = float(min_val)
-            else:
-                min_val_float = float(str(min_val))
+                for group_col in group_column_names:
+                    algo_row[group_col] = row[group_col]
 
-            if isinstance(max_val, (int, float)):
-                max_val_float = float(max_val)
-            else:
-                max_val_float = float(str(max_val))
-        except (ValueError, TypeError):
-            return df
+                for metric in metrics:
+                    col_name = f"avg_{algo}_{metric}"
+                    value = row.get(col_name, None)
+                    algo_row[metric] = value
 
-        if min_val_float == max_val_float:
-            bins = [min_val_float - 0.5, min_val_float + 0.5]
+                result_rows.append(algo_row)
+
+        if result_rows:
+            result_df = pl.DataFrame(result_rows)
+
+            sort_columns = group_column_names + ["algorithm"]
+            result_df = result_df.sort(sort_columns)
+            return result_df
         else:
-            bins = np.linspace(min_val_float, max_val_float, 6).tolist()  # 5 bins
+            return pl.DataFrame()
 
-    if bins is None or len(bins) < 2:
-        return df
+    def _post_process_analysis_results(self, raw_result: pl.DataFrame, group_column_name: str) -> pl.DataFrame:
+        if raw_result.height == 0:
+            return pl.DataFrame()
 
-    # Create bin labels
-    bin_labels = []
-    for i in range(len(bins) - 1):
-        if i == len(bins) - 2:  # Last bin - include upper bound
-            bin_labels.append(f"[{bins[i]:.1f}, {bins[i + 1]:.1f}]")
+        algo_cols = [col for col in raw_result.columns if col.startswith("avg_")]
+
+        if not algo_cols:
+            return raw_result
+
+        algorithms = set()
+        metrics = set()
+
+        for col in algo_cols:
+            parts = col.replace("avg_", "").rsplit("_", 1)
+            if len(parts) == 2:
+                algo_name, metric_type = parts
+                algorithms.add(algo_name)
+                metrics.add(metric_type)
+
+        algorithms = sorted(list(algorithms))
+        metrics = sorted(list(metrics))
+
+        result_rows = []
+
+        for row in raw_result.iter_rows(named=True):
+            group_value = row[group_column_name]
+            count = row["count"]
+
+            for algo in algorithms:
+                algo_row = {group_column_name: group_value, "count": count, "algorithm": algo}
+
+                for metric in metrics:
+                    col_name = f"avg_{algo}_{metric}"
+                    value = row.get(col_name, None)
+                    algo_row[metric] = value
+
+                result_rows.append(algo_row)
+
+        if result_rows:
+            result_df = pl.DataFrame(result_rows)
+            result_df = result_df.sort([group_column_name, "algorithm"])
+            return result_df
         else:
-            bin_labels.append(f"[{bins[i]:.1f}, {bins[i + 1]:.1f})")
+            return pl.DataFrame()
 
-    def assign_bin(value):
-        """Assign a value to the appropriate bin."""
-        if value is None:
-            return None
+    def fault_category_analysis(self) -> pl.DataFrame:
+        return self._group_by_analysis("fault_category", "fault_category")
 
+    def fault_type_analysis(self) -> pl.DataFrame:
+        return self._group_by_analysis("fault_type", "fault_type")
+
+    def sdd_analysis(self) -> pl.DataFrame:
+        group_sql = """CASE 
+                WHEN "SDD@1" = 0 THEN 'SDD@1 = 0'
+                ELSE 'SDD@1 > 0'
+            END"""
+        return self._group_by_analysis(group_sql, "sdd_category")
+
+    def fault_category_and_sdd_analysis(self) -> pl.DataFrame:
+        group_sql_list = [
+            "fault_category",
+            """CASE 
+                WHEN "SDD@1" = 0 THEN 'SDD@1 = 0'
+                ELSE 'SDD@1 > 0'
+            END""",
+        ]
+        group_names = ["fault_category", "sdd_category"]
+        return self._multi_group_by_analysis(group_sql_list, group_names)
+
+    def fault_type_and_sdd_analysis(self) -> pl.DataFrame:
+        group_sql_list = [
+            "fault_type",
+            """CASE 
+                WHEN "SDD@1" = 0 THEN 'SDD@1 = 0'
+                ELSE 'SDD@1 > 0'
+            END""",
+        ]
+        group_names = ["fault_type", "sdd_category"]
+        return self._multi_group_by_analysis(group_sql_list, group_names)
+
+    def _get_algo_columns(self) -> list[str]:
         try:
-            # Convert to float for comparison
-            if isinstance(value, (int, float)):
-                val_float = float(value)
-            else:
-                val_float = float(str(value))
-        except (ValueError, TypeError):
-            return None
+            columns_result = self.conn.execute("PRAGMA table_info('data')").fetchdf()
+            algo_columns = [row["name"] for _, row in columns_result.iterrows() if row["name"].startswith("algo_")]
+            return algo_columns
+        except Exception as e:
+            logger.error(f"Failed to get algorithm columns: {e}")
+            return []
 
-        for i in range(len(bins) - 1):
-            if i == len(bins) - 2:  # Last bin - include upper bound
-                if bins[i] <= val_float <= bins[i + 1]:
-                    return bin_labels[i]
-            else:
-                if bins[i] <= val_float < bins[i + 1]:
-                    return bin_labels[i]
-
-        return None
-
-    # Add bin column to original dataframe (not just filtered one)
-    df_with_bins = df.with_columns(
-        pl.col(numeric_col).map_elements(assign_bin, return_dtype=pl.String).alias(bin_col_name)
-    )
-
-    return df_with_bins
+    def close(self):
+        self.conn.close()

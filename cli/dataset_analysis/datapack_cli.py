@@ -1,13 +1,12 @@
 #!/usr/bin/env -S uv run -s
 from pathlib import Path
 
+import polars as pl
 from dotenv import load_dotenv
 
 from rcabench_platform.v2.analysis.aggregation import (
-    CategoricalGroupSpec,
-    NumericBinsGroupSpec,
+    DuckDBAggregator,
     aggregate,
-    get_stats_by_group,
 )
 from rcabench_platform.v2.analysis.algo_perf_vis import algo_perf_by_groups, algo_perf_scatter_by_fault_category
 from rcabench_platform.v2.analysis.data_prepare import (
@@ -16,9 +15,10 @@ from rcabench_platform.v2.analysis.data_prepare import (
 )
 from rcabench_platform.v2.cli.main import app, logger
 from rcabench_platform.v2.utils.dataframe import format_dataframe
+from rcabench_platform.v2.utils.serde import save_parquet
 
 DEFAULT_NAMESPACE = "ts"
-ALGORITHMS = ["baro", "simplerca", "microdig", "traceback", "microhecl", "microrank", "microrca", "shapleyiq", "ton"]
+ALGORITHMS = ["baro", "simplerca", "microdig", "microhecl", "microrank", "microrca", "shapleyiq", "ton"]
 DEGREES = ["absolute_anomaly"]  # , "may_anomaly", "no_anomaly"]
 METRICS = ["SDD@1", "CPL", "RootServiceDegree"]
 
@@ -45,24 +45,43 @@ def visualize(dataset_id: int | None = None, project_id: int | None = None) -> N
             namespace=DEFAULT_NAMESPACE,
         )
 
-        ft = CategoricalGroupSpec(type="categorical", column="fault_type")
-        fc = CategoricalGroupSpec(type="categorical", column="fault_category")
-        sdd = NumericBinsGroupSpec(type="numeric_bins", column="SDD@1", bins=[0, 1, 10])
+        df = aggregate(count_items)
+        save_parquet(df, path="temp/algo/aggregated_result.parquet")
 
-        df = aggregate(count_items, group_specs=[ft, fc, sdd])
-        fc_df = get_stats_by_group(df, [fc, sdd])
-        ft_df = get_stats_by_group(df, [ft])
 
-        algo_perf_scatter_by_fault_category(fc_df, Path("temp/algo/fault_type_scatter.png"))
-        algo_perf_by_groups(fc_df, [fc, sdd], Path(f"temp/algo/fault_category_{degree}.png"))
-        algo_perf_by_groups(ft_df, [ft], Path(f"temp/algo/fault_type_{degree}.png"))
+@app.command()
+def analysis():
+    df = pl.read_parquet("temp/algo/aggregated_result.parquet")
 
-        format_dataframe(df, "html", output_file=f"temp/res_{degree}_raw.html")
-        format_dataframe(fc_df, "html", output_file=f"temp/algo/fault_category_{degree}.html")
-        format_dataframe(ft_df, "html", output_file=f"temp/algo/fault_type_{degree}.html")
-        format_dataframe(df, "csv", output_file=f"temp/res_{degree}_raw.csv")
-        format_dataframe(fc_df, "csv", output_file=f"temp/algo/fault_category_{degree}.csv")
-        format_dataframe(ft_df, "csv", output_file=f"temp/algo/fault_type_{degree}.csv")
+    aggregator = DuckDBAggregator(df)
+
+    try:
+        fca_df = aggregator.fault_category_analysis()
+        format_dataframe(fca_df, "html", output_file="temp/algo/fault_category_analysis.html")
+        algo_perf_by_groups(fca_df, output_file=Path("temp/algo/fault_category_analysis.png"))
+
+        fta_df = aggregator.fault_type_analysis()
+        format_dataframe(fta_df, "html", output_file="temp/algo/fault_type_analysis.html")
+        algo_perf_by_groups(fta_df, output_file=Path("temp/algo/fault_type_analysis.png"))
+
+        sdd_df = aggregator.sdd_analysis()
+        format_dataframe(sdd_df, "html", output_file="temp/algo/sdd_analysis.html")
+        algo_perf_by_groups(sdd_df, output_file=Path("temp/algo/sdd_analysis.png"))
+
+        fcasdd_df = aggregator.fault_category_and_sdd_analysis()
+        format_dataframe(
+            fcasdd_df,
+            "html",
+            output_file="temp/algo/fault_category_and_sdd_analysis.html",
+        )
+        algo_perf_by_groups(fcasdd_df, output_file=Path("temp/algo/fault_category_and_sdd_analysis.png"))
+        algo_perf_scatter_by_fault_category(
+            fcasdd_df, output_file=Path("temp/algo/fault_category_and_sdd_analysis_scatter.png")
+        )
+
+        # aggregator.print_schema()
+    finally:
+        aggregator.close()
 
 
 if __name__ == "__main__":
