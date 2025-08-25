@@ -218,8 +218,12 @@ def calculate_sampler_performance(
     conclusion_path = input_folder / "conclusion.parquet"
     if conclusion_path.exists():
         detector_df = pl.read_parquet(conclusion_path)
-        if len(detector_df) > 0 and "SpanName" in detector_df.columns:
-            detector_spans = set(detector_df["SpanName"].to_list())
+        if len(detector_df) > 0 and "SpanName" in detector_df.columns and "Issues" in detector_df.columns:
+            # Only include spans that have actual issues (Issues column is not empty or "{}")
+            detector_spans_df = detector_df.filter(
+                (pl.col("Issues").is_not_null()) & (pl.col("Issues") != "{}") & (pl.col("Issues") != "")
+            )
+            detector_spans = set(detector_spans_df["SpanName"].to_list())
 
     # Join sampled traces with entry information
     sampled_trace_ids = set(sampled_df["trace_id"].to_list())
