@@ -8,8 +8,8 @@ from pathlib import Path
 class SamplingMode(Enum):
     """Sampling mode enumeration."""
 
-    ONLINE = "online"  # No sampling rate limit, return all trace_ids with scores
-    OFFLINE = "offline"  # Limited by sampling rate, sort by score and keep top traces
+    ONLINE = "online"  # Flexible sampling: uses sampling rate as guideline but algorithm can adjust
+    OFFLINE = "offline"  # Strict sampling: limited by exact sampling rate
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
@@ -62,8 +62,8 @@ class TraceSampler(ABC):
         Returns:
             List of SampleResult containing trace_id and sample_score.
 
-            For online mode: Returns all traces with their scores, no limit on count.
-            For offline mode: Returns traces sorted by score, limited by sampling_rate.
+            For online mode: Uses sampling rate as guideline but algorithm can adjust count.
+            For offline mode: Returns traces sorted by score, strictly limited by sampling_rate.
         """
         ...
 
