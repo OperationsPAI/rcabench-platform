@@ -14,6 +14,44 @@ The algorithm arguments contain
 
 The algorithm answer is a predicted root cause with level, name and rank.
 
+## Trace Sampler Specification
+
+An instance of a trace sampler class is initialized with its configuration (hyperparameters).
+
+The instance takes sampler arguments and returns a list of sample results.
+
+The sampler arguments contain
++ dataset name
++ datapack name
++ input directory containing the data files of the datapack
++ output directory for storing intermediate results
++ sampling rate (float between 0.0 and 1.0)
++ sampling mode (online or offline)
+
+The sample result contains a trace_id and its sample_score (weight for sampling).
+
+### Sampling Modes
+
++ **Online Mode**: Returns all traces with their sampling scores, no limit on count
++ **Offline Mode**: Limited by sampling rate, sorts traces by score and keeps top traces
+
+### Performance Metrics
+
+Sampler performance is evaluated using the following metrics:
+
++ **Controllability (RoD)**: Rate of Deviation = $|((N_s - N_e) / N_e)|$
+  - $N_s$: actual sampled count
+  - $N_e$: expected sampled count
++ **Comprehensiveness (CR)**: Coverage Rate = $N_t' / N_t$
+  - $N_t$': number of sampled trace types (entry spans)
+  - $N_t$: total number of trace types
++ **Proportion (PRO)**: Three proportion metrics
+  - PRO_anomaly: proportion of detector-flagged spans sampled
+  - PRO_rare: proportion of rare entry spans sampled (< 5% frequency)
+  - PRO_common: proportion of common but non-detector spans sampled
++ **Runtime**: Algorithm runtime per span in millisecondsa
++ **Actual Sampling Rate**: Achieved sampling rate
+
 ## Data Specification
 
 ### Dataset and Datapack
