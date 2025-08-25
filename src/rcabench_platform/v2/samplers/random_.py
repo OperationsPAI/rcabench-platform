@@ -33,6 +33,9 @@ class RandomSampler(TraceSampler):
 
         Returns:
             List of SampleResult with random scores for traces.
+
+            Online mode: Each trace is independently sampled based on threshold.
+            Offline mode: Fixed number of traces selected by highest scores.
         """
         # Set random seed if provided
         if self.seed is not None:
@@ -62,15 +65,22 @@ class RandomSampler(TraceSampler):
             sample_score = random.random()  # Random score between 0.0 and 1.0
             all_results.append(SampleResult(trace_id=trace_id, sample_score=sample_score))
 
-        # Sort by score (higher scores first)
-        all_results.sort(key=lambda x: x.sample_score, reverse=True)
-
         # Apply sampling mode
         if args.mode == SamplingMode.ONLINE:
-            # Online mode: return all traces with their scores
-            return all_results
+            # Online mode: threshold-based sampling
+            # Each trace is independently decided whether to sample based on its score vs threshold
+            threshold = 1.0 - args.sampling_rate  # Higher sampling_rate = lower threshold
+            sampled_results = []
+            for result in all_results:
+                if result.sample_score > threshold:
+                    sampled_results.append(result)
+            # Sort by score (higher scores first) for consistency
+            sampled_results.sort(key=lambda x: x.sample_score, reverse=True)
+            return sampled_results
         elif args.mode == SamplingMode.OFFLINE:
-            # Offline mode: limit by sampling rate
+            # Offline mode: strict sampling rate limit
+            # Sort by score and take top N traces
+            all_results.sort(key=lambda x: x.sample_score, reverse=True)
             total_traces = len(all_results)
             target_count = int(total_traces * args.sampling_rate)
             return all_results[:target_count]
