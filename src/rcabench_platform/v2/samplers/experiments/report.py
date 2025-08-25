@@ -103,9 +103,9 @@ def generate_sampler_perf_report(
                 pl.col("comprehensiveness").mean().alias("avg_comprehensiveness"),
                 pl.col("proportion_anomaly").mean().alias("avg_proportion_anomaly"),
                 pl.col("proportion_rare").mean().alias("avg_proportion_rare"),
-                pl.col("proportion_detector").mean().alias("avg_proportion_detector"),
+                pl.col("proportion_common").mean().alias("avg_proportion_common"),
                 pl.col("actual_sampling_rate").mean().alias("avg_actual_sampling_rate"),
-                pl.col("runtime_per_span_ns").mean().alias("avg_runtime_per_span_ns"),
+                pl.col("runtime_per_span_ms").mean().alias("avg_runtime_per_span_ms"),
                 # Also calculate std dev for key metrics
                 pl.col("controllability").std().alias("std_controllability"),
                 pl.col("comprehensiveness").std().alias("std_comprehensiveness"),
@@ -137,9 +137,9 @@ def generate_sampler_perf_report(
             "avg_comprehensiveness",
             "avg_proportion_anomaly",
             "avg_proportion_rare",
-            "avg_proportion_detector",
+            "avg_proportion_common",
             "avg_actual_sampling_rate",
-            "avg_runtime_per_span_ns",
+            "avg_runtime_per_span_ms",
         ]
     )
 
