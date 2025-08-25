@@ -1,0 +1,90 @@
+from typing import Annotated
+
+import typer
+
+from ..datasets.spec import get_dataset_list
+from ..logging import logger, timeit
+from ..samplers.experiments.batch import run_sampler_batch
+from ..samplers.experiments.report import generate_sampler_perf_report
+from ..samplers.experiments.single import run_sampler_single
+from ..samplers.spec import SamplingMode, global_sampler_registry
+
+app = typer.Typer()
+
+
+@app.command()
+def show_samplers():
+    """Show available sampler algorithms."""
+    registry = global_sampler_registry()
+    logger.info(f"Available samplers ({len(registry)}):")
+    for name in registry:
+        logger.info(f"    {name}")
+
+
+@app.command()
+@timeit()
+def single(
+    sampler: str,
+    dataset: str,
+    datapack: str,
+    sampling_rate: float = 0.1,
+    mode: SamplingMode = SamplingMode.OFFLINE,
+    clear: bool = False,
+    skip_finished: bool = True,
+):
+    """Run a single sampler on a datapack."""
+    run_sampler_single(
+        sampler=sampler,
+        dataset=dataset,
+        datapack=datapack,
+        sampling_rate=sampling_rate,
+        mode=mode,
+        clear=clear,
+        skip_finished=skip_finished,
+    )
+
+
+@app.command()
+@timeit()
+def batch(
+    samplers: Annotated[list[str], typer.Option("-s", "--sampler")],
+    datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
+    sampling_rates: Annotated[list[float], typer.Option("-r", "--rate")] = [0.1],
+    modes: Annotated[list[SamplingMode], typer.Option("-m", "--mode")] = [SamplingMode.OFFLINE],
+    sample_datapacks: int | None = None,
+    clear: bool = False,
+    skip_finished: bool = True,
+    use_cpus: int | None = None,
+    ignore_exceptions: bool = True,
+):
+    """Run multiple samplers on multiple datasets."""
+    run_sampler_batch(
+        samplers=samplers,
+        datasets=datasets,
+        sampling_rates=sampling_rates,
+        modes=modes,
+        sample_datapacks=sample_datapacks,
+        clear=clear,
+        skip_finished=skip_finished,
+        use_cpus=use_cpus,
+        ignore_exceptions=ignore_exceptions,
+    )
+
+
+@app.command()
+@timeit()
+def perf_report(
+    datasets: Annotated[list[str], typer.Option("-d", "--dataset")],
+    samplers: Annotated[list[str], typer.Option("-s", "--sampler")] | None = None,
+    sampling_rates: Annotated[list[float], typer.Option("-r", "--rate")] | None = None,
+    modes: Annotated[list[SamplingMode], typer.Option("-m", "--mode")] | None = None,
+    warn_missing: bool = False,
+):
+    """Generate performance report for samplers."""
+    generate_sampler_perf_report(
+        datasets=datasets,
+        samplers=samplers,
+        sampling_rates=sampling_rates,
+        modes=modes,
+        warn_missing=warn_missing,
+    )
