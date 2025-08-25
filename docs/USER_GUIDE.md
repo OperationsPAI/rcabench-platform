@@ -115,6 +115,37 @@ rca submit-execution \
   --env "PARAM2=value2"
 ```
 
+#### Trace Sampling
+
+```bash
+# List available trace samplers
+python main.py sample show-samplers
+
+# Run a single sampler on a datapack
+python main.py sample single \
+  --sampler "random" \
+  --dataset "my-dataset" \
+  --datapack "my-datapack" \
+  --sampling-rate 0.1 \
+  --mode offline
+
+# Run multiple samplers in batch
+python main.py sample batch \
+  --sampler "random" \
+  --dataset "my-dataset" \
+  --rate 0.1 \
+  --rate 0.2 \
+  --mode offline \
+  --mode online
+
+# Generate sampling performance report
+python main.py sample perf-report \
+  --dataset "my-dataset" \
+  --sampler "random" \
+  --rate 0.1 \
+  --mode offline
+```
+
 #### Monitoring and Analysis
 
 ```bash
@@ -238,6 +269,66 @@ registry = global_algorithm_registry()
 registry["my-custom-algorithm"] = MyCustomAlgorithm
 ```
 
+### Developing Custom Trace Samplers
+
+```python
+from pathlib import Path
+from rcabench_platform.v2.samplers.spec import TraceSampler, SamplerArgs, SampleResult, SamplingMode
+
+class MyCustomSampler(TraceSampler):
+    def needs_cpu_count(self) -> int | None:
+        # Return number of CPU cores needed, or None for all available cores
+        return 1
+    
+    def __call__(self, args: SamplerArgs) -> list[SampleResult]:
+        # Implement your sampling logic here
+        # args.dataset: dataset name
+        # args.datapack: datapack name
+        # args.input_folder: Path to input data
+        # args.output_folder: Path to save results
+        # args.sampling_rate: Target sampling rate (0.0 to 1.0)
+        # args.mode: SamplingMode.ONLINE or SamplingMode.OFFLINE
+        
+        # Load traces from normal_traces.parquet and abnormal_traces.parquet
+        import polars as pl
+        
+        normal_traces_lf = pl.scan_parquet(args.input_folder / "normal_traces.parquet")
+        abnormal_traces_lf = pl.scan_parquet(args.input_folder / "abnormal_traces.parquet")
+        
+        # Get unique trace_ids
+        combined_traces_lf = pl.concat([
+            normal_traces_lf.select("trace_id"),
+            abnormal_traces_lf.select("trace_id")
+        ])
+        unique_traces = combined_traces_lf.unique().collect()
+        trace_ids = unique_traces["trace_id"].to_list()
+        
+        # Implement your sampling strategy
+        results = []
+        for trace_id in trace_ids:
+            # Calculate sample score based on your algorithm
+            sample_score = 0.5  # Example: constant score
+            results.append(SampleResult(trace_id=trace_id, sample_score=sample_score))
+        
+        # Apply sampling mode
+        if args.mode == SamplingMode.ONLINE:
+            # Online mode: return all traces with scores
+            return results
+        elif args.mode == SamplingMode.OFFLINE:
+            # Offline mode: limit by sampling rate
+            results.sort(key=lambda x: x.sample_score, reverse=True)
+            target_count = int(len(results) * args.sampling_rate)
+            return results[:target_count]
+        
+        return results
+
+# Register your sampler
+from rcabench_platform.v2.samplers.spec import global_sampler_registry
+
+registry = global_sampler_registry()
+registry["my-custom-sampler"] = MyCustomSampler
+```
+
 ### Using Built-in Algorithms
 
 ```python
@@ -262,6 +353,33 @@ args = AlgorithmArgs(
 results = random_algo(args)
 for result in results:
     print(f"Level: {result.level}, Name: {result.name}, Rank: {result.rank}")
+```
+
+### Using Built-in Samplers
+
+```python
+from rcabench_platform.v2.samplers.random_ import RandomSampler
+from rcabench_platform.v2.samplers.spec import SamplerArgs, SamplingMode
+from pathlib import Path
+
+# Use the random sampler
+random_sampler = RandomSampler(seed=42)  # Optional seed for reproducibility
+print(f"Random sampler needs {random_sampler.needs_cpu_count()} CPU cores")
+
+# Create sampler arguments
+args = SamplerArgs(
+    dataset="my-dataset",
+    datapack="my-datapack",
+    input_folder=Path("/path/to/input"),
+    output_folder=Path("/path/to/output"),
+    sampling_rate=0.1,  # 10% sampling rate
+    mode=SamplingMode.OFFLINE
+)
+
+# Run the sampler
+sample_results = random_sampler(args)
+for result in sample_results:
+    print(f"Trace ID: {result.trace_id}, Score: {result.sample_score}")
 ```
 
 ### Working with Metrics
@@ -289,6 +407,42 @@ comparison_metrics = get_multi_algorithms_metrics_by_dataset(
     tag="comparison-experiment"
 )
 print(f"Comparison metrics: {comparison_metrics}")
+```
+
+### Working with Sampler Performance
+
+```python
+from rcabench_platform.v2.samplers.experiments import (
+    run_sampler_single,
+    run_sampler_batch,
+    generate_sampler_perf_report
+)
+from rcabench_platform.v2.samplers.spec import SamplingMode
+
+# Run a single sampler experiment
+run_sampler_single(
+    sampler="random",
+    dataset="my-dataset",
+    datapack="my-datapack",
+    sampling_rate=0.1,
+    mode=SamplingMode.OFFLINE
+)
+
+# Run batch sampler experiments
+run_sampler_batch(
+    samplers=["random"],
+    datasets=["my-dataset"],
+    sampling_rates=[0.1, 0.2],
+    modes=[SamplingMode.OFFLINE, SamplingMode.ONLINE]
+)
+
+# Generate performance report
+generate_sampler_perf_report(
+    datasets=["my-dataset"],
+    samplers=["random"],
+    sampling_rates=[0.1],
+    modes=[SamplingMode.OFFLINE]
+)
 ```
 
 ### Working with Configuration
@@ -410,6 +564,35 @@ rca metrics \
   --tag "production-test"
 ```
 
+### 5. Trace Sampling Evaluation
+
+```bash
+# Run sampling experiments on multiple datasets
+python main.py sample batch \
+  --sampler "random" \
+  --dataset "dataset1" \
+  --dataset "dataset2" \
+  --rate 0.05 \
+  --rate 0.1 \
+  --rate 0.2 \
+  --mode offline
+
+# Generate comprehensive sampling performance report
+python main.py sample perf-report \
+  --dataset "dataset1" \
+  --dataset "dataset2" \
+  --sampler "random"
+
+# Compare sampling strategies
+python main.py sample batch \
+  --sampler "random" \
+  --sampler "my-custom-sampler" \
+  --dataset "test-dataset" \
+  --rate 0.1 \
+  --mode offline \
+  --mode online
+```
+
 ## Advanced Topics
 
 ### Custom Docker Images
@@ -458,6 +641,38 @@ The platform includes SDG (Service Dependency Graph) functionality accessible vi
 
 ```bash
 python main.py sdg --help
+```
+
+### Trace Sampling Features
+
+The platform provides comprehensive trace sampling capabilities for evaluating sampling algorithms:
+
+#### Sampling Modes
+
+- **Online Mode**: Returns all traces with their sampling scores, no limit on count
+- **Offline Mode**: Limited by sampling rate, sorts traces by score and keeps top traces
+
+#### Performance Metrics
+
+The sampling framework calculates the following performance metrics:
+
+- **Controllability (RoD)**: Rate of Deviation - measures sampling rate accuracy
+- **Comprehensiveness (CR)**: Coverage Rate - measures trace type diversity  
+- **Proportion Metrics (PRO)**: Three types of proportion analysis:
+  - `proportion_anomaly`: Proportion of detector-flagged spans in abnormal traces only
+  - `proportion_rare`: Proportion of rare entry spans sampled (< 5% frequency)
+  - `proportion_common`: Proportion of common spans (including detector spans in normal traces)
+- **Runtime Performance**: Runtime per span in milliseconds
+- **Actual Sampling Rate**: Achieved vs. target sampling rate
+
+#### Output Structure
+
+Sampling results are stored in:
+```
+{output}/sampled/{dataset}/{datapack}/{sampler}_{sampling_rate}_{mode}/
+├── online.parquet or offline.parquet  # Sampling results
+├── perf.parquet                        # Performance metrics
+└── .finished                          # Completion marker
 ```
 
 ## Related Documentation
