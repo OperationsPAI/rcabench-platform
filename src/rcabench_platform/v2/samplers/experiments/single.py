@@ -1,6 +1,7 @@
 """Single sampler execution module."""
 
 import dataclasses
+import os
 import time
 import traceback
 from pathlib import Path
@@ -98,6 +99,9 @@ def run_sampler_single(
     # Save performance metrics
     perf_df = pl.DataFrame([perf_metrics])
     save_parquet(perf_df, path=output_folder / "perf.parquet")
+
+    # Save sampled trace files for downstream RCA algorithms
+    _save_sampled_traces(input_folder, output_folder, results_df)
 
     finished.touch()
 
@@ -259,3 +263,90 @@ def calculate_sampler_performance(
         "actual_sampling_rate": actual_sampling_rate,
         "runtime_per_span_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
     }
+
+
+def _save_sampled_traces(input_folder: Path, output_folder: Path, sampled_df: pl.DataFrame) -> None:
+    """
+    Save sampled trace files and create links to other files for downstream RCA algorithms.
+
+    Args:
+        input_folder: Original datapack folder
+        output_folder: Sampler output folder
+        sampled_df: DataFrame containing sampled trace IDs
+    """
+    if len(sampled_df) == 0:
+        logger.warning("No traces to save - sampled dataframe is empty")
+        return
+
+    sampled_trace_ids = set(sampled_df["trace_id"].to_list())
+
+    # Load original trace files
+    normal_traces_path = input_folder / "normal_traces.parquet"
+    abnormal_traces_path = input_folder / "abnormal_traces.parquet"
+
+    if normal_traces_path.exists():
+        normal_traces_df = pl.read_parquet(normal_traces_path)
+        sampled_normal_df = normal_traces_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+        if len(sampled_normal_df) > 0:
+            save_parquet(sampled_normal_df, path=output_folder / "normal_traces.parquet")
+            unique_traces = sampled_normal_df["trace_id"].n_unique()
+            logger.info(f"Saved {len(sampled_normal_df)} normal spans from {unique_traces} unique traces")
+        else:
+            # Create empty parquet file with correct schema
+            empty_df = pl.DataFrame(schema=normal_traces_df.schema)
+            save_parquet(empty_df, path=output_folder / "normal_traces.parquet")
+            logger.info("Saved empty normal_traces.parquet")
+
+    if abnormal_traces_path.exists():
+        abnormal_traces_df = pl.read_parquet(abnormal_traces_path)
+        sampled_abnormal_df = abnormal_traces_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+        if len(sampled_abnormal_df) > 0:
+            save_parquet(sampled_abnormal_df, path=output_folder / "abnormal_traces.parquet")
+            unique_traces = sampled_abnormal_df["trace_id"].n_unique()
+            logger.info(f"Saved {len(sampled_abnormal_df)} abnormal spans from {unique_traces} unique traces")
+        else:
+            # Create empty parquet file with correct schema
+            empty_df = pl.DataFrame(schema=abnormal_traces_df.schema)
+            save_parquet(empty_df, path=output_folder / "abnormal_traces.parquet")
+            logger.info("Saved empty abnormal_traces.parquet")
+
+    # Create symlinks/hardlinks for specific required files
+    required_files = [
+        # JSON files
+        "injection.json",
+        "k8s.json",
+        "env.json",
+        # Metrics files
+        "normal_metrics.parquet",
+        "abnormal_metrics.parquet",
+        "normal_metrics_sum.parquet",
+        "abnormal_metrics_sum.parquet",
+        "normal_metrics_histogram.parquet",
+        "abnormal_metrics_histogram.parquet",
+        # Logs files
+        "normal_logs.parquet",
+        "abnormal_logs.parquet",
+        # Detector conclusion
+        "conclusion.parquet",
+    ]
+
+    for filename in required_files:
+        source_path = input_folder / filename
+        target_path = output_folder / filename
+
+        if source_path.exists() and not target_path.exists():
+            try:
+                # Try to create a hard link first (more efficient)
+                target_path.hardlink_to(source_path)
+                logger.debug(f"Created hard link: {filename}")
+            except (OSError, NotImplementedError):
+                # Fall back to symbolic link if hard link fails
+                try:
+                    target_path.symlink_to(source_path)
+                    logger.debug(f"Created symbolic link: {filename}")
+                except OSError:
+                    # Fall back to copying if symlink also fails
+                    import shutil
+
+                    shutil.copy2(source_path, target_path)
+                    logger.debug(f"Copied file: {filename}")
