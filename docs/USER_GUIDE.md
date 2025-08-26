@@ -115,6 +115,57 @@ rca submit-execution \
   --env "PARAM2=value2"
 ```
 
+#### Local Algorithm Evaluation
+
+For local development and testing, you can run algorithms directly on local datasets using the eval commands:
+
+```bash
+# Run a single algorithm on a datapack
+python main.py eval single nsigma rcabench-train train-1
+
+# Run with sampled data (requires prior sampling)
+python main.py eval single nsigma rcabench-train train-1 \
+  --sampler random \
+  --sampling-rate 0.5 \
+  --sampling-mode ONLINE
+
+# Run multiple algorithms in batch
+python main.py eval batch \
+  --algorithm nsigma \
+  --algorithm baro \
+  --dataset rcabench-train
+
+# Run batch evaluation with sampled data
+python main.py eval batch \
+  --algorithm nsigma \
+  --algorithm baro \
+  --dataset rcabench-train \
+  --sampler random \
+  --sampling-rate 0.5 \
+  --sampling-mode OFFLINE
+
+# Generate performance reports
+python main.py eval perf-report rcabench-train
+
+# Generate reports including sampled data results
+python main.py eval perf-report rcabench-train --include-sampled
+
+# Generate reports excluding sampled data (traditional format)
+python main.py eval perf-report rcabench-train --no-include-sampled
+```
+
+**Sampler Integration with Evaluation:**
+
+When using sampler parameters with eval commands:
+- The algorithm will run on the sampled traces from the specified sampler
+- Input data is read from `{datapack}/sampled/{sampler}_{rate}_{mode}/` directory
+- Output results include sampler metadata for tracking
+- Performance reports can distinguish between sampled and non-sampled results
+
+**Available Sampling Modes:**
+- `ONLINE`: Independent sampling with threshold-based selection
+- `OFFLINE`: Strict top-N sampling based on scores
+
 #### Trace Sampling
 
 ```bash

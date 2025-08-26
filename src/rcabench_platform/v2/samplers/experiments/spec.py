@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from ...config import get_config
+from ...datasets.spec import get_datapack_folder
 from ..spec import SamplingMode
 
 
@@ -12,10 +12,11 @@ def get_sampler_output_folder(
     """
     Get the output folder for sampler results.
 
-    Format: {output}/sampled/{dataset}/{datapack}/{sampler}_{sampling_rate}_{mode}
+    Format: {input_folder}/sampled/{sampler}_{sampling_rate}_{mode}
+    Creates a sampled subdirectory in the datapack's input folder.
     """
-    config = get_config()
+    input_folder = get_datapack_folder(dataset, datapack)
     mode_str = mode.value
     rate_str = f"{sampling_rate:.3f}".rstrip("0").rstrip(".")
     folder_name = f"{sampler}_{rate_str}_{mode_str}"
-    return config.output / "sampled" / dataset / datapack / folder_name
+    return input_folder / "sampled" / folder_name

@@ -23,6 +23,9 @@ def run_batch(
     use_cpus: int | None = None,
     submit_result: bool = False,
     ignore_exceptions: bool = True,
+    sampler: str | None = None,
+    sampling_rate: float | None = None,
+    sampling_mode: str | None = None,
 ):
     registry = global_algorithm_registry()
     for algorithm in algorithms:
@@ -62,6 +65,9 @@ def run_batch(
                         clear=clear,
                         skip_finished=skip_finished,
                         submit_result=submit_result,
+                        sampler=sampler,
+                        sampling_rate=sampling_rate,
+                        sampling_mode=sampling_mode,
                     )
                 )
 
