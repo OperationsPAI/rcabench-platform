@@ -13,6 +13,7 @@ from ...datasets.train_ticket import extract_path
 from ...logging import logger, timeit
 from ...utils.fs import running_mark
 from ...utils.serde import save_parquet
+from ..metrics_sli import copy_metrics_sli_to_sampled, generate_metrics_sli
 from ..spec import SamplerArgs, SamplingMode, global_sampler_registry
 from .spec import get_sampler_output_folder
 
@@ -354,3 +355,11 @@ def _save_sampled_traces(input_folder: Path, output_folder: Path, sampled_df: pl
 
                     shutil.copy2(source_path, target_path)
                     logger.debug(f"Copied file: {filename}")
+
+    # Generate metrics_sli.parquet in the original input folder if it doesn't exist
+    logger.debug("Ensuring metrics_sli.parquet exists in input folder")
+    generate_metrics_sli(input_folder, output_folder=input_folder)
+
+    # Copy metrics_sli.parquet to sampled folder for downstream algorithms
+    logger.debug("Copying metrics_sli.parquet to sampled folder")
+    copy_metrics_sli_to_sampled(input_folder, output_folder)

@@ -2,11 +2,12 @@ from typing import Annotated
 
 import typer
 
-from ..datasets.spec import get_dataset_list
+from ..datasets.spec import get_datapack_folder, get_dataset_list
 from ..logging import logger, timeit
 from ..samplers.experiments.batch import run_sampler_batch
 from ..samplers.experiments.report import generate_sampler_perf_report
 from ..samplers.experiments.single import run_sampler_single
+from ..samplers.metrics_sli import generate_metrics_sli
 from ..samplers.spec import SamplingMode, global_sampler_registry
 
 app = typer.Typer()
@@ -88,3 +89,26 @@ def perf_report(
         modes=modes,
         warn_missing=warn_missing,
     )
+
+
+@app.command()
+@timeit()
+def generate_sli_metrics(
+    dataset: str,
+    datapack: str | None = None,
+):
+    """Generate metrics_sli.parquet for dataset or specific datapack."""
+    if datapack is not None:
+        # Generate for specific datapack
+        input_folder = get_datapack_folder(dataset, datapack)
+        generate_metrics_sli(input_folder)
+    else:
+        # Generate for all datapacks in dataset
+        from ..datasets.spec import get_datapack_list
+
+        datapacks = get_datapack_list(dataset)
+        logger.info(f"Generating metrics_sli.parquet for {len(datapacks)} datapacks in {dataset}")
+
+        for dp in datapacks:
+            input_folder = get_datapack_folder(dataset, dp)
+            generate_metrics_sli(input_folder)
