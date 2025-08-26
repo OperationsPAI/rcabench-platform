@@ -163,8 +163,8 @@ When using sampler parameters with eval commands:
 - Performance reports can distinguish between sampled and non-sampled results
 
 **Available Sampling Modes:**
-- `ONLINE`: Independent sampling with threshold-based selection
-- `OFFLINE`: Strict top-N sampling based on scores
+- `ONLINE`: Independent sampling where each trace decision is made individually using various strategies (threshold-based, probability-based, etc.)
+- `OFFLINE`: Batch sampling that sorts traces by score and selects exactly sampling_rate proportion of traces
 
 #### Trace Sampling
 
@@ -393,10 +393,21 @@ class MyCustomSampler(TraceSampler):
         
         # Apply sampling mode
         if args.mode == SamplingMode.ONLINE:
-            # Online mode: return all traces with scores
-            return results
+            # Online mode: independent sampling strategy
+            # Each trace is independently decided whether to sample
+            # Implementation can vary: threshold-based, probability-based, etc.
+            # Example implementation using threshold:
+            threshold = 1.0 - args.sampling_rate  # Higher sampling_rate = lower threshold
+            sampled_results = []
+            for result in results:
+                if result.sample_score > threshold:
+                    sampled_results.append(result)
+            # Sort by score (higher scores first) for consistency
+            sampled_results.sort(key=lambda x: x.sample_score, reverse=True)
+            return sampled_results
         elif args.mode == SamplingMode.OFFLINE:
-            # Offline mode: limit by sampling rate
+            # Offline mode: strict sampling rate limit
+            # Sort by score and take top N traces
             results.sort(key=lambda x: x.sample_score, reverse=True)
             target_count = int(len(results) * args.sampling_rate)
             return results[:target_count]
@@ -763,8 +774,8 @@ The platform provides comprehensive trace sampling capabilities for evaluating s
 
 #### Sampling Modes
 
-- **Online Mode**: Returns all traces with their sampling scores, no limit on count
-- **Offline Mode**: Limited by sampling rate, sorts traces by score and keeps top traces
+- **Online Mode**: Each trace decision is made independently. The implementation can use various strategies (threshold-based, probability-based, etc.) and the actual sampling rate may vary from the target rate. 
+- **Offline Mode**: Batch sampling that considers all traces together. Typically implemented as top-N selection that sorts all traces by their scores and selects exactly the top `sampling_rate * total_traces` traces. This guarantees the exact sampling rate.
 
 #### Performance Metrics
 
