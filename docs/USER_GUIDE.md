@@ -195,7 +195,37 @@ python main.py sample perf-report \
   --sampler "random" \
   --rate 0.1 \
   --mode offline
+
+# Generate SLI metrics aggregation for RCA algorithms
+python main.py sample generate-sli-metrics my-dataset --datapack my-datapack
+
+# Generate SLI metrics for entire dataset
+python main.py sample generate-sli-metrics my-dataset
 ```
+
+**SLI Metrics Generation:**
+
+The platform automatically generates `metrics_sli.parquet` files that contain aggregated Service Level Indicator (SLI) metrics. These metrics are essential for downstream RCA algorithms that depend on service-level statistics.
+
+**What metrics_sli.parquet contains:**
+- **Time aggregation**: Metrics grouped by minute intervals
+- **Service and span aggregation**: Grouped by service_name and span_name
+- **Duration metrics**: min, max, average, and percentiles (p50, p90, p95, p99)
+- **Count metrics**: total request count and error count per time window
+- **Normalized span names**: Special processing for loadgenerator and ts-ui-dashboard services
+
+**Key features:**
+- Automatically generated during sampling operations
+- Available in both original datapack and sampled subdirectories
+- Uses original (pre-sampling) data to ensure metric accuracy
+- Handles span name normalization for URL path parameters
+- Correctly identifies errors based on status_code == "Error"
+
+**Use cases:**
+- RCA algorithms requiring service-level aggregated metrics
+- Performance analysis and trending
+- Baseline comparison for anomaly detection
+- Service dependency analysis with quantified performance metrics
 
 #### Monitoring and Analysis
 
@@ -431,6 +461,39 @@ args = SamplerArgs(
 sample_results = random_sampler(args)
 for result in sample_results:
     print(f"Trace ID: {result.trace_id}, Score: {result.sample_score}")
+```
+
+### Generating SLI Metrics
+
+```python
+from rcabench_platform.v2.samplers.metrics_sli import generate_metrics_sli, copy_metrics_sli_to_sampled
+from pathlib import Path
+
+# Generate metrics_sli.parquet for a datapack
+input_folder = Path("/path/to/datapack")
+generate_metrics_sli(input_folder)
+
+# Generate with custom output location
+output_folder = Path("/path/to/custom/output")
+generate_metrics_sli(input_folder, output_folder=output_folder)
+
+# Copy metrics_sli.parquet to sampled folder (for RCA algorithm fairness)
+sampled_folder = Path("/path/to/sampled/data")
+copy_metrics_sli_to_sampled(input_folder, sampled_folder)
+
+# Load and use the generated SLI metrics
+import polars as pl
+
+sli_metrics = pl.read_parquet(input_folder / "metrics_sli.parquet")
+print(f"Generated {len(sli_metrics)} SLI metric records")
+
+# Example: Get duration statistics for a specific service
+service_metrics = sli_metrics.filter(
+    pl.col("service_name") == "ts-user-service"
+).select([
+    "time", "span_name", "avg_duration", "duration_p95", 
+    "total_count", "error_count"
+])
 ```
 
 ### Working with Metrics
