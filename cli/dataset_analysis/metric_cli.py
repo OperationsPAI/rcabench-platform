@@ -141,7 +141,7 @@ def batch_metrics(dataset: str, online: bool):
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=4, ensure_ascii=False, default=str)
 
-    logger.info(f"\nBatch results saved to: {output_file}")
+    logger.info(f"Batch results saved to: {output_file}")
 
 
 if __name__ == "__main__":

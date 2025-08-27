@@ -23,9 +23,8 @@ def algo_perf_by_groups(
         return
 
     # Identify group columns (exclude algorithm and metric columns)
-    metric_cols = ["top1", "top3", "top5", "mrr", "time", "avg3", "avg5", "count"]
-    group_cols = [col for col in df.columns if col not in ["algorithm"] + metric_cols]
-
+    metric_cols = ["top1", "top3", "top5", "mrr", "avg3", "avg5"]
+    group_cols = [col for col in df.columns if col not in ["algorithm", "time", "count"] + metric_cols]
     if not group_cols:
         logger.warning("No group columns found in data")
         return
@@ -33,7 +32,7 @@ def algo_perf_by_groups(
     group_title = " × ".join(group_cols)
 
     # Check for metric columns
-    available_metrics = [col for col in ["top1", "top3", "top5", "mrr"] if col in df.columns]
+    available_metrics = [col for col in ["top1", "top3", "top5", "mrr", "avg3", "avg5"] if col in df.columns]
     if not available_metrics:
         logger.warning("No performance metric data found")
         return
@@ -187,6 +186,7 @@ def algo_perf_by_groups(
 
 def algo_perf_scatter_by_fault_category(
     df: pl.DataFrame,
+    k: int,
     output_file: Path | None = None,
 ) -> None:
     if df.height == 0:
@@ -194,7 +194,7 @@ def algo_perf_scatter_by_fault_category(
         return
 
     # Check for required columns in new structure
-    required_cols = ["fault_category", "sdd_category", "algorithm"]
+    required_cols = ["fault_category", f"sdd_k{k}_category", "algorithm"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         logger.warning(f"Missing required columns {missing_cols} in data")
@@ -218,7 +218,7 @@ def algo_perf_scatter_by_fault_category(
     fault_categories = df["fault_category"].unique().to_list()
     fault_categories = sorted([cat for cat in fault_categories if cat is not None])
 
-    sdd_groups = df["sdd_category"].unique().to_list()
+    sdd_groups = df[f"sdd_k{k}_category"].unique().to_list()
     sdd_groups = sorted([sdd for sdd in sdd_groups if sdd is not None])
 
     if not fault_categories or not sdd_groups:
@@ -231,8 +231,15 @@ def algo_perf_scatter_by_fault_category(
     if time_values:
         max_time_overall = max(time_values)
 
-    # Set y-axis maximum as max_time + 1, minimum as 0
-    y_max = max_time_overall + 10 if max_time_overall > 0 else 10
+    # Set y-axis maximum to next order of magnitude for better comparison
+    if max_time_overall > 0:
+        # Calculate the order of magnitude
+        import math
+
+        order_of_magnitude = 10 ** math.ceil(math.log10(max_time_overall))
+        y_max = order_of_magnitude
+    else:
+        y_max = 10
 
     n_rows = len(sdd_groups)
     n_cols = len(fault_categories)
@@ -262,7 +269,9 @@ def algo_perf_scatter_by_fault_category(
             if col_idx == 0:
                 ax.set_ylabel(f"SDD: {sdd_group}", fontsize=9, fontweight="bold")
 
-            group_data = df.filter((pl.col("fault_category") == fault_category) & (pl.col("sdd_category") == sdd_group))
+            group_data = df.filter(
+                (pl.col("fault_category") == fault_category) & (pl.col(f"sdd_k{k}_category") == sdd_group)
+            )
 
             if group_data.height == 0:
                 ax.text(
@@ -329,12 +338,12 @@ def algo_perf_scatter_by_fault_category(
 
             ax.set_xlim(-0.05, 1.05)
 
-            # Use logarithmic scale for y-axis to handle large range of time values
-            ax.set_yscale("log")
-            ax.set_ylim(0.1, y_max)
+            # Use linear scale for y-axis with equal intervals
+            ax.set_yscale("linear")
+            ax.set_ylim(0, y_max)
 
             if col_idx == 0:
-                # Let matplotlib handle the log scale ticks and labels automatically
+                # Let matplotlib handle the linear scale ticks and labels automatically
                 pass
             else:
                 ax.set_yticklabels([])

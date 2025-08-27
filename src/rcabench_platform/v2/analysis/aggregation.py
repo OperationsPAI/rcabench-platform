@@ -89,6 +89,8 @@ def aggregate(items: list[Item]) -> pl.DataFrame:
             "max_trace_length": max(item.trace_length.keys()) if item.trace_length else 0,
             "min_trace_length": min(item.trace_length.keys()) if item.trace_length else 0,
             "SDD@1": item.datapack_metric_values.get("SDD@1"),
+            "SDD@3": item.datapack_metric_values.get("SDD@3"),
+            "SDD@5": item.datapack_metric_values.get("SDD@5"),
             "CPL": item.datapack_metric_values.get("CPL"),
             "RootServiceDegree": item.datapack_metric_values.get("RootServiceDegree"),
         }
@@ -145,7 +147,15 @@ class DuckDBAggregator:
             if not col.startswith("algo_"):
                 expr_list.append(pl.col(col))
 
-        algo_fields = ["top1", "top3", "top5", "avg3", "avg5", "mrr", "time"]
+        algo_fields = [
+            "top1",
+            "top3",
+            "top5",
+            "avg3",
+            "avg5",
+            "mrr",
+            "time",
+        ]
         for algo_col in algo_cols:
             for field_name in algo_fields:
                 new_col_name = f"{algo_col}_{field_name}"
@@ -185,8 +195,10 @@ class DuckDBAggregator:
         algo_columns = self._get_algo_columns()
 
         algo_aggregations = []
+
         for col in algo_columns:
-            if col.endswith(("_top1", "_top3", "_top5", "_mrr", "_time")):
+            if col.endswith(("_top1", "_top3", "_top5", "_avg3", "_avg5", "_mrr", "_time")):
+                # Simple average for these metrics
                 col_parts = col.replace("algo_", "").rsplit("_", 1)
                 if len(col_parts) == 2:
                     algo_name, metric_type = col_parts
@@ -283,73 +295,108 @@ class DuckDBAggregator:
         else:
             return pl.DataFrame()
 
-    def _post_process_analysis_results(self, raw_result: pl.DataFrame, group_column_name: str) -> pl.DataFrame:
-        if raw_result.height == 0:
-            return pl.DataFrame()
-
-        algo_cols = [col for col in raw_result.columns if col.startswith("avg_")]
-
-        if not algo_cols:
-            return raw_result
-
-        algorithms = set()
-        metrics = set()
-
-        for col in algo_cols:
-            parts = col.replace("avg_", "").rsplit("_", 1)
-            if len(parts) == 2:
-                algo_name, metric_type = parts
-                algorithms.add(algo_name)
-                metrics.add(metric_type)
-
-        algorithms = sorted(list(algorithms))
-        metrics = sorted(list(metrics))
-
-        result_rows = []
-
-        for row in raw_result.iter_rows(named=True):
-            group_value = row[group_column_name]
-            count = row["count"]
-
-            for algo in algorithms:
-                algo_row = {group_column_name: group_value, "count": count, "algorithm": algo}
-
-                for metric in metrics:
-                    col_name = f"avg_{algo}_{metric}"
-                    value = row.get(col_name, None)
-                    algo_row[metric] = value
-
-                result_rows.append(algo_row)
-
-        if result_rows:
-            result_df = pl.DataFrame(result_rows)
-            result_df = result_df.sort([group_column_name, "algorithm"])
-            return result_df
-        else:
-            return pl.DataFrame()
-
-    def fault_category_analysis(self) -> pl.DataFrame:
+    def fault_category(self) -> pl.DataFrame:
         return self._group_by_analysis("fault_category", "fault_category")
 
-    def fault_type_analysis(self) -> pl.DataFrame:
+    def fault_type(self) -> pl.DataFrame:
         return self._group_by_analysis("fault_type", "fault_type")
 
-    def sdd_analysis(self) -> pl.DataFrame:
-        group_sql = """CASE 
-                WHEN "SDD@1" = 0 THEN 'SDD@1 = 0'
-                ELSE 'SDD@1 > 0'
+    def algorithm_miss_analysis(self, k: int = 1) -> pl.DataFrame:
+        if k not in [1, 3, 5]:
+            raise ValueError("k must be 1, 3, or 5")
+
+        algo_columns = self._get_algo_columns()
+
+        topk_columns = [col for col in algo_columns if col.endswith(f"_top{k}")]
+
+        if not topk_columns:
+            return pl.DataFrame()
+
+        union_queries = []
+
+        for col in topk_columns:
+            algo_name = col.replace("algo_", "").replace(f"_top{k}", "")
+
+            query = f"""
+            SELECT 
+                '{algo_name}' as algorithm,
+                fault_category,
+                "SDD@1" as sdd_value,
+                COUNT(*) as miss_count
+            FROM data 
+            WHERE ({col} = 0 OR {col} IS NULL)
+            GROUP BY fault_category, "SDD@1"
+            """
+            union_queries.append(query)
+
+        full_query = (
+            " UNION ALL ".join(union_queries)
+            + """
+        ORDER BY algorithm, fault_category, sdd_value
+        """
+        )
+
+        return self.custom_sql(full_query)
+
+    def common_failed_cases_analysis(self, k: int = 1, min_algorithms: int = 3) -> pl.DataFrame:
+        if k not in [1, 3, 5]:
+            raise ValueError("k must be 1, 3, or 5")
+
+        algo_columns = self._get_algo_columns()
+        topk_columns = [col for col in algo_columns if col.endswith(f"_top{k}")]
+
+        if not topk_columns or len(topk_columns) < min_algorithms:
+            return pl.DataFrame()
+
+        all_fail_conditions = " AND ".join([f"({col} = 0 OR {col} IS NULL)" for col in topk_columns])
+
+        query = f"""
+        SELECT 
+            *
+        FROM data 
+        WHERE {all_fail_conditions}
+        ORDER BY fault_category
+        """
+
+        return self.custom_sql(query)
+
+    def sdd_k(self, k: int) -> pl.DataFrame:
+        group_sql = f"""CASE 
+                WHEN "SDD@{k}" = 0 THEN 'SDD@{k} = 0'
+                ELSE 'SDD@{k} > 0'
             END"""
         return self._group_by_analysis(group_sql, "sdd_category")
 
-    def fault_category_and_sdd_analysis(self) -> pl.DataFrame:
+    def fault_category_and_sdd_analysis(self, k: int) -> pl.DataFrame:
+        if k == 1:
+            sdd_condition = """CASE 
+                WHEN "datapack_metric_SDD@1" = 0 THEN 'SDD@1 = 0'
+                ELSE 'SDD@1 > 0'
+            END"""
+        elif k == 3:
+            sdd_condition = """CASE 
+                WHEN "datapack_metric_SDD@3" = 0 AND "datapack_metric_SDD@1" > 0 THEN 'SDD@3 = 0 (SDD@1 > 0)'
+                WHEN "datapack_metric_SDD@3" > 0 THEN 'SDD@3 > 0'
+                WHEN "datapack_metric_SDD@1" = 0 THEN 'SDD@1 = 0'
+                ELSE 'Other'
+            END"""
+        elif k == 5:
+            sdd_condition = """CASE 
+                WHEN "datapack_metric_SDD@5" = 0 AND "datapack_metric_SDD@3" > 0 
+                     AND "datapack_metric_SDD@1" > 0 THEN 'SDD@5 = 0 (SDD@1,3 > 0)'
+                WHEN "datapack_metric_SDD@5" > 0 THEN 'SDD@5 > 0'
+                WHEN "datapack_metric_SDD@3" = 0 AND "datapack_metric_SDD@1" > 0 THEN 'SDD@3 = 0 (SDD@1 > 0)'
+                WHEN "datapack_metric_SDD@1" = 0 THEN 'SDD@1 = 0'
+                ELSE 'Other'
+            END"""
+        else:
+            raise ValueError("k must be 1, 3, or 5")
+
         group_sql_list = [
             "fault_category",
-            """CASE 
-                WHEN "SDD@1" = 0 THEN 'SDD@1 = 0'
-                ELSE 'SDD@1 > 0'
-            END""",
+            sdd_condition,
         ]
-        group_names = ["fault_category", "sdd_category"]
+        group_names = ["fault_category", f"sdd_k{k}_category"]
         return self._multi_group_by_analysis(group_sql_list, group_names)
 
     def fault_type_and_sdd_analysis(self) -> pl.DataFrame:

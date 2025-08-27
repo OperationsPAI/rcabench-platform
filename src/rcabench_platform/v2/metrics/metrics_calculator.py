@@ -18,71 +18,131 @@ class DatasetMetricsCalculator:
     def __init__(self, loader: DatasetAnalyzer):
         self.loader = loader
         self.graph = loader.get_service_dependency_graph()
-        self.root_services = loader.get_root_services()
+        self.root_services = loader.get_root_services()[0]
         self.services = loader.get_all_services()
 
-        for svc in self.root_services:
-            assert svc in self.graph, f"Service '{svc}' not found in graph"
+        assert self.root_services in self.graph, f"Service '{self.root_services}' not found in graph"
 
-    def compute_sdd(self, k: int = 1) -> float | list[float]:
+    def compute_sdd(self, k: int = 1) -> tuple[float, dict]:
         """
         Compute Service Distance to root cause (SDD@k).
 
         This metric measures the shortest path distance from the top-k services
         with the largest anomaly magnitude to the root cause services.
-        When multiple root cause services exist, the maximum distance is selected.
+        The minimum distance among top-k services to any root cause is selected.
 
         Formula:
-        $$SDD@k = \\max_{r \\in R} \\min_{s \\in T_k} d(s, r)$$
+        $$SDD@k = \\min_{s \\in T_k} \\min_{r \\in R} d(s, r)$$
 
         Where:
         - $R$ = set of root cause services
         - $T_k$ = top-k services ranked by anomaly magnitude $\\Delta_s$
         - $d(s, r)$ = shortest path distance from service $s$ to root cause $r$
-        - $\\Delta_s = \\sum_{m \\in M_s} |\\bar{m}_{abnormal} - \\bar{m}_{normal}|$
+        - $\\Delta_s = \\sum_{m \\in M_s} \\frac{|\\bar{m}_{abnormal} - \\bar{m}_{normal}|}{|\\bar{m}_{normal}|}$
         - $M_s$ = set of golden signal metrics for service $s$
         - $\\bar{m}_{normal/abnormal}$ = mean value of metric $m$ in normal/abnormal period
+
+        Interpretation:
+        - SDD@k = 0: Root cause service is among the top-k services
+        - SDD@k > 0: Root cause service is not among the top-k services
 
         Args:
             k (int): Number of top services to consider
 
         Returns:
-            float | list[float]: Distance(s) to root cause service(s)
+            tuple[float, dict]: Distance(s) to root cause service(s), or
+                tuple of (distance, details) if return_details=True
         """
         if not self.root_services or not self.graph:
-            return 0.0 if k == 1 else [0.0] * k
+            raise
 
-        # Calculate anomaly magnitude for each service
+        # Calculate anomaly magnitude for each service with detailed tracking
         service_deltas = {}
+        service_metric_contributions = {}  # Track metric contributions for each service
+
         for service in self.services:
             normal_metrics = self.loader.get_service_metrics(service, abnormal=False)
             abnormal_metrics = self.loader.get_service_metrics(service, abnormal=True)
 
             delta = 0.0
+            metric_contributions = []  # List of (metric_name, contribution) tuples
+
             for metric in abnormal_metrics:
                 if metric in normal_metrics:
-                    v1 = normal_metrics[metric]
-                    v2 = abnormal_metrics[metric]
-                    if v1 and v2:
-                        delta += abs((sum(v2) / len(v2)) - (sum(v1) / len(v1)))
+                    normal_values = normal_metrics[metric]
+                    abnormal_values = abnormal_metrics[metric]
+                    if normal_values and abnormal_values:
+                        normal_mean = statistics.mean(normal_values)
+                        normal_std = statistics.stdev(normal_values) if len(normal_values) > 1 else 0.0
+                        abnormal_mean = statistics.mean(abnormal_values)
+
+                        # Use z-score to calculate anomaly score
+                        z_score = 0.0
+                        if normal_std > 0:
+                            z_score = abs(abnormal_mean - normal_mean) / normal_std
+                        elif normal_mean != abnormal_mean:  # No variance in normal period but values differ
+                            z_score = 1.0  # Consider as anomalous
+
+                        delta += z_score
+                        metric_contributions.append((metric, z_score))
+
             service_deltas[service] = delta
+            # Sort metrics by contribution and keep top 5
+            metric_contributions.sort(key=lambda x: x[1], reverse=True)
+            service_metric_contributions[service] = metric_contributions[:5]
 
         # Select top-k services
         topk_services = sorted(service_deltas, key=lambda x: service_deltas[x], reverse=True)[:k]
 
-        # Calculate distances - select maximum distance among root cause services
-        distances = []
-        for service in topk_services:
-            max_distance = 0
-            for root_service in self.root_services:
-                try:
-                    d = nx.shortest_path_length(self.graph, service, root_service)
-                    max_distance = max(max_distance, d)
-                except Exception:
-                    continue
-            distances.append(max_distance)
+        # Calculate distances - find minimum distance from any top-k service to any root cause
+        service_min_distances = []
 
-        return distances[0] if k == 1 else distances
+        for service in topk_services:
+            min_distance = 999
+            distance_details = {}
+
+            try:
+                d = nx.shortest_path_length(self.graph, service, self.root_services)
+                min_distance = min(min_distance, d)
+                distance_details[self.root_services] = d
+            except Exception:
+                distance_details[self.root_services] = "unreachable"
+                continue
+
+            service_min_distances.append(min_distance if min_distance < float("inf") else 999)
+
+        # SDD@k is the minimum distance among all top-k services
+        # Handle case where no valid distances are found
+        sdd_value = min(service_min_distances) if service_min_distances else 999
+
+        details = {"top_k_services": [], "sdd_value": sdd_value}
+
+        for i, service in enumerate(topk_services):
+            # Get distance to root, handle case where service_min_distances might be shorter than topk_services
+            distance_to_root = service_min_distances[i] if i < len(service_min_distances) else 9999
+
+            service_info = {
+                "service_name": service,
+                "rank": i + 1,
+                "total_anomaly_magnitude": service_deltas[service],
+                "distance_to_root": distance_to_root,
+                "top_contributing_metrics": [],
+            }
+
+            # Add top contributing metrics with their contributions
+            for metric_name, contribution in service_metric_contributions[service]:
+                percentage = (contribution / service_deltas[service] * 100) if service_deltas[service] > 0 else 0
+                service_info["top_contributing_metrics"].append(
+                    {
+                        "metric_name": metric_name,
+                        "contribution": contribution,
+                        "contribution_percentage": percentage,
+                    }
+                )
+
+            details["top_k_services"].append(service_info)
+
+        return sdd_value, details
 
     def compute_ac(self, service_name: str | None = None) -> dict[str, int]:
         """
@@ -99,8 +159,9 @@ class DatasetMetricsCalculator:
         - $M_s$ = set of golden signal metrics for service $s$
         - $\\text{isAnomalous}(m)$ = anomaly detection function for metric $m$
         - A metric is considered anomalous if:
-            $\\frac{|\\bar{m}_{abnormal} - \\bar{m}_{normal}|}{|\\bar{m}_{normal}|} > \\theta$
-        - $\\theta = 0.2$ (20% change threshold)
+            $|z| = \\frac{|\\bar{m}_{abnormal} - \\bar{m}_{normal}|}{\\sigma_{normal}} > \\theta$
+        - $\\theta = 2.0$ (z-score threshold, approximately 95% confidence level)
+        - $\\sigma_{normal}$ = standard deviation of metric $m$ in normal period
         - $\\bar{m}_{normal/abnormal}$ = mean value of metric $m$ in normal/abnormal period
 
         Args:
@@ -126,14 +187,15 @@ class DatasetMetricsCalculator:
 
                     if normal_values and abnormal_values:
                         normal_mean = statistics.mean(normal_values)
+                        normal_std = statistics.stdev(normal_values) if len(normal_values) > 1 else 0.0
                         abnormal_mean = statistics.mean(abnormal_values)
 
-                        # Simple anomaly detection: change > 20% threshold
-                        if normal_mean != 0:
-                            change_ratio = abs(abnormal_mean - normal_mean) / abs(normal_mean)
-                            if change_ratio > 0.2:  # 20% threshold
+                        # Use z-score for anomaly detection: z > 2.0 threshold (approximately 95% confidence)
+                        if normal_std > 0:
+                            z_score = abs(abnormal_mean - normal_mean) / normal_std
+                            if z_score > 2.0:  # z-score threshold
                                 anomaly_count += 1
-                        elif abnormal_mean != 0:  # Normal period is 0 but abnormal period is not
+                        elif normal_mean != abnormal_mean:  # No variance in normal period but values differ
                             anomaly_count += 1
 
             result[service] = anomaly_count
@@ -171,16 +233,15 @@ class DatasetMetricsCalculator:
             logger.warning(f"Entry service '{entry_service}' not found in graph")
             return 0.0
 
-        max_path_length = 99999
-        for root_service in self.root_services:
-            try:
-                path_length = nx.shortest_path_length(self.graph, entry_service, root_service)
-                max_path_length = min(max_path_length, path_length)
-            except Exception as e:
-                logger.error(e)
-                continue
-
-        return max_path_length
+        try:
+            path_length = nx.shortest_path_length(self.graph, entry_service, self.root_services)
+            return path_length
+        except nx.NetworkXNoPath:
+            logger.warning(f"No path from entry service '{entry_service}' to root service '{self.root_services}'")
+            return float("inf")
+        except Exception as e:
+            logger.warning(f"Error computing path length: {e}")
+            return 0.0
 
     def get_root_cause_degree(self) -> int | None:
         """
@@ -202,11 +263,10 @@ class DatasetMetricsCalculator:
 
         max_degree = -1
 
-        for root_service in self.root_services:
-            if root_service in self.graph:
-                degree = int(self.graph.degree[root_service])  # type: ignore
-                if degree > max_degree:
-                    max_degree = degree
+        if self.root_services in self.graph:
+            degree = int(self.graph.degree[self.root_services])  # type: ignore
+            if degree > max_degree:
+                max_degree = degree
 
         return max_degree
 
@@ -225,9 +285,9 @@ class DatasetMetricsCalculator:
                 name=self.loader.get_datapack(),
                 manage=DtoInjectionV2CustomLabelManageReq(
                     add_labels=[
-                        DtoLabelItem(key="SDD@1", value=str(results["SDD@1"])),
-                        DtoLabelItem(key="SDD@3", value=str(results["SDD@3"])),
-                        DtoLabelItem(key="SDD@5", value=str(results["SDD@5"])),
+                        DtoLabelItem(key="SDD@1", value=str(results["SDD@1"][0])),
+                        DtoLabelItem(key="SDD@3", value=str(results["SDD@3"][0])),
+                        DtoLabelItem(key="SDD@5", value=str(results["SDD@5"][0])),
                         DtoLabelItem(key="CPL", value=str(results["CPL"])),
                         DtoLabelItem(key="RootServiceDegree", value=str(results["RootServiceDegree"])),
                     ]

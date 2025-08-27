@@ -335,47 +335,24 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
 
     _GOLDEN_SIGNAL_METRICS = {
         "latency": [
-            "http.client.request.duration",
-            "http.server.request.duration",
-            "db.client.connections.use_time",
-            "db.client.connections.create_time",
-            "db.client.connections.wait_time",
+            # "http.client.request.duration",
+            # "http.server.request.duration",
             "jvm.gc.duration",
         ],
         "traffic": [
-            "hubble_flows_processed_total",
-            "processedSpans",
-            "processedLogs",
-            "hubble_icmp_total",
-            "hubble_port_distribution_total",
-            "hubble_tcp_flags_total",
-            "otlp.exporter.seen",
-            "otlp.exporter.exported",
-            "k8s.pod.network.io",
+            # "k8s.pod.network.io",
         ],
         "error": [
-            "hubble_drop_total",
-            "k8s.pod.network.errors",
+            # "k8s.pod.network.errors",
             "k8s.container.restarts",
+            "http.response.error_rate",
+            "log.error_rate",
         ],
         "saturation": [
-            "container.cpu.usage",
-            "k8s.pod.cpu.usage",
             "k8s.pod.cpu_limit_utilization",
-            "k8s.pod.cpu.node.utilization",
-            "jvm.cpu.recent_utilization",
-            "jvm.system.cpu.utilization",
             "jvm.system.cpu.load_1m",
-            "container.memory.usage",
-            "k8s.pod.memory.usage",
-            "k8s.pod.memory_limit_utilization",
-            "k8s.pod.memory.node.utilization",
-            "container.memory.working_set",
             "k8s.pod.memory.working_set",
             "jvm.memory.used",
-            "container.filesystem.usage",
-            "k8s.pod.filesystem.usage",
-            "queueSize",
         ],
     }
 
@@ -460,15 +437,17 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
                 services.update(lf.select("service_name").unique().collect()["service_name"].to_list())
 
         services.discard("loadgenerator-service")
+        services.discard("loadgenerator")
         services.discard("")
         return list(services)
 
     def get_service_metrics(self, service_name: str, abnormal: bool = False) -> dict[str, list[float]]:
         metrics_lf = self.get_metrics(abnormal=abnormal)
-        if metrics_lf is None:
-            return {}
+        traces_lf = self.get_traces(abnormal=abnormal)
+        logs_lf = self.get_logs(abnormal=abnormal)
+        assert metrics_lf is not None and traces_lf is not None and logs_lf is not None
 
-        return self._extract_service_metrics(metrics_lf, service_name)
+        return self._extract_service_metrics(metrics_lf, traces_lf, logs_lf, service_name)
 
     def get_root_services(self) -> list[str]:
         injection = self.files.get("injection", {})
@@ -482,7 +461,9 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
     def get_entry_service(self) -> str | None:
         return "loadgenerator"
 
-    def _extract_service_metrics(self, metrics_lf: pl.LazyFrame, service_name: str) -> dict[str, list[float]]:
+    def _extract_service_metrics(
+        self, metrics_lf: pl.LazyFrame, traces_lf: pl.LazyFrame, logs_lf: pl.LazyFrame, service_name: str
+    ) -> dict[str, list[float]]:
         assert isinstance(metrics_lf, pl.LazyFrame), "metrics_lf must be a polars LazyFrame"
         assert isinstance(service_name, str) and service_name.strip(), "service_name must be a non-empty string"
 
@@ -507,7 +488,103 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
             for value in values:
                 assert isinstance(value, (int, float)), f"metric value must be numeric, got {type(value)}"
             metrics_dict[metric_name] = values
+
+        error_rate_values = self._calculate_http_error_rate(traces_lf, service_name)
+        if error_rate_values:
+            metrics_dict["http.response.error_rate"] = error_rate_values
+
+        # Calculate log-based error rate
+        log_error_rate_values = self._calculate_log_error_rate(logs_lf, service_name)
+        if log_error_rate_values:
+            metrics_dict["log.error_rate"] = log_error_rate_values
+
+        # Calculate duration-based latency metrics from traces
+        duration_metrics = self._calculate_duration_metrics(traces_lf, service_name)
+        metrics_dict.update(duration_metrics)
+
         return metrics_dict
+
+    def _calculate_http_error_rate(self, traces_lf: pl.LazyFrame, service_name: str) -> list[float] | None:
+        service_traces = traces_lf.filter(pl.col("service_name") == service_name)
+
+        # Check if traces have HTTP status codes
+        traces_schema = traces_lf.collect_schema()
+        if "attr.http.response.status_code" not in traces_schema:
+            return None
+
+        # Filter traces that have HTTP status codes
+        http_traces = service_traces.filter(pl.col("attr.http.response.status_code").is_not_null())
+
+        if http_traces.collect().height == 0:
+            return None
+
+        error_rates = (
+            http_traces.with_columns(
+                [
+                    (pl.col("time").dt.truncate("10s")).alias("time_window"),
+                    (pl.col("attr.http.response.status_code") >= 400).alias("is_error"),
+                ]
+            )
+            .group_by("time_window")
+            .agg(
+                [
+                    pl.col("is_error").sum().alias("error_count"),
+                    pl.col("is_error").count().alias("total_count"),
+                ]
+            )
+            .with_columns(
+                [(pl.col("error_count").cast(pl.Float64) / pl.col("total_count") * 100.0).alias("error_rate")]
+            )
+            .select("error_rate")
+            .collect()
+        )
+
+        if error_rates.height == 0:
+            return None
+
+        error_rate_values = error_rates["error_rate"].to_list()
+        error_rate_values = [v for v in error_rate_values if v is not None]
+
+        return error_rate_values if error_rate_values else None
+
+    def _calculate_log_error_rate(self, logs_lf: pl.LazyFrame, service_name: str) -> list[float] | None:
+        service_logs = logs_lf.filter(pl.col("service_name") == service_name)
+
+        # Check if logs have level column
+        logs_schema = logs_lf.collect_schema()
+        if "level" not in logs_schema:
+            return None
+
+        # Filter logs that have valid level values
+        valid_logs = service_logs.filter(pl.col("level").is_not_null())
+
+        if valid_logs.collect().height == 0:
+            return None
+
+        error_rates = (
+            valid_logs.with_columns(
+                [
+                    (pl.col("time").dt.truncate("10s")).alias("time_window"),
+                    (pl.col("level").is_in(["WARN", "ERROR"])).alias("is_error"),
+                ]
+            )
+            .group_by("time_window")
+            .agg(
+                [
+                    pl.col("is_error").sum().alias("error_count"),
+                    pl.col("is_error").count().alias("total_count"),
+                ]
+            )
+            .with_columns([(pl.col("error_count").cast(pl.Float64) / pl.col("total_count")).alias("error_rate")])
+            .select("error_rate")
+            .collect()
+        )
+
+        if error_rates.height == 0:
+            return None
+
+        error_rate_values = error_rates["error_rate"].to_list()
+        return error_rate_values
 
     def _is_golden_signal_metric(self, metric_name: str) -> bool:
         for metrics_list in self._GOLDEN_SIGNAL_METRICS.values():
@@ -517,3 +594,46 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
                 if metric in metric_name:
                     return True
         return False
+
+    def _calculate_duration_metrics(self, traces_lf: pl.LazyFrame, service_name: str) -> dict[str, list[float]]:
+        service_traces = traces_lf.filter(pl.col("service_name") == service_name)
+
+        # Check if traces have duration column
+        traces_schema = traces_lf.collect_schema()
+        if "duration" not in traces_schema:
+            return {}
+
+        # Filter traces that have valid duration values (> 0)
+        valid_duration_traces = service_traces.filter(pl.col("duration").is_not_null() & (pl.col("duration") > 0))
+
+        # Check if there are any valid traces
+        if valid_duration_traces.collect().height == 0:
+            return {}
+
+        duration_metrics = {}
+
+        # Calculate time-window based duration metrics (per minute)
+        time_window_durations = (
+            valid_duration_traces.with_columns(
+                [
+                    (pl.col("time").dt.truncate("10s")).alias("time_window"),
+                    (pl.col("duration") / 1_000_000.0).alias("duration_ms"),  # Convert nanoseconds to milliseconds
+                ]
+            )
+            .group_by("time_window")
+            .agg(
+                [
+                    pl.col("duration_ms").mean().alias("mean_duration"),
+                ]
+            )
+            .collect()
+        )
+
+        if time_window_durations.height > 0:
+            # Extract time series values for mean
+            mean_duration_values = time_window_durations["mean_duration"].to_list()
+            mean_duration_values = [v for v in mean_duration_values if v is not None]
+            if mean_duration_values:
+                duration_metrics["http.server.request.duration"] = mean_duration_values
+
+        return duration_metrics

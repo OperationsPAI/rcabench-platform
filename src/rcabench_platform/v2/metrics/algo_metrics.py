@@ -209,7 +209,7 @@ def calculate_metrics_for_level(
     level_predictions.sort(key=lambda x: x.rank or float("inf"))
 
     hits = []
-    for pred in level_predictions:
+    for pred in level_predictions[:5]:
         if pred.result in groundtruth_items:
             hits.append(pred.rank or float("inf"))
 
@@ -218,19 +218,24 @@ def calculate_metrics_for_level(
 
     min_rank = min(hits)
     top1 = 1.0 if min_rank <= 1 else 0.0
+    top2 = 1.0 if min_rank <= 2 else 0.0
     top3 = 1.0 if min_rank <= 3 else 0.0
+    top4 = 1.0 if min_rank <= 4 else 0.0
     top5 = 1.0 if min_rank <= 5 else 0.0
 
-    # Calculate avg3 and avg5: average rank of hits within top-3 and top-5
-    hits_within_3 = [rank for rank in hits if rank <= 3]
-    hits_within_5 = [rank for rank in hits if rank <= 5]
-
-    avg3 = sum(hits_within_3) / len(hits_within_3) if hits_within_3 else 0.0
-    avg5 = sum(hits_within_5) / len(hits_within_5) if hits_within_5 else 0.0
+    avg3 = (top1 + top2 + top3) / 3.0
+    avg5 = (top1 + top2 + top3 + top4 + top5) / 5.0
 
     mrr = 1.0 / min_rank
 
-    return AlgoMetricItem(top1=top1, top3=top3, top5=top5, avg3=avg3, avg5=avg5, mrr=mrr)
+    return AlgoMetricItem(
+        top1=top1,
+        top3=top3,
+        top5=top5,
+        avg3=avg3,
+        avg5=avg5,
+        mrr=mrr,
+    )
 
 
 def calculate_alignment_score(
@@ -340,6 +345,10 @@ def get_metrics_by_dataset(
             "as3": 0.0,
             "as5": 0.0,
             "efficiency": 0.0,
+            "hits_sum_3": 0.0,
+            "hits_count_3": 0.0,
+            "hits_sum_5": 0.0,
+            "hits_count_5": 0.0,
         }
     )
     total_datapacks = 0
@@ -385,6 +394,10 @@ def get_metrics_by_dataset(
     result_metrics = []
     for level, metrics in level_metrics.items():
         if total_datapacks > 0:
+            # Calculate correct avg3 and avg5 using accumulated sums and counts
+            avg3_value = (metrics["hits_sum_3"] / metrics["hits_count_3"]) if metrics["hits_count_3"] > 0 else 0.0
+            avg5_value = (metrics["hits_sum_5"] / metrics["hits_count_5"]) if metrics["hits_count_5"] > 0 else 0.0
+
             avg_metrics = {
                 "top1": metrics["top1"] / total_datapacks,
                 "top3": metrics["top3"] / total_datapacks,
@@ -393,8 +406,8 @@ def get_metrics_by_dataset(
                 "as1": metrics["as1"] / total_datapacks,
                 "as3": metrics["as3"] / total_datapacks,
                 "as5": metrics["as5"] / total_datapacks,
-                "avg3": metrics["avg3"] / total_datapacks,
-                "avg5": metrics["avg5"] / total_datapacks,
+                "avg3": avg3_value,
+                "avg5": avg5_value,
                 "time": metrics["time"] / total_datapacks,
                 "efficiency": metrics["efficiency"] / total_datapacks,
             }
