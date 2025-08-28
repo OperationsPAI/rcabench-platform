@@ -70,9 +70,17 @@ def analysis():
         vis_hook(aggregator.algorithm_performance_summary(), "performance_all")
         vis_hook(aggregator.fault_category(), "fault_category_analysis")
         vis_hook(aggregator.fault_type(), "fault_type_analysis")
-        vis_hook(aggregator.sdd_k(1), "sdd1")
-        vis_hook(aggregator.sdd_k(3), "sdd3")
-        vis_hook(aggregator.sdd_k(5), "sdd5")
+
+        sdd1 = aggregator.sdd_k(1)
+        sdd3 = aggregator.sdd_k(3)
+        sdd5 = aggregator.sdd_k(5)
+        print_dataframe(sdd1)
+        print_dataframe(sdd3)
+        print_dataframe(sdd5)
+
+        vis_hook(sdd1, "sdd1")
+        vis_hook(sdd3, "sdd3")
+        vis_hook(sdd5, "sdd5")
 
         fcasdd_df = aggregator.fault_category_and_sdd_analysis(1)
         format_dataframe(

@@ -414,17 +414,17 @@ def cross_dataset_metrics(
 def get_unevaluated_datapack_algo(
     algorithms: Annotated[list[str], typer.Argument(help="List of algorithm names")],
     dataset_id: Annotated[int | None, typer.Option("--dataset-id", "-d", help="Dataset ID")] = None,
-    project_id: Annotated[int | None, typer.Option("--project-id", "-p", help="Project ID")] = None,
 ):
-    _, run_status_map = get_execution_item(algorithms, dataset_id, project_id, ["absolute_anomaly"])
+    assert dataset_id is not None
+    _, run_status_map = get_execution_item(algorithms, dataset_id)
 
     data = []
-    for datapack_name, algorithm_name in run_status_map["absolute_anomaly"]:
+    for datapack_name, algorithm_name in run_status_map:
         data.append({"algorithm": algorithm_name, "datapack": datapack_name})
 
     df = pl.DataFrame(data)
     print_dataframe(df)
-    return run_status_map["absolute_anomaly"]
+    return run_status_map
 
 
 @app.command(name="submit-unevaluated")
@@ -443,7 +443,10 @@ def submit_unevaluated_execution(
     if project is None:
         project = "pair_diagnosis"
     logger.info("Fetching unevaluated datapack-algorithm pairs...")
-    unevaluated_pairs = get_unevaluated_datapack_algo([i.split(":")[0] for i in algorithms], dataset_id, project_id)
+    unevaluated_pairs = get_unevaluated_datapack_algo(
+        [i.split(":")[0] for i in algorithms],
+        dataset_id,
+    )
 
     if not unevaluated_pairs:
         logger.info("No unevaluated datapack-algorithm pairs found")

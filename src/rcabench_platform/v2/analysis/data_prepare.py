@@ -200,7 +200,7 @@ def get_execution_item(
     Returns:
         Tuple of (input_items, run_status_map)
     """
-    run_status_map: list[tuple[str, str]] = []
+    unrunned_algo: list[tuple[str, str]] = []
     input_items: list[InputItem] = []
 
     # Get dataset information
@@ -208,6 +208,11 @@ def get_execution_item(
 
     # Build algorithm-datapack execution mapping more efficiently
     algorithm_executions: dict[str, list[DtoDatapackEvaluationItem]] = {}
+
+    all_possible_executions = {
+        (algo, dp.injection_name) for algo in algorithms for dp in datapack_infos if dp.injection_name is not None
+    }
+    executed_pairs: set[tuple[str, str]] = set()
 
     for algorithm in algorithms:
         evaluations = get_evaluation_by_dataset(algorithm, dataset, dataset_version, execution_tag)
@@ -219,6 +224,12 @@ def get_execution_item(
             if evaluation.algorithm not in algorithm_executions:
                 algorithm_executions[evaluation.algorithm] = []
             algorithm_executions[evaluation.algorithm].extend(evaluation.items)
+
+            for item in evaluation.items:
+                if item.datapack_name:
+                    executed_pairs.add((evaluation.algorithm, item.datapack_name))
+
+    unrunned_algo = sorted(list(all_possible_executions - executed_pairs))
 
     # Process each datapack and build input items
     for datapack in datapack_infos:
@@ -241,7 +252,7 @@ def get_execution_item(
             input_item = InputItem(injection=datapack, algo_durations=algo_durations, algo_evals=algo_evaluations)
             input_items.append(input_item)
 
-    return input_items, run_status_map
+    return input_items, unrunned_algo
 
 
 def process_item(

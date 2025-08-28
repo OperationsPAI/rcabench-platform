@@ -221,16 +221,13 @@ def calculate_metrics_for_level(
 
     # Calculate top-k metrics based on the minimum rank of hits
     top1 = 1.0 if min_rank <= 1 else 0.0
+    top2 = 1.0 if min_rank <= 2 else 0.0
     top3 = 1.0 if min_rank <= 3 else 0.0
+    top4 = 1.0 if min_rank <= 4 else 0.0
     top5 = 1.0 if min_rank <= 5 else 0.0
 
-    # Calculate average precision at k
-    # Count how many correct predictions are in top k positions
-    correct_in_top3 = sum(1 for rank in hits if rank <= 3)
-    correct_in_top5 = sum(1 for rank in hits if rank <= 5)
-
-    avg3 = correct_in_top3 / 3.0
-    avg5 = correct_in_top5 / 5.0
+    avg3 = (top1 + top2 + top3) / 3.0
+    avg5 = (top1 + top2 + top3 + top4 + top5) / 5.0
 
     # MRR is the reciprocal of the rank of the first correct answer
     mrr = 1.0 / min_rank
