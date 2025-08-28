@@ -208,6 +208,7 @@ def calculate_metrics_for_level(
 
     level_predictions.sort(key=lambda x: x.rank or float("inf"))
 
+    # Find all hits within top 5
     hits = []
     for pred in level_predictions[:5]:
         if pred.result in groundtruth_items:
@@ -217,15 +218,21 @@ def calculate_metrics_for_level(
         return AlgoMetricItem()
 
     min_rank = min(hits)
+
+    # Calculate top-k metrics based on the minimum rank of hits
     top1 = 1.0 if min_rank <= 1 else 0.0
-    top2 = 1.0 if min_rank <= 2 else 0.0
     top3 = 1.0 if min_rank <= 3 else 0.0
-    top4 = 1.0 if min_rank <= 4 else 0.0
     top5 = 1.0 if min_rank <= 5 else 0.0
 
-    avg3 = (top1 + top2 + top3) / 3.0
-    avg5 = (top1 + top2 + top3 + top4 + top5) / 5.0
+    # Calculate average precision at k
+    # Count how many correct predictions are in top k positions
+    correct_in_top3 = sum(1 for rank in hits if rank <= 3)
+    correct_in_top5 = sum(1 for rank in hits if rank <= 5)
 
+    avg3 = correct_in_top3 / 3.0
+    avg5 = correct_in_top5 / 5.0
+
+    # MRR is the reciprocal of the rank of the first correct answer
     mrr = 1.0 / min_rank
 
     return AlgoMetricItem(
@@ -345,10 +352,6 @@ def get_metrics_by_dataset(
             "as3": 0.0,
             "as5": 0.0,
             "efficiency": 0.0,
-            "hits_sum_3": 0.0,
-            "hits_count_3": 0.0,
-            "hits_sum_5": 0.0,
-            "hits_count_5": 0.0,
         }
     )
     total_datapacks = 0
@@ -372,32 +375,9 @@ def get_metrics_by_dataset(
                     level_metrics[level][metric_name] += value
                 level_metrics[level]["time"] += item.execution_duration or 0.0
 
-            # if level == "service":
-            #     as_k = calculate_alignment_score(
-            #         Path("data/rcabench_dataset") / item.datapack_name / "converted",
-            #         "loadgenerator",
-            #         groundtruth_items,
-            #         item.predictions,
-            #     )
-            #     eff = calculate_efficiency_score(
-            #         Path("data/rcabench_dataset") / item.datapack_name / "converted",
-            #         "loadgenerator",
-            #         groundtruth_items,
-            #         item.predictions,
-            #     )
-
-            #     for idx, as_i in enumerate(as_k):
-            #         level_metrics[level][f"as{idx + 1}"] = level_metrics[level].get(f"as{idx + 1}", 0.0) + as_i
-
-            #     level_metrics[level]["efficiency"] = level_metrics[level].get("efficiency", 0.0) + eff
-
     result_metrics = []
     for level, metrics in level_metrics.items():
         if total_datapacks > 0:
-            # Calculate correct avg3 and avg5 using accumulated sums and counts
-            avg3_value = (metrics["hits_sum_3"] / metrics["hits_count_3"]) if metrics["hits_count_3"] > 0 else 0.0
-            avg5_value = (metrics["hits_sum_5"] / metrics["hits_count_5"]) if metrics["hits_count_5"] > 0 else 0.0
-
             avg_metrics = {
                 "top1": metrics["top1"] / total_datapacks,
                 "top3": metrics["top3"] / total_datapacks,
@@ -406,8 +386,8 @@ def get_metrics_by_dataset(
                 "as1": metrics["as1"] / total_datapacks,
                 "as3": metrics["as3"] / total_datapacks,
                 "as5": metrics["as5"] / total_datapacks,
-                "avg3": avg3_value,
-                "avg5": avg5_value,
+                "avg3": metrics["avg3"] / total_datapacks,
+                "avg5": metrics["avg5"] / total_datapacks,
                 "time": metrics["time"] / total_datapacks,
                 "efficiency": metrics["efficiency"] / total_datapacks,
             }

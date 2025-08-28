@@ -3,6 +3,7 @@ import numpy as np
 import polars as pl
 
 from ..logging import logger
+from ..utils.serde import save_parquet
 from .data_prepare import Item
 
 FAULT_TYPE_MAPPING = {
@@ -112,6 +113,7 @@ class DuckDBAggregator:
     def __init__(self, df: pl.DataFrame):
         self.conn = duckdb.connect(":memory:")
         processed_df = self._flatten_algo_columns(df)
+        save_parquet(processed_df, path="temp/algo/raw.parquet")
         self.conn.register("data", processed_df.to_arrow())
 
     def print_schema(self) -> None:
@@ -418,6 +420,83 @@ class DuckDBAggregator:
         except Exception as e:
             logger.error(f"Failed to get algorithm columns: {e}")
             return []
+
+    def algorithm_performance_summary(self) -> pl.DataFrame:
+        algo_columns = self._get_algo_columns()
+
+        if not algo_columns:
+            return pl.DataFrame()
+
+        algorithms = set()
+        for col in algo_columns:
+            if col.startswith("algo_") and "_" in col:
+                algo_name = col.replace("algo_", "").rsplit("_", 1)[0]
+                algorithms.add(algo_name)
+
+        algorithms = sorted(list(algorithms))
+
+        if not algorithms:
+            return pl.DataFrame()
+
+        select_statements = []
+
+        for algo in algorithms:
+            top1_col = f"algo_{algo}_top1"
+            top3_col = f"algo_{algo}_top3"
+            top5_col = f"algo_{algo}_top5"
+            mrr_col = f"algo_{algo}_mrr"
+            time_col = f"algo_{algo}_time"
+
+            if top1_col in algo_columns:
+                select_statements.append(f"AVG({top1_col}) as {algo}_top1_avg")
+            if top3_col in algo_columns:
+                select_statements.append(f"AVG({top3_col}) as {algo}_top3_avg")
+            if top5_col in algo_columns:
+                select_statements.append(f"AVG({top5_col}) as {algo}_top5_avg")
+            if mrr_col in algo_columns:
+                select_statements.append(f"AVG({mrr_col}) as {algo}_mrr_avg")
+            if time_col in algo_columns:
+                select_statements.append(f"AVG({time_col}) as {algo}_time_avg")
+
+        if not select_statements:
+            return pl.DataFrame()
+
+        select_clause = ",\n            ".join(select_statements)
+
+        sql = f"""
+        SELECT 
+            COUNT(*) as total_count,
+            {select_clause}
+        FROM data
+        """
+
+        raw_result = self.custom_sql(sql)
+
+        if raw_result.height == 0:
+            return pl.DataFrame()
+
+        result_rows = []
+        row_data = raw_result.row(0, named=True)
+        total_count = row_data.get("total_count", 0)
+
+        for algo in algorithms:
+            algo_row = {
+                "algorithm": algo,
+                "count": total_count,
+                "top1": row_data.get(f"{algo}_top1_avg", None),
+                "top3": row_data.get(f"{algo}_top3_avg", None),
+                "top5": row_data.get(f"{algo}_top5_avg", None),
+                "mrr": row_data.get(f"{algo}_mrr_avg", None),
+                "avg_time": row_data.get(f"{algo}_time_avg", None),
+            }
+            result_rows.append(algo_row)
+
+        if result_rows:
+            result_df = pl.DataFrame(result_rows)
+            result_df = result_df.sort("algorithm")
+            return result_df
+        else:
+            return pl.DataFrame()
 
     def close(self):
         self.conn.close()

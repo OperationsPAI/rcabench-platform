@@ -10,12 +10,15 @@ import polars as pl
 from rcabench.openapi import (
     DatasetsApi,
     DtoAlgorithmDatapackReq,
+    DtoAlgorithmDatasetResp,
     DtoDatapackEvaluationBatchReq,
+    DtoDatapackEvaluationItem,
     DtoGranularityRecord,
     DtoInjectionFieldMappingResp,
     DtoInjectionV2Response,
     DtoInjectionV2SearchReq,
     EvaluationApi,
+    HandlerGroundtruth,
     HandlerNode,
     HandlerResources,
     InjectionApi,
@@ -23,7 +26,7 @@ from rcabench.openapi import (
     ProjectsApi,
 )
 
-from ..clients.rcabench_ import RCABenchClient
+from ..clients.rcabench_ import RCABenchClient, get_datapacks_from_dataset_id, get_evaluation_by_dataset
 from ..datasets.spec import calculate_trace_length
 from ..logging import logger
 from ..metrics.algo_metrics import AlgoMetricItem, calculate_metrics_for_level
@@ -45,7 +48,7 @@ ITEMS_CACHE_TIME = getenv_int("ITEMS_CACHE_TIME", default=_DEFAULT_ITEMS_CACHE_T
 class InputItem:
     injection: DtoInjectionV2Response
     algo_durations: dict[str, float]  # algorithm -> execution_duration
-    algo_evals: dict[str, list[DtoGranularityRecord]] | None = None
+    algo_evals: dict[str, tuple[HandlerGroundtruth, list[DtoGranularityRecord]]] | None = None
 
 
 @dataclass
@@ -62,7 +65,7 @@ class Item:
     workload: Literal["trainticket"] = "trainticket"
 
     # Algo Metric statistics  TODO: @Lincyaw @rainysteven1 add execution time of the algo
-    _algo_evals: dict[str, list[DtoGranularityRecord]] | None = None
+    _algo_evals: dict[str, tuple[HandlerGroundtruth, list[DtoGranularityRecord]]] | None = None
     _algo_durations: dict[str, float] = field(default_factory=dict)
     algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
 
@@ -90,9 +93,10 @@ class Item:
             return
 
         self.algo_metrics = {}
-        for algo, predictions in self._algo_evals.items():
+        for algo, (groundtruth, predictions) in self._algo_evals.items():
+            assert groundtruth.service is not None
             metric_item = calculate_metrics_for_level(
-                groundtruth_items=[self.injected_service], predictions=predictions, level="service"
+                groundtruth_items=groundtruth.service, predictions=predictions, level="service"
             )
 
             if algo in self._algo_durations:
@@ -180,169 +184,68 @@ def get_individual_service(
     return f"{service['source']}->{service['target']}", True
 
 
-def prepare_injections_data(
-    dataset_id: int | None = None,
-    project_id: int | None = None,
-    abnormal_degree=["absolute_anomaly", "may_anomaly", "no_anomaly"],
-) -> tuple[dict[str, list[DtoInjectionV2Response]], str]:
-    with RCABenchClient() as client:
-
-        def _get_injections() -> tuple[dict[str, list[DtoInjectionV2Response]], str]:
-            api = InjectionsApi(client)
-
-            injections_dict: dict[str, list[DtoInjectionV2Response]] = {}
-            for degree in abnormal_degree:
-                resp = api.api_v2_injections_search_post(
-                    search=DtoInjectionV2SearchReq(
-                        tags=[degree],
-                        include_labels=True,
-                    )
-                )
-                if not resp or not resp.data or not resp.data.items:
-                    raise ValueError(f"No injections found for degree {degree}")
-
-                injections_dict[degree] = resp.data.items
-
-            return injections_dict, "injections"
-
-        def _get_injections_by_id() -> tuple[dict[str, list[DtoInjectionV2Response]], str]:
-            injections: list[DtoInjectionV2Response] = []
-            folder_name = ""
-
-            if dataset_id is not None:
-                api = DatasetsApi(client)
-                resp = api.api_v2_datasets_id_get(id=dataset_id, include_injections=True)
-
-                if not resp or not resp.data or not resp.data.injections:
-                    raise ValueError(f"No injections found for dataset {dataset_id}")
-
-                injections = resp.data.injections
-                folder_name = f"dataset_{dataset_id}"
-
-            elif project_id is not None:
-                api = ProjectsApi(client)
-                resp = api.api_v2_projects_id_get(id=project_id, include_injections=True)
-
-                if not resp or not resp.data or not resp.data.injections:
-                    raise ValueError(f"No injections found for project {project_id}")
-
-                injections = resp.data.injections
-                folder_name = f"project_{dataset_id}"
-
-            else:
-                raise ValueError("Either dataset_id or project_id must be provided")
-
-            items_dict: dict[str, list[DtoInjectionV2Response]] = dict([(degree, []) for degree in abnormal_degree])
-            for injection in injections:
-                if injection.labels is not None:
-                    for label in injection.labels:
-                        if label.value is not None and label.value in items_dict:
-                            items_dict[label.value].append(injection)
-
-            return items_dict, folder_name
-
-        if dataset_id is not None or project_id is not None:
-            return _get_injections_by_id()
-        else:
-            return _get_injections()
-
-
 def get_execution_item(
     algorithms: list[str],
-    dataset_id: int | None = None,
-    project_id: int | None = None,
-    abnormal_degree=["absolute_anomaly", "may_anomaly", "no_anomaly"],
-) -> tuple[dict[str, list[InputItem]], dict[str, list[tuple[str, str]]]]:
-    withDatasetID = dataset_id is not None
-    withProjectID = project_id is not None
+    dataset_id: int,
+    execution_tag: str | None = None,
+) -> tuple[list[InputItem], list[tuple[str, str]]]:
+    """
+    Retrieve execution items for given algorithms and dataset.
 
-    if withDatasetID and withProjectID:
-        raise ValueError("Please provide either dataset_id or project_id, not both.")
+    Args:
+        algorithms: List of algorithm names to process
+        dataset_id: Dataset identifier
+        execution_tag: Tag for the execution
 
-    injections_dict: dict[str, list[DtoInjectionV2Response]] = {}
+    Returns:
+        Tuple of (input_items, run_status_map)
+    """
+    run_status_map: list[tuple[str, str]] = []
+    input_items: list[InputItem] = []
 
-    run_status_map: dict[str, list[tuple[str, str]]] = {}
-    input_items: dict[str, list[InputItem]] = {}
+    # Get dataset information
+    datapack_infos, dataset, dataset_version = get_datapacks_from_dataset_id(dataset_id)
 
-    with RCABenchClient() as client:
-        evaluator = EvaluationApi(client)
+    # Build algorithm-datapack execution mapping more efficiently
+    algorithm_executions: dict[str, list[DtoDatapackEvaluationItem]] = {}
 
-        injections_dict, _ = prepare_injections_data(
-            dataset_id=dataset_id, project_id=project_id, abnormal_degree=abnormal_degree
-        )
+    for algorithm in algorithms:
+        evaluations = get_evaluation_by_dataset(algorithm, dataset, dataset_version, execution_tag)
 
-        for degree, injections in injections_dict.items():
-            run_status_map[degree] = []
-            input_items[degree] = []
+        for evaluation in evaluations:
+            assert evaluation.items is not None, f"Evaluation items are None for algorithm {algorithm}"
+            assert evaluation.algorithm is not None, "Algorithm is None in evaluation"
 
-            algo_evals: dict[str, list[DtoGranularityRecord]] = {}
-            ori_df = pl.DataFrame(
-                data=[
-                    {"algorithm": algorithm, "datapack": injection.injection_name}
-                    for algorithm in algorithms
-                    for injection in injections
-                ]
-            )
+            if evaluation.algorithm not in algorithm_executions:
+                algorithm_executions[evaluation.algorithm] = []
+            algorithm_executions[evaluation.algorithm].extend(evaluation.items)
 
-            resp = evaluator.api_v2_evaluations_datapacks_post(
-                request=DtoDatapackEvaluationBatchReq(
-                    items=[
-                        DtoAlgorithmDatapackReq(
-                            algorithm=algorithm,
-                            datapack=datapack,
-                        )
-                        for algorithm, datapack in ori_df.iter_rows()
-                    ]
-                )
-            )
+    # Process each datapack and build input items
+    for datapack in datapack_infos:
+        algo_durations: dict[str, float] = {}
+        algo_evaluations: dict[str, tuple[HandlerGroundtruth, list[DtoGranularityRecord]]] = {}
 
-            assert resp.data is not None, "Failed to get evaluation data"
-            eval_df = pl.DataFrame(data=resp.data)
+        # Match evaluations to current datapack
+        for algorithm, executions in algorithm_executions.items():
+            for execution in executions:
+                if execution.datapack_name == datapack.injection_name:
+                    assert execution.predictions is not None, f"Predictions are None for {algorithm}"
+                    assert execution.groundtruth is not None, f"Groundtruth is None for {algorithm}"
+                    assert execution.execution_duration is not None, f"Execution duration is None for {algorithm}"
 
-            joined_df = ori_df.join(
-                eval_df, left_on=["algorithm", "datapack"], right_on=["algorithm", "datapack"], how="inner"
-            )
+                    algo_evaluations[algorithm] = (execution.groundtruth, execution.predictions)
+                    algo_durations[algorithm] = float(execution.execution_duration)
 
-            injections_mapping: dict[str, DtoInjectionV2Response] = {
-                injection.injection_name: injection for injection in injections if injection.injection_name is not None
-            }
-
-            for keys, group_df in joined_df.group_by("datapack"):
-                datapack = str(keys[0])
-                injection = injections_mapping.get(datapack)
-                if injection is None:
-                    logger.warning(f"No injection found for datapack {datapack}")
-                    continue
-
-                algo_evals: dict[str, list[DtoGranularityRecord]] = {}
-                algo_durations: dict[str, float] = {}
-
-                for row in group_df.iter_rows(named=True):
-                    algorithm: str = row["algorithm"]
-                    predictions = row.get("predictions", [])
-                    execution_duration = float(row["execution_duration"])
-
-                    algo_durations[algorithm] = execution_duration
-
-                    if not predictions:
-                        run_status_map[degree].append((datapack, algorithm))
-                        continue
-
-                    algo_evals[algorithm] = [DtoGranularityRecord.from_dict(p) for p in predictions]
-
-                input_items[degree].append(
-                    InputItem(
-                        algo_evals=algo_evals if algo_evals else None,
-                        injection=injection,
-                        algo_durations=algo_durations,
-                    )
-                )
+        # Only create InputItem if we have data for this datapack
+        if algo_evaluations or algo_durations:
+            input_item = InputItem(injection=datapack, algo_durations=algo_durations, algo_evals=algo_evaluations)
+            input_items.append(input_item)
 
     return input_items, run_status_map
 
 
 def process_item(
-    algo_evals: dict[str, list[DtoGranularityRecord]] | None,
+    algo_evals: dict[str, tuple[HandlerGroundtruth, list[DtoGranularityRecord]]] | None,
     algo_durations: dict[str, float],
     injection: DtoInjectionV2Response,
     injection_mapping: DtoInjectionFieldMappingResp,

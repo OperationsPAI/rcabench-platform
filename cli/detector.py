@@ -37,12 +37,6 @@ from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalcul
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 
-class ThresholdInfo(TypedDict, total=False):
-    rule_based_anomaly: bool
-    p_value: float
-    z_statistic: float
-
-
 class AnomalyScoreResult(TypedDict):
     is_anomaly: bool
     total_score: float

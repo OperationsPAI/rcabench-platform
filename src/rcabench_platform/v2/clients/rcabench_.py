@@ -181,7 +181,6 @@ def get_evaluation_by_dataset(
 ) -> list[DtoAlgorithmDatasetResp]:
     base_url = base_url or os.getenv("RCABENCH_BASE_URL")
     assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
-    assert tag, "Tag must be specified."
 
     with RCABenchClient(base_url=base_url) as client:
         api = EvaluationApi(client)
@@ -201,3 +200,19 @@ def get_evaluation_by_dataset(
     assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
     assert resp.data is not None
     return resp.data
+
+
+def get_datapacks_from_dataset_id(
+    dataset_id: int | None = None,
+) -> tuple[list[DtoInjectionV2Response], str, str]:
+    with RCABenchClient() as client:
+        assert dataset_id is not None
+        injections: list[DtoInjectionV2Response] = []
+        api = DatasetsApi(client)
+        resp = api.api_v2_datasets_id_get(id=dataset_id, include_injections=True)
+        if not resp or not resp.data or not resp.data.injections:
+            raise ValueError(f"No injections found for dataset {dataset_id}")
+        injections = resp.data.injections
+
+        assert resp.data.name is not None and resp.data.version is not None
+        return injections, resp.data.name, resp.data.version
