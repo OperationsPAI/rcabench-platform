@@ -7,6 +7,7 @@ import pandas as pd
 import polars as pl
 
 from ..datasets.rcabench import FAULT_TYPES, rcabench_get_service_name
+from ..datasets.train_ticket import extract_path
 from ..logging import logger, timeit
 from ..utils.serde import load_json
 from .convert import DatapackLoader, DatasetLoader, Label
@@ -153,7 +154,7 @@ def convert_metrics_histogram(src: Path) -> pl.LazyFrame:
     return lf
 
 
-def convert_traces(src: Path, filter: bool = False) -> pl.LazyFrame:
+def convert_traces(src: Path, filter: bool = False) -> pl.DataFrame:
     lf = pl.scan_parquet(src).select(
         "Timestamp",
         "TraceId",
@@ -242,8 +243,17 @@ def convert_traces(src: Path, filter: bool = False) -> pl.LazyFrame:
         lf = lf.join(traces_with_long_spans, on="trace_id", how="anti")
 
     lf = lf.sort("time")
+    df = lf.collect()
+    df = df.with_columns(
+        [
+            pl.when(pl.col("service_name").is_in(["loadgenerator", "ts-ui-dashboard"]))
+            .then(pl.col("span_name").map_elements(extract_path, return_dtype=pl.String))
+            .otherwise(pl.col("span_name"))
+            .alias("span_name")
+        ]
+    )
 
-    return lf
+    return df
 
 
 def convert_logs(src: Path) -> pl.LazyFrame:
