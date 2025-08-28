@@ -1,10 +1,15 @@
 import json
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import networkx as nx
 import pandas as pd
 import polars as pl
+from drain3 import TemplateMiner
+from drain3.drain import LogCluster
+from drain3.file_persistence import FilePersistence
+from drain3.template_miner_config import TemplateMinerConfig
 
 from ..datasets.rcabench import FAULT_TYPES, rcabench_get_service_name
 from ..datasets.train_ticket import extract_path
@@ -252,11 +257,12 @@ def convert_traces(src: Path, filter: bool = False) -> pl.DataFrame:
             .alias("span_name")
         ]
     )
+    del lf
 
     return df
 
 
-def convert_logs(src: Path) -> pl.LazyFrame:
+def convert_logs(src: Path) -> pl.DataFrame:
     lf = pl.scan_parquet(src).select(
         "Timestamp",
         "TraceId",
@@ -284,6 +290,9 @@ def convert_logs(src: Path) -> pl.LazyFrame:
         pl.col("level").str.to_uppercase(),
     )
 
+    # Filter out ts-ui-dashboard logs
+    lf = lf.filter(pl.col("service_name") != "ts-ui-dashboard")
+
     resource_attributes = pl.Struct(
         [
             pl.Field("pod.name", pl.String),
@@ -302,7 +311,62 @@ def convert_logs(src: Path) -> pl.LazyFrame:
 
     lf = lf.sort("time")
 
-    return lf
+    # Process templates directly within convert_logs
+    df = lf.collect()
+
+    # Extract unique messages for template processing
+    unique_messages = df.select("message").unique()
+
+    if unique_messages.height > 0:
+        logger.info(f"Processing {unique_messages.height} unique log messages for template extraction")
+
+        # Process messages with Drain3
+        config_path = Path("data/rcabench_dataset/drain_template/drain_ts.ini")
+        persistence_path = Path("data/rcabench_dataset/drain_template/drain_ts.bin")
+
+        template_miner = create_template_miner(config_path, persistence_path)
+
+        message_mappings = []
+        for message in unique_messages["message"].to_list():
+            if message:  # Skip empty messages
+                result = template_miner.add_log_message(message)
+                template_id = result["cluster_id"]
+                cluster = template_miner.drain.id_to_cluster.get(template_id)
+                if isinstance(cluster, LogCluster):
+                    log_template = cluster.get_template()
+                else:
+                    log_template = ""
+
+                message_mappings.append(
+                    {
+                        "message": message,
+                        "template_id": template_id,
+                        "log_template": log_template,
+                    }
+                )
+
+        del template_miner
+
+        # Create template mapping DataFrame
+        template_mapping_df = pl.DataFrame(
+            message_mappings, schema={"message": pl.String, "template_id": pl.UInt16, "log_template": pl.String}
+        )
+
+        # Join with log data to add template columns
+        df = (
+            df.join(template_mapping_df, on="message", how="left")
+            .with_columns(
+                [
+                    pl.col("template_id").cast(pl.UInt16).alias("attr.template_id"),
+                    pl.col("log_template").alias("attr.log_template"),
+                ]
+            )
+            .drop(["template_id", "log_template"])
+        )
+
+        del template_mapping_df, unique_messages
+
+    return df
 
 
 def convert_conclusion(src: Path) -> pl.LazyFrame:
@@ -371,7 +435,6 @@ class RcabenchDatapackLoader(DatapackLoader):
     def __init__(self, src_folder: Path, datapack: str) -> None:
         self._src_folder = src_folder
         self._datapack = datapack
-
         self._service = rcabench_get_service_name(datapack)
 
         injection = load_json(path=self._src_folder / "injection.json")
@@ -415,12 +478,39 @@ class RcabenchDatapackLoader(DatapackLoader):
         for key, func in converters.items():
             for prefix in ("normal", "abnormal"):
                 name = f"{prefix}{key}.parquet"
-                # if prefix == "normal" and key == "_traces":
-                # ans[name] = func(self._src_folder / name, True)
-                # continue
                 ans[name] = func(self._src_folder / name)
 
         return ans
+
+
+def create_template_miner(config_path: Path, persistence_path: Path) -> TemplateMiner:
+    """Create a Drain3 template miner with file persistence and config."""
+    persistence = FilePersistence(str(persistence_path))
+    miner_config = TemplateMinerConfig()
+    miner_config.load(str(config_path))
+    return TemplateMiner(persistence, config=miner_config)
+
+
+def extract_unique_log_messages(src_root: Path, datapacks: list[str]) -> pl.DataFrame:
+    """Extract unique log messages from all datapacks, excluding ts-ui-dashboard service."""
+    all_logs = []
+
+    for datapack in datapacks:
+        datapack_folder = src_root / datapack
+        for prefix in ("normal", "abnormal"):
+            log_file = datapack_folder / f"{prefix}_logs.parquet"
+            if log_file.exists():
+                lf = pl.scan_parquet(log_file).select("Body", "ServiceName")
+                all_logs.append(lf)
+
+    if not all_logs:
+        return pl.DataFrame(schema={"Body": pl.String})
+
+    # Combine all logs and filter out ts-ui-dashboard
+    combined_lf = pl.concat(all_logs)
+    unique_messages = combined_lf.filter(pl.col("ServiceName") != "ts-ui-dashboard").select("Body").unique().collect()
+
+    return unique_messages
 
 
 @timeit()
@@ -469,7 +559,6 @@ class RcabenchDatasetLoader(DatasetLoader):
     def __init__(self, src_root: Path, dataset: str) -> None:
         self._src_root = src_root
         self._dataset = dataset
-
         self._datapacks = scan_datapacks(src_root)
 
     def name(self) -> str:

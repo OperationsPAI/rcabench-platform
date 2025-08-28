@@ -34,7 +34,11 @@ from rcabench_platform.v2.utils.serde import load_json, save_parquet
 
 @app.command()
 @timeit()
-def run(skip_finished: bool = True, parallel: int = 4, scan: bool = True):
+def run(
+    skip_finished: bool = True,
+    parallel: int = 4,
+    scan: bool = True,
+):
     src_root = Path("data") / "rcabench_dataset"
 
     loader = RcabenchDatasetLoader(src_root, dataset="rcabench")
@@ -52,8 +56,54 @@ def run(skip_finished: bool = True, parallel: int = 4, scan: bool = True):
 
 @app.command()
 @timeit()
+def build_template():
+    """Build log templates for all datapacks using Drain3."""
+    src_root = Path("data") / "rcabench_dataset"
+
+    # Get all datapacks using the same logic as the dataset loader
+    from rcabench_platform.v2.sources.rcabench import create_template_miner, extract_unique_log_messages, scan_datapacks
+
+    datapacks = scan_datapacks(src_root)
+    logger.info(f"Found {len(datapacks)} datapacks for template building")
+
+    # Extract unique messages from all datapacks
+    unique_messages = extract_unique_log_messages(src_root, datapacks)
+    logger.info(f"Extracted {unique_messages.height} unique log messages")
+
+    if unique_messages.height == 0:
+        logger.warning("No log messages found for template processing")
+        return
+
+    # Process all messages with Drain3
+    config_path = Path("data/rcabench_dataset/drain_template/drain_ts.ini")
+    persistence_path = Path("data/rcabench_dataset/drain_template/drain_ts.bin")
+
+    # Ensure template directory exists
+    persistence_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing persistence file to rebuild from scratch
+    if persistence_path.exists():
+        persistence_path.unlink()
+        logger.info("Removed existing drain_ts.bin file")
+
+    template_miner = create_template_miner(config_path, persistence_path)
+
+    logger.info("Processing all unique log messages with Drain3...")
+    processed_count = 0
+
+    for message in tqdm(unique_messages["Body"].to_list(), desc="Processing messages"):
+        if message:  # Skip empty messages
+            template_miner.add_log_message(message)
+            processed_count += 1
+
+    logger.info(f"Processed {processed_count} messages and built {len(template_miner.drain.clusters)} templates")
+    logger.info(f"Template state saved to {persistence_path}")
+
+
+@app.command()
+@timeit()
 def local_test_1():
-    datapack = "ts3-ts-travel2-service-partition-rtkjjr"
+    datapack = "ts0-mysql-bandwidth-5p8bkc"
     loader = RcabenchDatapackLoader(
         src_folder=Path("data") / "rcabench_dataset" / datapack,
         datapack=datapack,

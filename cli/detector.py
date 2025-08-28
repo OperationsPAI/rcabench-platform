@@ -945,7 +945,7 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
 
 @app.command()
 @timeit()
-def patch_detection(convert: bool):
+def patch_detection():
     """Run patch detection on all valid datapacks.
 
     Args:
@@ -964,7 +964,7 @@ def patch_detection(convert: bool):
         try:
             if not datapack.is_dir():
                 continue
-            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=convert, online=False))
+            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=False, online=False))
         except Exception as e:
             assertions.append((datapack.name, str(e)))
 

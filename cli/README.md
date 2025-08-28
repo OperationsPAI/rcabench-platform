@@ -1,37 +1,70 @@
 # Notes of Building Dataset
 
 ```bash
-
-
 # patch detection result, convert the dataset to standard RCABench format in */converted directory
-
-
 sudo -E ./cli/detector.py patch-detection
 
-
-
 # copy the converted dataset to the rcabench-platform-v2
-
-
 sudo -E ./cli/dataset_transform/make_rcabench.py run
 
-
-
 # do some filtering strategies
-
-
 sudo -E ./cli/dataset_transform/make_rcabench_filtered.py run
 
+# build log templates using Drain3 for all datapacks (rebuild drain_ts.bin from scratch)
+sudo -E ./cli/dataset_transform/make_rcabench.py build-template
 
+# run normal conversion (templates are processed per-datapack during conversion)
+sudo -E ./cli/dataset_transform/make_rcabench.py run
 ```
+
+## Log Template Processing with Drain3
+
+The system supports automatic log template extraction using Drain3 for log anomaly detection and analysis. Templates are processed per-datapack during conversion without persistent caching.
+
+### Template Processing Features
+
+1. **Per-Datapack Processing**: Each datapack processes its own log messages independently
+2. **Drain3 State Persistence**: Global template state is maintained in `drain_ts.bin` file
+3. **Service Filtering**: Automatically excludes `ts-ui-dashboard` logs from template processing
+4. **Memory Efficient**: No cross-datapack template caching, reducing memory usage
+5. **Deduplication**: Unique messages are extracted per-datapack before processing
+
+### Configuration Files
+
+- **Config**: `data/rcabench_dataset/drain_template/drain_ts.ini` - Drain3 configuration parameters
+- **Persistence**: `data/rcabench_dataset/drain_template/drain_ts.bin` - Drain3 state persistence across all datapacks
+
+### Template Processing Workflow
+
+#### Per-Datapack Processing (during conversion)
+1. **Extract Unique Messages**: Extract unique log messages from current datapack (excluding ts-ui-dashboard)
+2. **Load Drain3 State**: Load existing template miner state from `drain_ts.bin`
+3. **Process Messages**: Process datapack messages with Drain3 to get templates
+4. **Template Mapping**: Create in-memory mapping of messages to templates
+5. **Log Enhancement**: Join templates with log data to add `attr.template_id` and `attr.log_template` columns
+
+#### Global Template Building (optional)
+1. **Extract All Messages**: Scan all datapacks and extract unique messages
+2. **Rebuild Drain3 State**: Process all messages to rebuild `drain_ts.bin` from scratch
+3. **Template State Persistence**: Save updated template state for future datapack processing
+
+### Template Output
+
+Each log entry will be enhanced with:
+- `attr.template_id` (UInt16): Unique identifier for the template
+- `attr.log_template` (String): The extracted log template with variables replaced by placeholders
+
+### Commands
+
+- `build-template`: Rebuild the global Drain3 state by processing all unique messages from all datapacks
+- `run`: Normal conversion process, templates are processed per-datapack using existing Drain3 state
+
 
 ## Anomaly detection logic documentation
 
 This detector is mainly used for performance anomaly detection in microservice systems, identifying delay and success rate anomalies by analyzing trace data during normal and abnormal periods.
 
 ### Overview of the testing process
-
-```
 
 
 Data preprocessing → endpoint analysis → latency anomaly detection → success rate anomaly detection → result classification and output
@@ -172,8 +205,6 @@ The system divides endpoints into two categories and handles them differently:
 #### 4.2 Statistical detection method
 
 Z-TEST
-
-```
 
 
 pooled_p = (normal_rate * normal_count + abnormal_rate * abnormal_count) / (normal_count + abnormal_count)
