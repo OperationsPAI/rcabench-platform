@@ -1,3 +1,4 @@
+import functools
 from typing import Annotated
 
 import typer
@@ -9,6 +10,7 @@ from ..samplers.experiments.report import generate_sampler_perf_report
 from ..samplers.experiments.single import run_sampler_single
 from ..samplers.metrics_sli import generate_metrics_sli
 from ..samplers.spec import SamplingMode, global_sampler_registry
+from ..utils.fmap import fmap_processpool
 
 app = typer.Typer()
 
@@ -108,7 +110,10 @@ def generate_sli_metrics(
 
         datapacks = get_datapack_list(dataset)
         logger.info(f"Generating metrics_sli.parquet for {len(datapacks)} datapacks in {dataset}")
+        tasks = []
 
         for dp in datapacks:
             input_folder = get_datapack_folder(dataset, dp)
-            generate_metrics_sli(input_folder)
+            tasks.append(functools.partial(generate_metrics_sli, input_folder))
+
+        fmap_processpool(tasks, parallel=64)
