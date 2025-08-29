@@ -357,7 +357,7 @@ def convert_logs(src: Path) -> pl.DataFrame:
             df.join(template_mapping_df, on="message", how="left")
             .with_columns(
                 [
-                    pl.col("template_id").cast(pl.UInt16).alias("attr.template_id"),
+                    pl.col("template_id").alias("attr.template_id"),
                     pl.col("log_template").alias("attr.log_template"),
                 ]
             )
