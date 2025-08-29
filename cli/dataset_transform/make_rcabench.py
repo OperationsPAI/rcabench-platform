@@ -102,6 +102,48 @@ def build_template():
 
 @app.command()
 @timeit()
+def test_build_template():
+    """Test function to build log templates for a specific datapack."""
+    src_root = Path("data") / "rcabench_dataset"
+    datapack = "ts0-mysql-bandwidth-5p8bkc"
+
+    # Extract unique messages from the specified datapack
+    from rcabench_platform.v2.sources.rcabench import create_template_miner, extract_unique_log_messages
+
+    unique_messages = extract_unique_log_messages(src_root, [datapack])
+    logger.info(f"Extracted {unique_messages.height} unique log messages from {datapack}")
+
+    if unique_messages.height == 0:
+        logger.warning(f"No log messages found in datapack {datapack} for template processing")
+        return
+
+    # Process all messages with Drain3
+    config_path = Path("data/rcabench_dataset/drain_template/drain_ts.ini")
+    persistence_path = Path("temp/drain_ts_test.bin")
+
+    # Ensure template directory exists
+    persistence_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing persistence file to rebuild from scratch
+    if persistence_path.exists():
+        persistence_path.unlink()
+        logger.info("Removed existing drain_ts_test.bin file")
+
+    template_miner = create_template_miner(config_path, persistence_path)
+
+    logger.info(f"Processing unique log messages from {datapack} with Drain3...")
+    processed_count = 0
+
+    for message in tqdm(unique_messages["Body"].to_list(), desc="Processing messages"):
+        if message:
+            template_miner.add_log_message(message)
+            processed_count += 1
+    logger.info(f"Processed {processed_count} messages and built {len(template_miner.drain.clusters)} templates")
+    logger.info(f"Template state saved to {persistence_path}")
+
+
+@app.command()
+@timeit()
 def local_test_1():
     datapack = "ts0-mysql-bandwidth-5p8bkc"
     loader = RcabenchDatapackLoader(
