@@ -57,16 +57,6 @@ def generate_metrics_sli(input_folder: Path, output_folder: Path | None = None) 
     traces_df = pl.concat(traces_dfs, how="vertical")
     logger.debug(f"Loaded {len(traces_df)} spans from trace files")
 
-    # Process span names for special services
-    traces_df = traces_df.with_columns(
-        [
-            pl.when(pl.col("service_name").is_in(["loadgenerator", "ts-ui-dashboard"]))
-            .then(pl.col("span_name").map_elements(extract_path, return_dtype=pl.String))
-            .otherwise(pl.col("span_name"))
-            .alias("processed_span_name")
-        ]
-    )
-
     # Convert timestamps to minute precision
     traces_df = traces_df.with_columns(
         [
@@ -80,7 +70,7 @@ def generate_metrics_sli(input_folder: Path, output_folder: Path | None = None) 
     )
 
     # Group by service, span name, and minute
-    metrics_df = traces_df.group_by(["time_minute", "service_name", "processed_span_name"]).agg(
+    metrics_df = traces_df.group_by(["time_minute", "service_name", "span_name"]).agg(
         [
             pl.col("duration_ms").min().alias("min_duration"),
             pl.col("duration_ms").max().alias("max_duration"),
@@ -93,9 +83,6 @@ def generate_metrics_sli(input_folder: Path, output_folder: Path | None = None) 
             pl.col("is_error").sum().alias("error_count"),
         ]
     )
-
-    # Rename processed_span_name back to span_name
-    metrics_df = metrics_df.rename({"processed_span_name": "span_name"})
 
     # Convert time_minute back to timestamp format
     metrics_df = metrics_df.with_columns([pl.col("time_minute").alias("time")]).drop("time_minute")
