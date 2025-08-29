@@ -96,7 +96,7 @@ class Item:
         for algo, (groundtruth, predictions) in self._algo_evals.items():
             assert groundtruth.service is not None
             metric_item = calculate_metrics_for_level(
-                groundtruth_items=groundtruth.service, predictions=predictions, level="service"
+                groundtruth_items=[groundtruth.service[0]], predictions=predictions, level="service"
             )
 
             if algo in self._algo_durations:
@@ -105,7 +105,6 @@ class Item:
 
     @property
     def node(self) -> HandlerNode:
-        """Return the HandlerNode instance associated with this item."""
         return self._node
 
     @property

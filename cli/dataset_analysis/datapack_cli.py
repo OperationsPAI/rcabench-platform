@@ -74,13 +74,33 @@ def analysis():
         sdd1 = aggregator.sdd_k(1)
         sdd3 = aggregator.sdd_k(3)
         sdd5 = aggregator.sdd_k(5)
+
         print_dataframe(sdd1)
         print_dataframe(sdd3)
         print_dataframe(sdd5)
 
-        vis_hook(sdd1, "sdd1")
-        vis_hook(sdd3, "sdd3")
-        vis_hook(sdd5, "sdd5")
+        # print_dataframe(aggregator.algorithm_performance_breakdown("baro"))
+        algo = "microrank"
+        format_dataframe(
+            aggregator.algorithm_success_failure_stats(algo),
+            output_format="html",
+            output_file="temp/algo/algorithm_success_failure_stats.html",
+        )
+        format_dataframe(
+            aggregator.algorithm_failure_characteristics(algo),
+            output_format="html",
+            output_file="temp/algo/algorithm_failure_characteristics.html",
+        )
+        format_dataframe(
+            aggregator.algorithm_comparative_analysis(algo),
+            output_format="html",
+            output_file="temp/algo/algorithm_comparative_analysis.html",
+        )
+        format_dataframe(
+            aggregator.algorithm_detailed_performance_matrix(algo),
+            output_format="html",
+            output_file="temp/algo/algorithm_detailed_performance_matrix.html",
+        )
 
         fcasdd_df = aggregator.fault_category_and_sdd_analysis(1)
         format_dataframe(
@@ -88,28 +108,6 @@ def analysis():
             "html",
             output_file="temp/algo/fault_category_and_sdd_analysis.html",
         )
-        algo_perf_by_groups(fcasdd_df, output_file=Path("temp/algo/fault_category_and_sdd_analysis.png"))
-        algo_perf_scatter_by_fault_category(
-            fcasdd_df, 1, output_file=Path("temp/algo/fault_category_and_sdd_analysis_scatter.png")
-        )
-
-        common = aggregator.common_failed_cases_analysis(1, len(ALGORITHMS) - 1)
-        # Save original format for HTML output
-        format_dataframe(common, "html", output_file="temp/algo/common_failed_cases_analysis.html")
-
-        fault_type_distribution = (
-            common.with_columns((pl.col("SDD@1") == 0).alias("SDD@1_is_zero"))
-            .group_by(["fault_type", "SDD@1_is_zero"])
-            .agg(pl.len().alias("count"))
-            .sort("fault_type", descending=True)
-        )
-        print("Fault Type Distribution by SDD@1 (is zero):")
-        print_dataframe(fault_type_distribution)
-
-        injection_names = common["injection_name"].to_list()
-
-        with open("temp/algo/failed_cases.json", "w") as f:
-            json.dump(injection_names, f)
 
         # batch_visualization(datapack_paths, False)
 

@@ -69,22 +69,12 @@ class DatasetMetricsCalculator:
 
             for metric in abnormal_metrics:
                 if metric in normal_metrics:
-                    normal_values = normal_metrics[metric]
-                    abnormal_values = abnormal_metrics[metric]
-                    if normal_values and abnormal_values:
-                        normal_mean = statistics.mean(normal_values)
-                        normal_std = statistics.stdev(normal_values) if len(normal_values) > 1 else 0.0
-                        abnormal_mean = statistics.mean(abnormal_values)
-
-                        # Use z-score to calculate anomaly score
-                        z_score = 0.0
-                        if normal_std > 0:
-                            z_score = abs(abnormal_mean - normal_mean) / normal_std
-                        elif normal_mean != abnormal_mean:  # No variance in normal period but values differ
-                            z_score = 1.0  # Consider as anomalous
-
-                        delta += z_score
-                        metric_contributions.append((metric, z_score))
+                    v1 = normal_metrics[metric]
+                    v2 = abnormal_metrics[metric]
+                    if v1 and v2:
+                        contribution = abs((sum(v2) / len(v2)) - (sum(v1) / len(v1)))
+                        delta += contribution
+                        metric_contributions.append((metric, contribution))
 
             service_deltas[service] = delta
             # Sort metrics by contribution and keep top 5

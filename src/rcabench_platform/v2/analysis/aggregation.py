@@ -498,5 +498,213 @@ class DuckDBAggregator:
         else:
             return pl.DataFrame()
 
+    def algorithm_performance_breakdown(self, algorithm_name: str) -> pl.DataFrame:
+        algo_columns = self._get_algo_columns()
+
+        top1_col = f"algo_{algorithm_name}_top1"
+        top3_col = f"algo_{algorithm_name}_top3"
+        top5_col = f"algo_{algorithm_name}_top5"
+
+        missing_cols = [col for col in [top1_col, top3_col, top5_col] if col not in algo_columns]
+        if missing_cols:
+            logger.warning(f"Algorithm {algorithm_name} missing columns: {missing_cols}")
+            return pl.DataFrame()
+
+        sql = f"""
+        SELECT 
+            *,
+            CASE 
+                WHEN {top1_col} = 1 THEN 'top1_success'
+                WHEN {top3_col} = 1 THEN 'top3_success'
+                WHEN {top5_col} = 1 THEN 'top5_success'
+                ELSE 'complete_failure'
+            END as performance_category
+        FROM data
+        WHERE {top1_col} IS NOT NULL 
+        AND {top3_col} IS NOT NULL 
+        AND {top5_col} IS NOT NULL
+        """
+
+        return self.custom_sql(sql)
+
+    def algorithm_success_failure_stats(self, algorithm_name: str) -> pl.DataFrame:
+        breakdown_df = self.algorithm_performance_breakdown(algorithm_name)
+
+        if breakdown_df.height == 0:
+            return pl.DataFrame()
+
+        self.conn.register("breakdown_data", breakdown_df.to_arrow())
+
+        sql = """
+        SELECT 
+            performance_category,
+            COUNT(*) as count,
+            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage,
+            -- 故障类型分布
+            fault_category,
+            COUNT(*) as fault_count
+        FROM breakdown_data
+        GROUP BY performance_category, fault_category
+        ORDER BY performance_category, fault_count DESC
+        """
+
+        return self.custom_sql(sql)
+
+    def algorithm_failure_characteristics(self, algorithm_name: str) -> pl.DataFrame:
+        breakdown_df = self.algorithm_performance_breakdown(algorithm_name)
+
+        if breakdown_df.height == 0:
+            return pl.DataFrame()
+
+        self.conn.register("breakdown_data", breakdown_df.to_arrow())
+
+        sql = """
+        SELECT 
+            performance_category,
+            fault_category,
+            fault_type,
+            COUNT(*) as count,
+            AVG("SDD@1") as avg_sdd1,
+            AVG("SDD@3") as avg_sdd3,
+            AVG("SDD@5") as avg_sdd5,
+            AVG(CPL) as avg_cpl,
+            AVG(RootServiceDegree) as avg_root_service_degree,
+            AVG(trace_count) as avg_trace_count,
+            AVG(duration_seconds) as avg_duration,
+            AVG(qps) as avg_qps,
+            AVG(service_count) as avg_service_count,
+            AVG(avg_trace_length) as avg_trace_length,
+            AVG(max_trace_length) as avg_max_trace_length
+        FROM breakdown_data
+        WHERE performance_category = 'complete_failure'
+        GROUP BY performance_category, fault_category, fault_type
+        ORDER BY count DESC
+        """
+
+        return self.custom_sql(sql)
+
+    def algorithm_success_characteristics(self, algorithm_name: str) -> pl.DataFrame:
+        breakdown_df = self.algorithm_performance_breakdown(algorithm_name)
+
+        if breakdown_df.height == 0:
+            return pl.DataFrame()
+
+        self.conn.register("breakdown_data", breakdown_df.to_arrow())
+
+        sql = """
+        SELECT 
+            performance_category,
+            fault_category,
+            fault_type,
+            COUNT(*) as count,
+            AVG("SDD@1") as avg_sdd1,
+            AVG("SDD@3") as avg_sdd3,
+            AVG("SDD@5") as avg_sdd5,
+            AVG(CPL) as avg_cpl,
+            AVG(RootServiceDegree) as avg_root_service_degree,
+            AVG(trace_count) as avg_trace_count,
+            AVG(duration_seconds) as avg_duration,
+            AVG(qps) as avg_qps,
+            AVG(service_count) as avg_service_count,
+            AVG(avg_trace_length) as avg_trace_length,
+            AVG(max_trace_length) as avg_max_trace_length
+        FROM breakdown_data
+        WHERE performance_category IN ('top1_success', 'top3_success', 'top5_success')
+        GROUP BY performance_category, fault_category, fault_type
+        ORDER BY performance_category, count DESC
+        """
+
+        return self.custom_sql(sql)
+
+    def algorithm_comparative_analysis(self, algorithm_name: str) -> pl.DataFrame:
+        breakdown_df = self.algorithm_performance_breakdown(algorithm_name)
+
+        if breakdown_df.height == 0:
+            return pl.DataFrame()
+
+        self.conn.register("breakdown_data", breakdown_df.to_arrow())
+
+        sql = """
+        WITH success_stats AS (
+            SELECT 
+                'success' as category,
+                fault_category,
+                COUNT(*) as count,
+                AVG("SDD@1") as avg_sdd1,
+                AVG("SDD@3") as avg_sdd3,
+                AVG("SDD@5") as avg_sdd5,
+                AVG(CPL) as avg_cpl,
+                AVG(RootServiceDegree) as avg_root_service_degree,
+                AVG(trace_count) as avg_trace_count,
+                AVG(duration_seconds) as avg_duration,
+                AVG(qps) as avg_qps,
+                AVG(service_count) as avg_service_count,
+                AVG(avg_trace_length) as avg_trace_length
+            FROM breakdown_data
+            WHERE performance_category IN ('top1_success', 'top3_success', 'top5_success')
+            GROUP BY fault_category
+        ),
+        failure_stats AS (
+            SELECT 
+                'failure' as category,
+                fault_category,
+                COUNT(*) as count,
+                AVG("SDD@1") as avg_sdd1,
+                AVG("SDD@3") as avg_sdd3,
+                AVG("SDD@5") as avg_sdd5,
+                AVG(CPL) as avg_cpl,
+                AVG(RootServiceDegree) as avg_root_service_degree,
+                AVG(trace_count) as avg_trace_count,
+                AVG(duration_seconds) as avg_duration,
+                AVG(qps) as avg_qps,
+                AVG(service_count) as avg_service_count,
+                AVG(avg_trace_length) as avg_trace_length
+            FROM breakdown_data
+            WHERE performance_category = 'complete_failure'
+            GROUP BY fault_category
+        )
+        SELECT * FROM success_stats
+        UNION ALL
+        SELECT * FROM failure_stats
+        ORDER BY fault_category, category
+        """
+
+        return self.custom_sql(sql)
+
+    def algorithm_detailed_performance_matrix(self, algorithm_name: str) -> pl.DataFrame:
+        breakdown_df = self.algorithm_performance_breakdown(algorithm_name)
+
+        if breakdown_df.height == 0:
+            return pl.DataFrame()
+
+        self.conn.register("breakdown_data", breakdown_df.to_arrow())
+
+        sql = """
+        SELECT 
+            fault_category,
+            fault_type,
+            performance_category,
+            COUNT(*) as count,
+            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY fault_category, fault_type), 2) 
+                as percentage_within_fault,
+            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_total,
+            -- 关键指标的平均值
+            ROUND(AVG("SDD@1"), 3) as avg_sdd1,
+            ROUND(AVG(CPL), 3) as avg_cpl,
+            ROUND(AVG(trace_count), 1) as avg_trace_count,
+            ROUND(AVG(qps), 1) as avg_qps
+        FROM breakdown_data
+        GROUP BY fault_category, fault_type, performance_category
+        ORDER BY fault_category, fault_type, 
+                 CASE performance_category 
+                     WHEN 'top1_success' THEN 1
+                     WHEN 'top3_success' THEN 2
+                     WHEN 'top5_success' THEN 3
+                     WHEN 'complete_failure' THEN 4
+                 END
+        """
+
+        return self.custom_sql(sql)
+
     def close(self):
         self.conn.close()
