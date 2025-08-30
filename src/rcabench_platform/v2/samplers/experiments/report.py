@@ -22,70 +22,111 @@ def generate_sampler_perf_report(
     """
     Generate performance report for sampler experiments.
 
+    Automatically scans all available sampler outputs in the dataset.
+    Similar to algorithm report, only requires dataset specification.
+
     Args:
         datasets: List of dataset names to include in report
-        samplers: List of sampler names (default: all registered)
-        sampling_rates: List of sampling rates (default: scan for all used rates)
-        modes: List of modes (default: both online and offline)
+        samplers: List of sampler names (default: auto-detect from outputs)
+        sampling_rates: List of sampling rates (default: auto-detect from outputs)
+        modes: List of modes (default: auto-detect from outputs)
         warn_missing: Whether to warn about missing result files
     """
-    if samplers is None:
-        samplers = list(global_sampler_registry().keys())
-
-    if modes is None:
-        modes = [SamplingMode.ONLINE, SamplingMode.OFFLINE]
-
     all_perf_data = []
 
     for dataset in datasets:
         datapacks = get_datapack_list(dataset)
         logger.info(f"Processing dataset {dataset} with {len(datapacks)} datapacks")
 
-        # If sampling_rates not specified, scan for available rates
-        if sampling_rates is None:
-            dataset_sampling_rates = _scan_available_sampling_rates(dataset, datapacks, samplers, modes)
-        else:
-            dataset_sampling_rates = sampling_rates
+        # Auto-scan all available sampler outputs
+        perf_files = _scan_all_sampler_outputs(dataset, datapacks, warn_missing)
 
-        logger.debug(f"Found sampling rates: {dataset_sampling_rates}")
+        if len(perf_files) == 0:
+            logger.warning(f"No sampler performance files found for dataset {dataset}")
+            continue
 
-        for sampler in samplers:
-            for sampling_rate in dataset_sampling_rates:
-                for mode in modes:
-                    perf_files = []
+        logger.debug(f"Loading {len(perf_files)} perf files for dataset {dataset}")
 
+        # Load and combine all performance data
+        for perf_file in perf_files:
+            try:
+                perf_df = pl.read_parquet(perf_file, rechunk=True)
+
+                # Extract metadata from file path
+                # Path structure: {datapack_folder}/sampled/{sampler}_{rate}_{mode}/perf.parquet
+                path_parts = perf_file.parts
+
+                # Find the sampler folder (should be the parent of perf.parquet)
+                sampler_folder = perf_file.parent.name
+
+                # The datapack name is the parent of the "sampled" folder
+                sampled_idx = None
+                for i, part in enumerate(path_parts):
+                    if part == "sampled":
+                        sampled_idx = i
+                        break
+
+                if sampled_idx is not None and sampled_idx > 0:
+                    datapack_name = path_parts[sampled_idx - 1]
+                else:
+                    # Fallback: extract from path
+                    datapack_name = None
                     for datapack in datapacks:
-                        output_folder = get_sampler_output_folder(dataset, datapack, sampler, sampling_rate, mode)
-                        perf_file = output_folder / "perf.parquet"
+                        if datapack in str(perf_file):
+                            datapack_name = datapack
+                            break
 
-                        if perf_file.exists():
-                            perf_files.append(perf_file)
-                        elif warn_missing:
-                            logger.warning(f"Missing perf file: {perf_file}")
-
-                    if len(perf_files) == 0:
-                        logger.warning(
-                            f"No perf files found for {sampler} on {dataset} (rate={sampling_rate}, mode={mode.value})"
-                        )
+                    if not datapack_name:
+                        if warn_missing:
+                            logger.warning(f"Could not extract datapack name from {perf_file}")
                         continue
 
-                    logger.debug(f"Loading {len(perf_files)} perf files for {sampler}/{dataset}")
+                if sampler_folder:
+                    # Parse sampler_rate_mode pattern
+                    parts = sampler_folder.split("_")
+                    if len(parts) >= 3:
+                        sampler_name = "_".join(parts[:-2])  # Handle multi-word sampler names
+                        rate_str = parts[-2]
+                        mode_str = parts[-1]
 
-                    # Load and aggregate performance data
-                    perf_df = pl.read_parquet(perf_files, rechunk=True)
+                        try:
+                            sampling_rate = float(rate_str)
+                            mode = SamplingMode(mode_str)
 
-                    # Add metadata
-                    perf_df = perf_df.with_columns(
-                        pl.lit(sampler).alias("sampler"),
-                        pl.lit(dataset).alias("dataset"),
-                        pl.lit(sampling_rate).alias("sampling_rate"),
-                        pl.lit(mode.value).alias("mode"),
-                    )
+                            # Apply filters if specified
+                            if samplers and sampler_name not in samplers:
+                                continue
+                            if sampling_rates and sampling_rate not in sampling_rates:
+                                continue
+                            if modes and mode not in modes:
+                                continue
 
-                    all_perf_data.append(perf_df)
+                            # Ensure consistent schema by adding missing columns with default values
+                            perf_df = _normalize_perf_schema(perf_df)
+
+                            # Add metadata columns
+                            perf_df = perf_df.with_columns(
+                                [
+                                    pl.lit(dataset).alias("dataset"),
+                                    pl.lit(datapack_name).alias("datapack"),
+                                    pl.lit(sampler_name).alias("sampler"),
+                                    pl.lit(sampling_rate).alias("sampling_rate"),
+                                    pl.lit(mode.value).alias("mode"),
+                                ]
+                            )
+
+                            all_perf_data.append(perf_df)
+
+                        except (ValueError, TypeError) as e:
+                            if warn_missing:
+                                logger.warning(f"Failed to parse sampler metadata from {perf_file}: {e}")
+
+            except Exception as e:
+                if warn_missing:
+                    logger.warning(f"Failed to load {perf_file}: {e}")
 
     if len(all_perf_data) == 0:
-        logger.warning("No performance data found")
+        logger.warning("No sampler performance data found")
         return
 
     # Combine all performance data
@@ -202,3 +243,77 @@ def _scan_available_sampling_rates(
                     continue
 
     return sorted(list(rates)) if rates else [0.1, 0.2, 0.5]  # Default rates if none found
+
+
+def _scan_all_sampler_outputs(dataset: str, datapacks: list[str], warn_missing: bool = False) -> list:
+    """Scan all available sampler performance files for a dataset."""
+    from ...datasets.spec import get_datapack_folder
+
+    perf_files = []
+
+    for datapack in datapacks:
+        # Get the actual datapack folder (not output/sampled/dataset/datapack)
+        datapack_folder = get_datapack_folder(dataset, datapack)
+        sampled_folder = datapack_folder / "sampled"
+
+        if not sampled_folder.exists():
+            if warn_missing:
+                logger.warning(f"Sampled folder not found: {sampled_folder}")
+            continue
+
+        # Look for all sampler folders matching pattern: {sampler}_{rate}_{mode}
+        for sampler_folder in sampled_folder.iterdir():
+            if not sampler_folder.is_dir():
+                continue
+
+            # Check if folder name contains mode suffix
+            folder_name = sampler_folder.name
+            if any(mode.value in folder_name for mode in [SamplingMode.ONLINE, SamplingMode.OFFLINE]):
+                perf_file = sampler_folder / "perf.parquet"
+                if perf_file.exists():
+                    perf_files.append(perf_file)
+                elif warn_missing:
+                    logger.warning(f"Missing perf file: {perf_file}")
+
+    return perf_files
+
+
+def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Normalize performance DataFrame schema by adding missing columns with default values.
+
+    This handles cases where sampling resulted in 0 traces, causing coverage metrics
+    and other derived columns to be missing.
+    """
+    # Define all expected columns with their default values
+    expected_columns = {
+        "sampled_count": 0,
+        "total_traces": 0,
+        "controllability": 0.0,
+        "comprehensiveness": 0.0,  # API coverage
+        "path_coverage": 0.0,
+        "event_coverage": 0.0,
+        "proportion_anomaly": 0.0,
+        "proportion_rare": 0.0,
+        "proportion_common": 0.0,
+        "actual_sampling_rate": 0.0,
+        "runtime_per_span_ms": 0.0,
+        "runtime_per_trace_ms": 0.0,
+        "total_path_types": 0,
+        "sampled_path_types": 0,
+        "total_event_pairs": 0,
+        "sampled_event_pairs": 0,
+    }
+
+    # Add missing columns with default values
+    missing_columns = []
+    existing_columns = set(perf_df.columns)
+
+    for col_name, default_value in expected_columns.items():
+        if col_name not in existing_columns:
+            missing_columns.append(pl.lit(default_value).alias(col_name))
+
+    if missing_columns:
+        perf_df = perf_df.with_columns(missing_columns)
+
+    return perf_df
