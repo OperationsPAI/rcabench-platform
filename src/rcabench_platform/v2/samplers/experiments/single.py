@@ -160,17 +160,122 @@ def calculate_sampler_performance(
     controllability = abs((sampled_count - expected_count) / expected_count) if expected_count > 0 else 0.0
 
     if sampled_count == 0:
+        # Still need to calculate total metrics even when no samples
+        # Load full traces for total metrics calculation
+        combined_traces_lf = pl.concat(
+            [
+                normal_traces_lf.with_columns(pl.lit(False).alias("is_abnormal")),
+                abnormal_traces_lf.with_columns(pl.lit(True).alias("is_abnormal")),
+            ]
+        )
+
+        # Calculate total entry types for comprehensiveness baseline
+        entry_traces_lf = combined_traces_lf.filter(
+            pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == "")
+        )
+        loadgen_entries_lf = entry_traces_lf.filter(pl.col("service_name") == "loadgenerator")
+        loadgen_count = loadgen_entries_lf.select(pl.len()).collect().item()
+
+        if loadgen_count > 0:
+            selected_entries_lf = loadgen_entries_lf
+        else:
+            ui_entries_lf = entry_traces_lf.filter(pl.col("service_name") == "ts-ui-dashboard")
+            ui_count = ui_entries_lf.select(pl.len()).collect().item()
+            if ui_count > 0:
+                selected_entries_lf = ui_entries_lf
+            else:
+                selected_entries_lf = entry_traces_lf
+
+        traces_with_entry_lf = selected_entries_lf.with_columns(
+            pl.col("span_name").map_elements(extract_path, return_dtype=pl.String).alias("entry_span")
+        )
+        trace_entries_lf = traces_with_entry_lf.group_by("trace_id").agg(
+            [pl.first("entry_span").alias("entry_span"), pl.first("is_abnormal").alias("is_abnormal")]
+        )
+        trace_entries_df = trace_entries_lf.collect()
+        entry_span_counts = trace_entries_df.group_by("entry_span").agg(pl.len().alias("count"))
+        total_entry_types = entry_span_counts.shape[0]
+
+        # Calculate total path types
+        all_traces_df = pl.concat(
+            [
+                normal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
+                abnormal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
+            ]
+        ).collect()
+        path_coverage_metrics = calculate_path_coverage(all_traces_df, set())  # Empty sampled set
+
+        # Calculate total event pairs
+        all_traces_for_events_df = pl.concat(
+            [
+                normal_traces_lf.select(
+                    [
+                        "trace_id",
+                        "span_id",
+                        "parent_span_id",
+                        "service_name",
+                        "span_name",
+                        "time",
+                        "duration",
+                        "attr.status_code",
+                    ]
+                ),
+                abnormal_traces_lf.select(
+                    [
+                        "trace_id",
+                        "span_id",
+                        "parent_span_id",
+                        "service_name",
+                        "span_name",
+                        "time",
+                        "duration",
+                        "attr.status_code",
+                    ]
+                ),
+            ]
+        ).collect()
+
+        logs_for_events_df = None
+        normal_logs_path = input_folder / "normal_logs.parquet"
+        abnormal_logs_path = input_folder / "abnormal_logs.parquet"
+        if normal_logs_path.exists() and abnormal_logs_path.exists():
+            normal_logs_lf = pl.scan_parquet(normal_logs_path)
+            abnormal_logs_lf = pl.scan_parquet(abnormal_logs_path)
+            logs_for_events_df = pl.concat(
+                [
+                    normal_logs_lf.select(["trace_id", "span_id", "service_name", "time", "attr.template_id"]),
+                    abnormal_logs_lf.select(["trace_id", "span_id", "service_name", "time", "attr.template_id"]),
+                ]
+            ).collect()
+
+        event_coverage_metrics = calculate_event_coverage(
+            all_traces_for_events_df,
+            logs_for_events_df,
+            set(),
+            input_folder,  # Empty sampled set
+        )
+
         return {
             "sampled_count": sampled_count,
             "total_traces": total_traces,
+            "total_entry_types": total_entry_types,
+            "sampled_entry_types": 0,
             "controllability": controllability,
             "comprehensiveness": 0.0,
             "proportion_anomaly": 0.0,
             "proportion_rare": 0.0,
             "proportion_common": 0.0,
             "actual_sampling_rate": actual_sampling_rate,
-            "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else None,
-            "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
+            "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
+            "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
+            # Path coverage metrics
+            "total_path_types": path_coverage_metrics["total_path_types"],
+            "sampled_path_types": 0,
+            "path_coverage": 0.0,
+            # Event coverage metrics
+            "total_event_pairs": event_coverage_metrics["total_event_pairs"],
+            "sampled_event_pairs": 0,
+            "event_coverage": 0.0,
         }
 
     # Load full traces with parsed span names for analysis
@@ -276,7 +381,13 @@ def calculate_sampler_performance(
         ]
     ).collect()
 
+    # Always calculate path coverage to get total_path_types, even when no traces sampled
     path_coverage_metrics = calculate_path_coverage(all_traces_df, sampled_trace_ids)
+
+    # If no traces sampled, override sampled metrics but keep total metrics
+    if sampled_count == 0:
+        path_coverage_metrics["sampled_path_types"] = 0
+        path_coverage_metrics["path_coverage"] = 0.0
 
     # Calculate event coverage based on trace+log events
     # Load full trace and log data for event encoding
@@ -323,9 +434,15 @@ def calculate_sampler_performance(
             ]
         ).collect()
 
+    # Always calculate event coverage to get total_event_pairs, even when no traces sampled
     event_coverage_metrics = calculate_event_coverage(
         all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder
     )
+
+    # If no traces sampled, override sampled metrics but keep total metrics
+    if sampled_count == 0:
+        event_coverage_metrics["sampled_event_pairs"] = 0
+        event_coverage_metrics["event_coverage"] = 0.0
 
     return {
         "sampled_count": sampled_count,
@@ -338,8 +455,8 @@ def calculate_sampler_performance(
         "proportion_rare": proportion_rare,
         "proportion_common": proportion_common,
         "actual_sampling_rate": actual_sampling_rate,
-        "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else None,
-        "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
+        "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
+        "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
         # Path coverage metrics
         "total_path_types": path_coverage_metrics["total_path_types"],
         "sampled_path_types": path_coverage_metrics["sampled_path_types"],
