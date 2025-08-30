@@ -11,9 +11,9 @@ import streamlit.components.v1 as components
 from rcabench_platform.v2.tools.label.config import (
     APP_ICON,
     APP_TITLE,
-    LAYOUT,
     DATASET_BASE_PATH,
     DATASET_CONVERTED_SUFFIX,
+    LAYOUT,
 )
 from rcabench_platform.v2.tools.label.data_loader import DataLoader
 from rcabench_platform.v2.tools.label.logs_search import LogsSearcher
@@ -29,9 +29,9 @@ def build_dataset_path(datapack_name: str) -> str:
 
 def get_current_dataset_path() -> str:
     """Get the current dataset path from session state."""
-    if hasattr(st.session_state, 'datapack_name') and st.session_state.datapack_name:
+    if hasattr(st.session_state, "datapack_name") and st.session_state.datapack_name:
         return build_dataset_path(st.session_state.datapack_name)
-    elif hasattr(st.session_state, 'dataset_path') and st.session_state.dataset_path:
+    elif hasattr(st.session_state, "dataset_path") and st.session_state.dataset_path:
         # Fallback for backward compatibility
         return st.session_state.dataset_path
     else:
@@ -54,7 +54,7 @@ def dataframe_is_empty(df) -> bool:
 
 
 def ensure_dataframe_for_display(data: Any) -> pl.DataFrame:
-    """Ensure data is a Polars DataFrame for Streamlit display.""" 
+    """Ensure data is a Polars DataFrame for Streamlit display."""
     if isinstance(data, pl.DataFrame):
         return data
     else:
@@ -169,7 +169,7 @@ def render_sidebar() -> None:
                 try:
                     # Build full dataset path
                     dataset_path = build_dataset_path(datapack_name)
-                    
+
                     # Clear cache when loading new dataset
                     load_dataset_summary.clear()
                     get_available_data.clear()
@@ -248,7 +248,9 @@ def render_label_management(dataset_path: str) -> None:
             selected_labels = st.multiselect(
                 "Select Labels",
                 options=[name for name, _ in label_options],
-                default=[label["name"] for label in current_labels.iter_rows(named=True)] if len(current_labels) > 0 else [],
+                default=(
+                    [label["name"] for label in current_labels.iter_rows(named=True)] if len(current_labels) > 0 else []
+                ),
             )
 
             label_submitted = st.form_submit_button("Save Labels")
@@ -367,12 +369,10 @@ def render_metrics_tab() -> None:
         return
 
     # Use default values for chart type, data type, and selection mode
-    chart_type = "Time Series"
     data_type = "both"
-    selection_mode = "batch"
 
     # Display different UI based on selection mode
-    if selection_mode == "batch" and available_services:
+    if available_services:
         # st.subheader("Batch Select Services and Metrics")
 
         col_svc, col_metric = st.columns([1, 1])
@@ -401,7 +401,9 @@ def render_metrics_tab() -> None:
 
             # Default values for multiselect - use session state if available
             if "selected_services" not in st.session_state:
-                st.session_state.selected_services = available_services[:5] if len(available_services) >= 5 else available_services
+                st.session_state.selected_services = (
+                    available_services[:5] if len(available_services) >= 5 else available_services
+                )
 
             selected_services = st.multiselect(
                 "Select Services",
@@ -438,7 +440,9 @@ def render_metrics_tab() -> None:
 
             # Default values for multiselect - use session state if available
             if "selected_metrics_batch" not in st.session_state:
-                st.session_state.selected_metrics_batch = available_metrics[:3] if len(available_metrics) >= 3 else available_metrics
+                st.session_state.selected_metrics_batch = (
+                    available_metrics[:3] if len(available_metrics) >= 3 else available_metrics
+                )
 
             selected_metrics = st.multiselect(
                 "Select Metrics",
@@ -463,9 +467,7 @@ def render_metrics_tab() -> None:
             return
 
         # Get filtered data
-        metrics_df = get_metrics_data_cached(
-            dataset_path, selected_services, selected_metrics, data_type
-        )
+        metrics_df = get_metrics_data_cached(dataset_path, selected_services, selected_metrics, data_type)
 
         # Display selection summary
         with st.expander("Selection Summary", expanded=False):
@@ -591,7 +593,6 @@ def render_logs_tab():
     st.header("Logs Search and Browsing")
 
     try:
-        # 使用缓存的日志数据
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
 
         with col1:
@@ -611,7 +612,6 @@ def render_logs_tab():
                 key="logs_data_type",
             )
 
-        # 检查参数是否改变，只有在改变时才重新搜索
         dataset_path = get_current_dataset_path()
         current_search_params = {
             "search_term": search_term,
@@ -625,7 +625,6 @@ def render_logs_tab():
             filter_col1, filter_col2 = st.columns(2)
 
             with filter_col1:
-                # 缓存日志统计信息
                 cache_key = f"{dataset_path}_{data_type}"
                 if cache_key not in st.session_state.logs_stats_cache:
                     logs_df = load_logs_data(dataset_path, data_type)
@@ -650,7 +649,6 @@ def render_logs_tab():
                 services = list(log_stats.get("services", {}).keys())
                 selected_service = st.selectbox("Service", ["all"] + services[:10], key="service_filter")
 
-        # 添加高级过滤参数
         current_search_params.update(
             {
                 "log_level": selected_level,
@@ -748,7 +746,9 @@ def render_traces_tab():
 
         if len(normal_traces_df) == 0 and len(abnormal_traces_df) == 0:
             st.warning("No trace data available")
-            st.info("This might indicate that the dataset doesn't contain traces or there's an issue with data loading.")
+            st.info(
+                "This might indicate that the dataset doesn't contain traces or there's an issue with data loading."
+            )
             return
 
         st.divider()
@@ -765,32 +765,32 @@ def render_traces_tab():
 
         # Add service selection controls
         col_select, col_info = st.columns([2, 1])
-        
+
         with col_select:
             st.subheader("📊 Service Analysis")
             selected_service = st.selectbox(
-                "Select Service to Analyze", 
-                all_services, 
+                "Select Service to Analyze",
+                all_services,
                 key="selected_service_analysis",
-                help="Choose a service to view span aggregation comparison between normal and abnormal periods"
+                help="Choose a service to view span aggregation comparison between normal and abnormal periods",
             )
-        
+
         with col_info:
             if selected_service:
                 st.subheader("🔗 Service Dependencies")
-                
+
                 # Get upstream and downstream services from both normal and abnormal data
                 upstream_services = set()
                 downstream_services = set()
-                
+
                 if len(normal_traces_df) > 0:
                     upstream_services.update(visualizer.get_upstream_services(normal_traces_df, selected_service))
                     downstream_services.update(visualizer.get_downstream_services(normal_traces_df, selected_service))
-                
+
                 if len(abnormal_traces_df) > 0:
                     upstream_services.update(visualizer.get_upstream_services(abnormal_traces_df, selected_service))
                     downstream_services.update(visualizer.get_downstream_services(abnormal_traces_df, selected_service))
-                
+
                 # Display upstream services
                 if upstream_services:
                     st.write("**Upstream Services:**")
@@ -798,128 +798,169 @@ def render_traces_tab():
                         st.write(f"• {service}")
                 else:
                     st.write("**Upstream Services:** None")
-                
-                # Display downstream services  
+
+                # Display downstream services
                 if downstream_services:
                     st.write("**Downstream Services:**")
                     for service in sorted(downstream_services):
                         st.write(f"• {service}")
                 else:
                     st.write("**Downstream Services:** None")
-    
+
         if selected_service:
             # First show comparison summary at the top if both normal and abnormal data exist
-            if (len(normal_traces_df) > 0 and selected_service in normal_services and 
-                len(abnormal_traces_df) > 0 and selected_service in abnormal_services):
-                
+            if (
+                len(normal_traces_df) > 0
+                and selected_service in normal_services
+                and len(abnormal_traces_df) > 0
+                and selected_service in abnormal_services
+            ):
                 st.subheader("Comparison Summary")
-                
+
                 try:
                     normal_stats = visualizer.get_span_aggregated_stats(normal_traces_df, selected_service)
                     abnormal_stats = visualizer.get_span_aggregated_stats(abnormal_traces_df, selected_service)
-                    
+
                     if len(normal_stats) > 0 and len(abnormal_stats) > 0:
                         # Calculate overall metrics
                         normal_total_calls = normal_stats["total_calls"].sum()
                         normal_total_errors = normal_stats["error_count"].sum()
-                        normal_avg_error_rate = (normal_total_errors / normal_total_calls * 100) if normal_total_calls > 0 else 0
+                        normal_avg_error_rate = (
+                            (normal_total_errors / normal_total_calls * 100) if normal_total_calls > 0 else 0
+                        )
                         normal_avg_duration = normal_stats["avg_duration_ms"].mean()
-                        
+
                         abnormal_total_calls = abnormal_stats["total_calls"].sum()
                         abnormal_total_errors = abnormal_stats["error_count"].sum()
-                        abnormal_avg_error_rate = (abnormal_total_errors / abnormal_total_calls * 100) if abnormal_total_calls > 0 else 0
+                        abnormal_avg_error_rate = (
+                            (abnormal_total_errors / abnormal_total_calls * 100) if abnormal_total_calls > 0 else 0
+                        )
                         abnormal_avg_duration = abnormal_stats["avg_duration_ms"].mean()
-                        
+
                         # Display comparison metrics
                         col1, col2, col3 = st.columns(3)
-                        
+
                         with col1:
                             calls_change = abnormal_total_calls - normal_total_calls
-                            st.metric("Call Volume Change", f"{calls_change:+,}", f"{abnormal_total_calls:,} vs {normal_total_calls:,}")
-                        
+                            st.metric(
+                                "Call Volume Change",
+                                f"{calls_change:+,}",
+                                f"{abnormal_total_calls:,} vs {normal_total_calls:,}",
+                            )
+
                         with col2:
                             error_rate_change = abnormal_avg_error_rate - normal_avg_error_rate
-                            st.metric("Error Rate Change", f"{error_rate_change:+.2f}%", f"{abnormal_avg_error_rate:.2f}% vs {normal_avg_error_rate:.2f}%")
-                        
+                            st.metric(
+                                "Error Rate Change",
+                                f"{error_rate_change:+.2f}%",
+                                f"{abnormal_avg_error_rate:.2f}% vs {normal_avg_error_rate:.2f}%",
+                            )
+
                         with col3:
-                            if (normal_avg_duration is not None and abnormal_avg_duration is not None and
-                                isinstance(normal_avg_duration, (int, float)) and isinstance(abnormal_avg_duration, (int, float))):
+                            if (
+                                normal_avg_duration is not None
+                                and abnormal_avg_duration is not None
+                                and isinstance(normal_avg_duration, (int, float))
+                                and isinstance(abnormal_avg_duration, (int, float))
+                            ):
                                 duration_change = float(abnormal_avg_duration) - float(normal_avg_duration)
-                                st.metric("Avg Duration Change", f"{duration_change:+.2f}ms", f"{abnormal_avg_duration:.2f}ms vs {normal_avg_duration:.2f}ms")
+                                st.metric(
+                                    "Avg Duration Change",
+                                    f"{duration_change:+.2f}ms",
+                                    f"{abnormal_avg_duration:.2f}ms vs {normal_avg_duration:.2f}ms",
+                                )
                             else:
                                 st.metric("Avg Duration Change", "N/A", "Insufficient data")
-                        
+
                         # Top problematic spans
                         st.subheader("Most Impacted Spans")
-                        
+
                         # Join the data to find spans that exist in both periods for comparison
                         normal_span_lookup = {row["span_name"]: row for row in normal_stats.iter_rows(named=True)}
-                        
+
                         impact_analysis = []
                         for abnormal_row in abnormal_stats.iter_rows(named=True):
                             span_name = abnormal_row["span_name"]
                             if span_name in normal_span_lookup:
                                 normal_row = normal_span_lookup[span_name]
-                                
+
                                 # Safely calculate differences with type checking
-                                abnormal_error_rate = float(abnormal_row["error_rate_pct"]) if abnormal_row["error_rate_pct"] is not None else 0.0
-                                normal_error_rate = float(normal_row["error_rate_pct"]) if normal_row["error_rate_pct"] is not None else 0.0
+                                abnormal_error_rate = (
+                                    float(abnormal_row["error_rate_pct"])
+                                    if abnormal_row["error_rate_pct"] is not None
+                                    else 0.0
+                                )
+                                normal_error_rate = (
+                                    float(normal_row["error_rate_pct"])
+                                    if normal_row["error_rate_pct"] is not None
+                                    else 0.0
+                                )
                                 error_rate_increase = abnormal_error_rate - normal_error_rate
-                                
-                                abnormal_duration = float(abnormal_row["avg_duration_ms"]) if abnormal_row["avg_duration_ms"] is not None else 0.0
-                                normal_duration = float(normal_row["avg_duration_ms"]) if normal_row["avg_duration_ms"] is not None else 0.0
+
+                                abnormal_duration = (
+                                    float(abnormal_row["avg_duration_ms"])
+                                    if abnormal_row["avg_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                normal_duration = (
+                                    float(normal_row["avg_duration_ms"])
+                                    if normal_row["avg_duration_ms"] is not None
+                                    else 0.0
+                                )
                                 duration_increase = abnormal_duration - normal_duration
-                                
-                                impact_analysis.append({
-                                    "Span Name": span_name,
-                                    "Error Rate Increase (%)": f"{error_rate_increase:.2f}",
-                                    "Duration Increase (ms)": f"{duration_increase:.2f}",
-                                    "Normal Error Rate (%)": f"{normal_error_rate:.2f}",
-                                    "Abnormal Error Rate (%)": f"{abnormal_error_rate:.2f}",
-                                    "Normal Avg Duration (ms)": f"{normal_duration:.2f}",
-                                    "Abnormal Avg Duration (ms)": f"{abnormal_duration:.2f}"
-                                })
-                        
+
+                                impact_analysis.append(
+                                    {
+                                        "Span Name": span_name,
+                                        "Error Rate Increase (%)": f"{error_rate_increase:.2f}",
+                                        "Duration Increase (ms)": f"{duration_increase:.2f}",
+                                        "Normal Error Rate (%)": f"{normal_error_rate:.2f}",
+                                        "Abnormal Error Rate (%)": f"{abnormal_error_rate:.2f}",
+                                        "Normal Avg Duration (ms)": f"{normal_duration:.2f}",
+                                        "Abnormal Avg Duration (ms)": f"{abnormal_duration:.2f}",
+                                    }
+                                )
+
                         if impact_analysis:
                             impact_df = pl.DataFrame(impact_analysis)
                             # Sort by error rate increase descending
                             impact_df = impact_df.sort("Error Rate Increase (%)", descending=True)
-                            st.dataframe(impact_df.to_pandas(), width='stretch')
+                            st.dataframe(impact_df.to_pandas(), width="stretch")
                         else:
                             st.info("No overlapping spans found between normal and abnormal periods for comparison")
-                            
+
                 except Exception as e:
                     st.error(f"Error generating comparison summary: {str(e)}")
 
             # Add some spacing before the detailed sections
             # st.divider()
-            
+
             # Then show normal and abnormal period details side by side
             col_normal, col_abnormal = st.columns(2)
 
             with col_normal:
                 st.subheader("Normal Period")
-                
+
                 if len(normal_traces_df) > 0 and selected_service in normal_services:
                     with st.spinner("Aggregating normal spans..."):
                         normal_stats = visualizer.get_span_aggregated_stats(normal_traces_df, selected_service)
-                    
+
                     if len(normal_stats) > 0:
                         # Summary metrics (compact layout)
                         total_calls = normal_stats["total_calls"].sum()
                         total_errors = normal_stats["error_count"].sum()
                         avg_error_rate = (total_errors / total_calls * 100) if total_calls > 0 else 0
                         avg_duration = normal_stats["avg_duration_ms"].mean()
-                        
+
                         # Compact metrics in one row
                         metric_col1, metric_col2, metric_col3 = st.columns(3)
                         metric_col1.metric("Total Calls", f"{total_calls:,}")
                         metric_col2.metric("Error Rate", f"{avg_error_rate:.2f}%")
                         metric_col3.metric("Avg Duration", f"{avg_duration:.2f}ms" if avg_duration else "N/A")
-                        
+
                         # Format for display
                         normal_display = visualizer.format_aggregated_stats_for_display(normal_stats)
-                        st.dataframe(normal_display.to_pandas(), height=400, width='stretch')
+                        st.dataframe(normal_display.to_pandas(), height=400, width="stretch")
                     else:
                         st.info("No span data available for this service in normal period")
                 else:
@@ -927,38 +968,38 @@ def render_traces_tab():
 
             with col_abnormal:
                 st.subheader("Abnormal Period")
-                
+
                 if len(abnormal_traces_df) > 0 and selected_service in abnormal_services:
                     with st.spinner("Aggregating abnormal spans..."):
                         abnormal_stats = visualizer.get_span_aggregated_stats(abnormal_traces_df, selected_service)
-                    
+
                     if len(abnormal_stats) > 0:
                         # Summary metrics (compact layout)
                         total_calls = abnormal_stats["total_calls"].sum()
                         total_errors = abnormal_stats["error_count"].sum()
                         avg_error_rate = (total_errors / total_calls * 100) if total_calls > 0 else 0
                         avg_duration = abnormal_stats["avg_duration_ms"].mean()
-                        
+
                         # Compact metrics in one row
                         metric_col1, metric_col2, metric_col3 = st.columns(3)
                         metric_col1.metric("Total Calls", f"{total_calls:,}")
                         metric_col2.metric("Error Rate", f"{avg_error_rate:.2f}%")
                         metric_col3.metric("Avg Duration", f"{avg_duration:.2f}ms" if avg_duration else "N/A")
-                        
+
                         # Format for display
                         abnormal_display = visualizer.format_aggregated_stats_for_display(abnormal_stats)
-                        st.dataframe(abnormal_display.to_pandas(), height=400, width='stretch')
+                        st.dataframe(abnormal_display.to_pandas(), height=400, width="stretch")
                     else:
                         st.info("No span data available for this service in abnormal period")
                 else:
                     st.info("No abnormal trace data available for this service")
-
 
     except Exception as e:
         st.error(f"Error occurred while analyzing trace data: {str(e)}")
         st.info("Tip: Please ensure the dataset contains valid trace data")
         with st.expander("Debug Information"):
             st.exception(e)
+
 
 def render_annotations_tab():
     """Render the annotations management tab."""

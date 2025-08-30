@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from typing import Any
 
@@ -235,15 +234,19 @@ class DataLoader:
         if "metric" in metrics_df.columns:
             try:
                 # Use Polars for fast unique extraction
-                unique_metrics = metrics_df.select("metric").filter(pl.col("metric").is_not_null()).unique().sort("metric")
+                unique_metrics = (
+                    metrics_df.select("metric").filter(pl.col("metric").is_not_null()).unique().sort("metric")
+                )
                 return unique_metrics["metric"].to_list()
             except Exception:
-                # Fallback 
+                # Fallback
                 return sorted([m for m in metrics_df["metric"].unique().to_list() if m is not None])
 
         # Get numeric columns excluding certain ones
         exclude_cols = ["timestamp", "time", "data_type"]
-        numeric_cols = [col for col in metrics_df.columns if metrics_df[col].dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]]
+        numeric_cols = [
+            col for col in metrics_df.columns if metrics_df[col].dtype in [pl.Int64, pl.Float64, pl.Int32, pl.Float32]
+        ]
         return [col for col in numeric_cols if col not in exclude_cols]
 
     def get_available_services(self) -> list[str]:
@@ -256,8 +259,7 @@ class DataLoader:
             try:
                 # Use Polars for fast unique extraction
                 unique_services = (
-                    metrics_df
-                    .select("service_name")
+                    metrics_df.select("service_name")
                     .filter(pl.col("service_name").is_not_null())
                     .filter(pl.col("service_name").str.len_chars() > 0)
                     .unique()

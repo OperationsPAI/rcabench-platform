@@ -96,7 +96,7 @@ class LabelManager:
                 """)
                 rows = cursor.fetchall()
                 columns = ["id", "name", "description", "color", "created_at"]
-                
+
                 if rows:
                     return pl.DataFrame(rows, schema=columns, orient="row")
                 else:
@@ -148,16 +148,19 @@ class LabelManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT l.id, l.name, l.description, l.color, dl.created_at
                     FROM labels l
                     JOIN dataset_labels dl ON l.id = dl.label_id
                     WHERE dl.dataset_path = ?
                     ORDER BY l.name
-                """, (dataset_path,))
+                """,
+                    (dataset_path,),
+                )
                 rows = cursor.fetchall()
                 columns = ["id", "name", "description", "color", "created_at"]
-                
+
                 if rows:
                     return pl.DataFrame(rows, schema=columns, orient="row")
                 else:
@@ -212,16 +215,27 @@ class LabelManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT id, annotation_type, annotation_value, confidence, notes, 
                            created_at, updated_at
                     FROM annotations
                     WHERE dataset_path = ?
                     ORDER BY created_at DESC
-                """, (dataset_path,))
+                """,
+                    (dataset_path,),
+                )
                 rows = cursor.fetchall()
-                columns = ["id", "annotation_type", "annotation_value", "confidence", "notes", "created_at", "updated_at"]
-                
+                columns = [
+                    "id",
+                    "annotation_type",
+                    "annotation_value",
+                    "confidence",
+                    "notes",
+                    "created_at",
+                    "updated_at",
+                ]
+
                 if rows:
                     return pl.DataFrame(rows, schema=columns, orient="row")
                 else:
@@ -315,7 +329,11 @@ class LabelManager:
                 cursor.execute("SELECT * FROM labels")
                 labels_rows = cursor.fetchall()
                 labels_columns = ["id", "name", "description", "color", "created_at"]
-                labels_df = pl.DataFrame(labels_rows, schema=labels_columns, orient="row") if labels_rows else pl.DataFrame(schema=labels_columns)
+                labels_df = (
+                    pl.DataFrame(labels_rows, schema=labels_columns, orient="row")
+                    if labels_rows
+                    else pl.DataFrame(schema=labels_columns)
+                )
 
                 # Export dataset labels with label names
                 cursor.execute("""
@@ -325,13 +343,30 @@ class LabelManager:
                 """)
                 dataset_labels_rows = cursor.fetchall()
                 dataset_labels_columns = ["id", "dataset_path", "label_id", "created_at", "label_name"]
-                dataset_labels_df = pl.DataFrame(dataset_labels_rows, schema=dataset_labels_columns, orient="row") if dataset_labels_rows else pl.DataFrame(schema=dataset_labels_columns)
+                dataset_labels_df = (
+                    pl.DataFrame(dataset_labels_rows, schema=dataset_labels_columns, orient="row")
+                    if dataset_labels_rows
+                    else pl.DataFrame(schema=dataset_labels_columns)
+                )
 
                 # Export annotations
                 cursor.execute("SELECT * FROM annotations")
                 annotations_rows = cursor.fetchall()
-                annotations_columns = ["id", "dataset_path", "annotation_type", "annotation_value", "confidence", "notes", "created_at", "updated_at"]
-                annotations_df = pl.DataFrame(annotations_rows, schema=annotations_columns, orient="row") if annotations_rows else pl.DataFrame(schema=annotations_columns)
+                annotations_columns = [
+                    "id",
+                    "dataset_path",
+                    "annotation_type",
+                    "annotation_value",
+                    "confidence",
+                    "notes",
+                    "created_at",
+                    "updated_at",
+                ]
+                annotations_df = (
+                    pl.DataFrame(annotations_rows, schema=annotations_columns, orient="row")
+                    if annotations_rows
+                    else pl.DataFrame(schema=annotations_columns)
+                )
 
                 return {"labels": labels_df, "dataset_labels": dataset_labels_df, "annotations": annotations_df}
         except Exception as e:
@@ -388,7 +423,6 @@ class LabelManager:
             return False
 
     def get_all_selection_templates(self) -> pl.DataFrame:
-
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -399,7 +433,7 @@ class LabelManager:
                 """)
                 rows = cursor.fetchall()
                 columns = ["id", "name", "services", "metrics", "created_at"]
-                
+
                 if rows:
                     return pl.DataFrame(rows, schema=columns, orient="row")
                 else:
@@ -409,7 +443,6 @@ class LabelManager:
             return pl.DataFrame()
 
     def load_selection_template(self, template_id: int) -> dict[str, Any] | None:
-
         try:
             import json
 
@@ -432,7 +465,6 @@ class LabelManager:
             return None
 
     def delete_selection_template(self, template_id: int) -> bool:
-
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
