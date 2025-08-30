@@ -100,16 +100,27 @@ def generate_sampler_perf_report(
                 pl.col("sampled_count").mean().alias("avg_sampled_count"),
                 pl.col("total_traces").mean().alias("avg_total_traces"),
                 pl.col("controllability").mean().alias("avg_controllability"),
-                pl.col("comprehensiveness").mean().alias("avg_comprehensiveness"),
+                pl.col("comprehensiveness").mean().alias("avg_api_coverage"),
+                pl.col("path_coverage").mean().alias("avg_path_coverage"),
+                pl.col("event_coverage").mean().alias("avg_event_coverage"),
                 pl.col("proportion_anomaly").mean().alias("avg_proportion_anomaly"),
                 pl.col("proportion_rare").mean().alias("avg_proportion_rare"),
                 pl.col("proportion_common").mean().alias("avg_proportion_common"),
                 pl.col("actual_sampling_rate").mean().alias("avg_actual_sampling_rate"),
                 pl.col("runtime_per_span_ms").mean().alias("avg_runtime_per_span_ms"),
+                pl.col("runtime_per_trace_ms").mean().alias("avg_runtime_per_trace_ms"),
+                pl.col("total_path_types").mean().alias("avg_total_path_types"),
+                pl.col("sampled_path_types").mean().alias("avg_sampled_path_types"),
+                pl.col("total_event_pairs").mean().alias("avg_total_event_pairs"),
+                pl.col("sampled_event_pairs").mean().alias("avg_sampled_event_pairs"),
                 # Also calculate std dev for key metrics
                 pl.col("controllability").std().alias("std_controllability"),
-                pl.col("comprehensiveness").std().alias("std_comprehensiveness"),
+                pl.col("comprehensiveness").std().alias("std_api_coverage"),
+                pl.col("path_coverage").std().alias("std_path_coverage"),
+                pl.col("event_coverage").std().alias("std_event_coverage"),
                 pl.col("actual_sampling_rate").std().alias("std_actual_sampling_rate"),
+                pl.col("runtime_per_span_ms").std().alias("std_runtime_per_span_ms"),
+                pl.col("runtime_per_trace_ms").std().alias("std_runtime_per_trace_ms"),
             ]
         )
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
@@ -134,12 +145,15 @@ def generate_sampler_perf_report(
             "mode",
             "datapack_count",
             "avg_controllability",
-            "avg_comprehensiveness",
+            "avg_api_coverage",
+            "avg_path_coverage",
+            "avg_event_coverage",
             "avg_proportion_anomaly",
             "avg_proportion_rare",
             "avg_proportion_common",
             "avg_actual_sampling_rate",
             "avg_runtime_per_span_ms",
+            "avg_runtime_per_trace_ms",
         ]
     )
 
