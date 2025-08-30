@@ -1,6 +1,6 @@
 [project]
 name = "rcabench-platform"
-version = "0.3.31a1"
+version = "0.3.31b1"
 description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
 authors = [ #
