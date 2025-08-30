@@ -56,7 +56,7 @@ class HeatmapMeta:
             "x_label": self.x_label,
             "y_label": self.y_label,
             "title": self.title,
-            "matrix": self.matrix.tolist(),  # 转换 numpy array 为 list
+            "matrix": self.matrix.tolist(),
             "save_path": str(self.save_path),
         }
 

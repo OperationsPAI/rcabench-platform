@@ -44,7 +44,7 @@ class RCAEvalAnalyzerLoader(DatasetAnalyzer):
             return {}
         with open(get_datapack_folder(self.dataset, self.datapack) / "inject_time.txt") as f:
             inject_time = f.read().strip()
-        # 将Unix时间戳转换为datetime
+        # Convert Unix timestamp to datetime
         inject_time_dt = pl.from_epoch(pl.lit(int(inject_time)), time_unit="s").dt.replace_time_zone("UTC")
         if abnormal:
             metrics_lf = metrics_lf.filter(pl.col("time") > inject_time_dt)

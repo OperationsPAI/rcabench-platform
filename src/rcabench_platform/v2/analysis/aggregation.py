@@ -540,7 +540,6 @@ class DuckDBAggregator:
             performance_category,
             COUNT(*) as count,
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage,
-            -- 故障类型分布
             fault_category,
             COUNT(*) as fault_count
         FROM breakdown_data
@@ -688,7 +687,6 @@ class DuckDBAggregator:
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY fault_category, fault_type), 2) 
                 as percentage_within_fault,
             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentage_total,
-            -- 关键指标的平均值
             ROUND(AVG("SDD@1"), 3) as avg_sdd1,
             ROUND(AVG(CPL), 3) as avg_cpl,
             ROUND(AVG(trace_count), 1) as avg_trace_count,
