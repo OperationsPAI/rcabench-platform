@@ -415,7 +415,9 @@ class DuckDBAggregator:
     def _get_algo_columns(self) -> list[str]:
         try:
             columns_result = self.conn.execute("PRAGMA table_info('data')").fetchdf()
-            algo_columns = [row["name"] for _, row in columns_result.iterrows() if row["name"].startswith("algo_")]
+            algo_columns = [
+                str(row["name"]) for _, row in columns_result.iterrows() if str(row["name"]).startswith("algo_")
+            ]
             return algo_columns
         except Exception as e:
             logger.error(f"Failed to get algorithm columns: {e}")

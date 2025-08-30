@@ -12,7 +12,7 @@ LAYOUT = "wide"
 
 # Path configuration
 BASE_DIR = Path(".")
-DATA_DIR = BASE_DIR / "temp"/ "label"
+DATA_DIR = BASE_DIR / "temp" / "label"
 STATIC_DIR = BASE_DIR / "static"
 
 # Dataset configuration

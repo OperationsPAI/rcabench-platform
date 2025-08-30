@@ -122,15 +122,15 @@ def filter_dataframe_by_time(
     try:
         # Use Polars for fast time filtering
         filtered_df = df
-        
+
         if start_time is not None:
             filtered_df = filtered_df.filter(pl.col(time_col) >= start_time)
-        
+
         if end_time is not None:
             filtered_df = filtered_df.filter(pl.col(time_col) <= end_time)
-        
+
         return filtered_df
-        
+
     except Exception as e:
         st.warning(f"Polars time filtering failed: {str(e)}")
         return df
@@ -156,26 +156,26 @@ def search_logs(df: pl.DataFrame, search_term: str, search_columns: list[str] | 
     try:
         # Use Polars for fast text search
         search_term_lower = search_term.lower()
-        
+
         # Build search conditions for Polars
         search_conditions = []
-        
+
         for col in search_columns:
             if col in df.columns:
                 search_conditions.append(
                     pl.col(col).cast(pl.String).str.to_lowercase().str.contains(search_term_lower, literal=True)
                 )
-        
+
         if search_conditions:
             # Combine conditions with OR
             combined_condition = search_conditions[0]
             for condition in search_conditions[1:]:
                 combined_condition = combined_condition | condition
-            
+
             return df.filter(combined_condition)
         else:
             return df
-            
+
     except Exception as e:
         st.warning(f"Polars search failed: {str(e)}")
         return df
@@ -273,17 +273,17 @@ def get_label_manager():
 
 def query_dataframe_with_polars(df: pl.DataFrame, query: str) -> pl.DataFrame:
     """Execute a Polars query on a DataFrame.
-    
+
     Args:
         df: Input DataFrame
         query: Polars query expression to execute
-        
+
     Returns:
         Result DataFrame
     """
     if df.is_empty():
         return df
-    
+
     try:
         # This is a placeholder - Polars doesn't support SQL queries directly
         # Instead, we would use Polars expressions
@@ -294,24 +294,20 @@ def query_dataframe_with_polars(df: pl.DataFrame, query: str) -> pl.DataFrame:
         return df
 
 
-def aggregate_dataframe_with_polars(
-    df: pl.DataFrame, 
-    group_by: list[str], 
-    agg_funcs: dict[str, str]
-) -> pl.DataFrame:
+def aggregate_dataframe_with_polars(df: pl.DataFrame, group_by: list[str], agg_funcs: dict[str, str]) -> pl.DataFrame:
     """Perform aggregation using Polars for better performance.
-    
+
     Args:
         df: Input DataFrame
         group_by: Columns to group by
         agg_funcs: Dictionary mapping column names to aggregation functions
-        
+
     Returns:
         Aggregated DataFrame
     """
     if df.is_empty():
         return df
-    
+
     try:
         # Build aggregation expressions for Polars
         agg_exprs = []
@@ -328,7 +324,7 @@ def aggregate_dataframe_with_polars(
                 agg_exprs.append(pl.col(col).max().alias(f"{col}_{func}"))
             else:
                 st.warning(f"Unsupported aggregation function: {func}")
-        
+
         result_df = df.group_by(group_by).agg(agg_exprs)
         return result_df
     except Exception as e:

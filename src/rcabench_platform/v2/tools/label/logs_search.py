@@ -8,7 +8,6 @@ from .utils import format_timestamp, search_logs, truncate_string
 
 
 class LogsSearcher:
-
     def __init__(self) -> None:
         self.search_columns = ["message", "log", "content", "text"]
 
@@ -26,21 +25,17 @@ class LogsSearcher:
             return df
 
         filtered_df = df
-        
+
         if time_range:
             time_col = self._get_time_column(df)
             if time_col:
                 start_time, end_time = time_range
-                filtered_df = filtered_df.filter(
-                    (pl.col(time_col) >= start_time) & (pl.col(time_col) <= end_time)
-                )
+                filtered_df = filtered_df.filter((pl.col(time_col) >= start_time) & (pl.col(time_col) <= end_time))
 
         if log_level != "all":
             level_col = self._get_level_column(df)
             if level_col:
-                filtered_df = filtered_df.filter(
-                    pl.col(level_col).str.to_lowercase() == log_level.lower()
-                )
+                filtered_df = filtered_df.filter(pl.col(level_col).str.to_lowercase() == log_level.lower())
 
         # Service filtering
         if service_filter != "all":
@@ -60,16 +55,12 @@ class LogsSearcher:
                     for col in text_columns:
                         try:
                             if case_sensitive:
-                                text_conditions.append(
-                                    pl.col(col).str.contains(f"(?-i){search_term}")
-                                )
+                                text_conditions.append(pl.col(col).str.contains(f"(?-i){search_term}"))
                             else:
-                                text_conditions.append(
-                                    pl.col(col).str.contains(f"(?i){search_term}")
-                                )
+                                text_conditions.append(pl.col(col).str.contains(f"(?i){search_term}"))
                         except Exception:
                             continue
-                    
+
                     if text_conditions:
                         # Combine with OR logic
                         combined_condition = text_conditions[0]
@@ -81,14 +72,10 @@ class LogsSearcher:
                     text_conditions = []
                     for col in text_columns:
                         if case_sensitive:
-                            text_conditions.append(
-                                pl.col(col).str.contains(search_term)
-                            )
+                            text_conditions.append(pl.col(col).str.contains(search_term))
                         else:
-                            text_conditions.append(
-                                pl.col(col).str.to_lowercase().str.contains(search_term.lower())
-                            )
-                    
+                            text_conditions.append(pl.col(col).str.to_lowercase().str.contains(search_term.lower()))
+
                     if text_conditions:
                         # Combine with OR logic
                         combined_condition = text_conditions[0]
@@ -181,12 +168,11 @@ class LogsSearcher:
                             return str(x)
                     except Exception:
                         return str(x)
-                
+
                 export_df = df.with_columns(
-                    pl.col(time_col).map_elements(
-                        safe_format_timestamp,
-                        return_dtype=pl.Utf8
-                    ).alias(f"{time_col}_formatted")
+                    pl.col(time_col)
+                    .map_elements(safe_format_timestamp, return_dtype=pl.Utf8)
+                    .alias(f"{time_col}_formatted")
                 )
             else:
                 export_df = df
@@ -258,7 +244,7 @@ class LogsSearcher:
                         start_formatted = str(min_time)
                 else:
                     start_formatted = ""
-                    
+
                 if max_time is not None:
                     if isinstance(max_time, (int, float)):
                         end_formatted = format_timestamp(int(max_time))
@@ -318,6 +304,7 @@ class LogsSearcher:
         # Format timestamps
         time_col = self._get_time_column(display_df)
         if time_col and time_col in display_df.columns:
+
             def safe_format_timestamp(x):
                 if x is None:
                     return ""
@@ -328,12 +315,9 @@ class LogsSearcher:
                         return str(x)
                 except Exception:
                     return str(x)
-                    
+
             display_df = display_df.with_columns(
-                pl.col(time_col).map_elements(
-                    safe_format_timestamp,
-                    return_dtype=pl.Utf8
-                ).alias("Time")
+                pl.col(time_col).map_elements(safe_format_timestamp, return_dtype=pl.Utf8).alias("Time")
             )
 
         # Truncate long text
@@ -342,8 +326,7 @@ class LogsSearcher:
             if col in display_df.columns:
                 display_df = display_df.with_columns(
                     pl.col(col).map_elements(
-                        lambda x: truncate_string(str(x), 200) if x is not None else "",
-                        return_dtype=pl.Utf8
+                        lambda x: truncate_string(str(x), 200) if x is not None else "", return_dtype=pl.Utf8
                     )
                 )
 

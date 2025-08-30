@@ -227,7 +227,7 @@ def _export_latex(df: pd.DataFrame, merge_columns: list[str] | None = None, **kw
 
         for col in df.columns:
             cell_value = row[col]
-            if pd.isna(cell_value):
+            if cell_value is None:
                 cell_value = ""
             else:
                 # Escape LaTeX special characters
@@ -294,9 +294,9 @@ def _calculate_merge_spans(df: pd.DataFrame, merge_columns: list[str]) -> dict:
         for i in range(len(df)):
             value = df.iloc[i][col]
 
-            if pd.isna(current_value) and pd.isna(value):
+            if current_value is None and value is None:
                 is_same = True
-            elif pd.isna(current_value) or pd.isna(value):
+            elif current_value is None or value is None:
                 is_same = False
             else:
                 is_same = current_value == value
@@ -368,7 +368,7 @@ def _export_html(df: pd.DataFrame, merge_columns: list[str] | None = None, **kwa
 
         for col in df.columns:
             cell_value = row[col]
-            if pd.isna(cell_value):
+            if cell_value is None:
                 cell_value = ""
 
             # Handle newlines in cell content
