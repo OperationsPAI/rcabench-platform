@@ -13,7 +13,9 @@ from ...datasets.train_ticket import extract_path
 from ...logging import logger, timeit
 from ...utils.fs import running_mark
 from ...utils.serde import save_parquet
+from ..event_encoding import calculate_event_coverage
 from ..metrics_sli import copy_metrics_sli_to_sampled, generate_metrics_sli
+from ..path_encoding import calculate_path_coverage
 from ..spec import SamplerArgs, SamplingMode, global_sampler_registry
 from .spec import get_sampler_output_folder
 
@@ -124,21 +126,30 @@ def calculate_sampler_performance(
     Returns:
         Dictionary containing performance metrics:
         - controllability (RoD): Rate of Deviation
-        - comprehensiveness (CR): Coverage Rate
+        - comprehensiveness (CR): API Coverage Rate based on API types (entry spans)
+        - path_coverage: Coverage Rate based on execution paths with BFS encoding
+        - event_coverage: Coverage Rate based on event pairs from traces+logs
         - proportion_anomaly (PRO_anomaly): Proportion of detector flagged spans in abnormal traces
         - proportion_rare (PRO_rare): Proportion of rare traces (< 5% frequency)
         - proportion_common (PRO_common): Proportion of common spans (including detector spans in normal traces)
         - actual_sampling_rate: Actual sampling rate achieved
         - runtime_per_span_ms: Runtime per span in milliseconds
+        - runtime_per_trace_ms: Runtime per trace in milliseconds
+        - total_path_types: Total number of unique execution paths
+        - sampled_path_types: Number of unique execution paths in sampled data
+        - total_event_pairs: Total number of unique event pairs
+        - sampled_event_pairs: Number of unique event pairs in sampled data
     """
     # Load traces to get total counts
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
     abnormal_traces_lf = pl.scan_parquet(input_folder / "abnormal_traces.parquet")
 
-    # Get total unique traces
+    # Get total unique traces and total spans
     all_traces_lf = pl.concat([normal_traces_lf.select("trace_id"), abnormal_traces_lf.select("trace_id")]).unique()
+    all_spans_lf = pl.concat([normal_traces_lf.select("span_id"), abnormal_traces_lf.select("span_id")])
 
     total_traces = all_traces_lf.select(pl.len()).collect().item()
+    total_spans = all_spans_lf.select(pl.len()).collect().item()
     sampled_count = len(sampled_df)
 
     # Calculate actual sampling rate
@@ -158,7 +169,8 @@ def calculate_sampler_performance(
             "proportion_rare": 0.0,
             "proportion_common": 0.0,
             "actual_sampling_rate": actual_sampling_rate,
-            "runtime_per_span_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
+            "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else None,
+            "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
         }
 
     # Load full traces with parsed span names for analysis
@@ -255,6 +267,66 @@ def calculate_sampler_performance(
     common_sampled_count = len(common_sampled) - len(abnormal_detector_traces)
     proportion_common = common_sampled_count / sampled_count if sampled_count > 0 else 0.0
 
+    # Calculate path coverage based on execution paths
+    # Load full trace data for path encoding
+    all_traces_df = pl.concat(
+        [
+            normal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
+            abnormal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
+        ]
+    ).collect()
+
+    path_coverage_metrics = calculate_path_coverage(all_traces_df, sampled_trace_ids)
+
+    # Calculate event coverage based on trace+log events
+    # Load full trace and log data for event encoding
+    all_traces_for_events_df = pl.concat(
+        [
+            normal_traces_lf.select(
+                [
+                    "trace_id",
+                    "span_id",
+                    "parent_span_id",
+                    "service_name",
+                    "span_name",
+                    "time",
+                    "duration",
+                    "attr.status_code",
+                ]
+            ),
+            abnormal_traces_lf.select(
+                [
+                    "trace_id",
+                    "span_id",
+                    "parent_span_id",
+                    "service_name",
+                    "span_name",
+                    "time",
+                    "duration",
+                    "attr.status_code",
+                ]
+            ),
+        ]
+    ).collect()
+
+    # Load logs if available
+    logs_for_events_df = None
+    normal_logs_path = input_folder / "normal_logs.parquet"
+    abnormal_logs_path = input_folder / "abnormal_logs.parquet"
+    if normal_logs_path.exists() and abnormal_logs_path.exists():
+        normal_logs_lf = pl.scan_parquet(normal_logs_path)
+        abnormal_logs_lf = pl.scan_parquet(abnormal_logs_path)
+        logs_for_events_df = pl.concat(
+            [
+                normal_logs_lf.select(["trace_id", "span_id", "service_name", "time", "attr.template_id"]),
+                abnormal_logs_lf.select(["trace_id", "span_id", "service_name", "time", "attr.template_id"]),
+            ]
+        ).collect()
+
+    event_coverage_metrics = calculate_event_coverage(
+        all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder
+    )
+
     return {
         "sampled_count": sampled_count,
         "total_traces": total_traces,
@@ -266,7 +338,16 @@ def calculate_sampler_performance(
         "proportion_rare": proportion_rare,
         "proportion_common": proportion_common,
         "actual_sampling_rate": actual_sampling_rate,
-        "runtime_per_span_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
+        "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else None,
+        "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else None,
+        # Path coverage metrics
+        "total_path_types": path_coverage_metrics["total_path_types"],
+        "sampled_path_types": path_coverage_metrics["sampled_path_types"],
+        "path_coverage": path_coverage_metrics["path_coverage"],
+        # Event coverage metrics
+        "total_event_pairs": event_coverage_metrics["total_event_pairs"],
+        "sampled_event_pairs": event_coverage_metrics["sampled_event_pairs"],
+        "event_coverage": event_coverage_metrics["event_coverage"],
     }
 
 

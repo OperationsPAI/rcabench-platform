@@ -42,15 +42,39 @@ Sampler performance is evaluated using the following metrics:
 + **Controllability (RoD)**: Rate of Deviation = $|((N_s - N_e) / N_e)|$
   - $N_s$: actual sampled count
   - $N_e$: expected sampled count
-+ **Comprehensiveness (CR)**: Coverage Rate = $N_t' / N_t$
++ **API Coverage**: API Coverage Rate = $N_t' / N_t$
   - $N_t$': number of sampled trace types (entry spans)
   - $N_t$: total number of trace types
++ **Path Coverage**: Execution Path Coverage Rate = $N_p' / N_p$
+  - $N_p$': number of sampled execution path types
+  - $N_p$: total number of execution path types
+  - Uses BFS traversal with sorted nodes at same depth for consistent encoding
++ **Event Coverage**: Event Coverage Rate = $N_e' / N_e$
+  - $N_e$': number of sampled event pairs (2-grams)
+  - $N_e$: total number of event pairs
+  - Events are encoded from traces and logs combined
+  - Includes span events, status errors, performance degradation, and log events
 + **Proportion (PRO)**: Three proportion metrics
   - PRO_anomaly: proportion of detector-flagged spans in abnormal traces only
   - PRO_rare: proportion of rare entry spans sampled (< 5% frequency)
   - PRO_common: proportion of common spans (including detector spans in normal traces)
-+ **Runtime**: Algorithm runtime per span in millisecondsa
++ **Runtime**: Algorithm runtime per span in milliseconds
 + **Actual Sampling Rate**: Achieved sampling rate
+
+#### Coverage Metrics Comparison
+
+- **API Coverage**: Simple coverage based on entry span names (API endpoints)
+  - Fast to calculate and good for basic assessment
+- **Path Coverage**: Advanced coverage based on complete execution paths using TracePicker-style encoding
+  - Handles parallel calls by sorting at same depth
+  - Provides more detailed insight into trace structure diversity
+  - Generally more strict than API coverage as multiple paths can share the same entry point
+- **Event Coverage**: Most granular coverage based on event sequences from traces and logs
+  - Encodes traces and logs into events (spans, errors, performance issues, log entries)
+  - Calculates coverage using consecutive event pairs (2-grams)
+  - Considers performance degradation using metrics_sli.parquet thresholds
+  - Provides the most comprehensive view of system behavior patterns
+  - Generally the most strict coverage metric, showing lowest percentages
 
 ## Data Specification
 

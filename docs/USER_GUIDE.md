@@ -568,6 +568,25 @@ generate_sampler_perf_report(
     sampling_rates=[0.1],
     modes=[SamplingMode.OFFLINE]
 )
+
+# Access detailed performance metrics including path coverage
+from rcabench_platform.v2.config import get_config
+import polars as pl
+
+config = get_config()
+perf_df = pl.read_parquet(config.output / "sampler_reports" / "detailed_perf.parquet")
+
+# Display coverage comparison
+coverage_comparison = perf_df.select([
+    "sampler", "dataset", "sampling_rate", "mode",
+    "comprehensiveness",  # API coverage (renamed from comprehensiveness)
+    "path_coverage",      # Execution path coverage
+    "event_coverage",     # Event coverage (traces + logs)
+    "total_entry_types",  # Total API types
+    "total_path_types",   # Total execution path types
+    "total_event_pairs"   # Total event pairs
+])
+print(coverage_comparison)
 ```
 
 ### Working with Configuration
@@ -718,6 +737,51 @@ python main.py sample batch \
   --mode online
 ```
 
+### 6. Coverage Metrics Analysis
+
+```python
+# Analyze different coverage metrics to understand sampling quality
+from rcabench_platform.v2.config import get_config
+import polars as pl
+
+# Read detailed performance results
+config = get_config()
+perf_df = pl.read_parquet(config.output / "sampler_reports" / "detailed_perf.parquet")
+
+# Compare all three coverage metrics
+coverage_analysis = perf_df.select([
+    "sampler", "dataset", "sampling_rate", "mode",
+    "comprehensiveness",      # API coverage (renamed from comprehensiveness)
+    "path_coverage",          # Execution path coverage  
+    "event_coverage",         # Event coverage (traces + logs)
+    "total_entry_types",      # Total API types
+    "total_path_types",       # Total execution path types
+    "total_event_pairs",      # Total event pairs
+    (pl.col("path_coverage") - pl.col("comprehensiveness")).alias("path_vs_api_diff"),
+    (pl.col("event_coverage") - pl.col("comprehensiveness")).alias("event_vs_api_diff")
+])
+
+# Find cases where granular coverage metrics are significantly lower than API coverage
+interesting_cases = coverage_analysis.filter(
+    (pl.col("path_vs_api_diff") < -0.1) | (pl.col("event_vs_api_diff") < -0.1)
+)
+
+print("Cases with significant coverage differences:")
+print(interesting_cases)
+
+# Analyze coverage diversity across all three metrics
+diversity_analysis = perf_df.group_by(["sampler", "sampling_rate"]).agg([
+    pl.col("comprehensiveness").mean().alias("avg_api_coverage"),
+    pl.col("path_coverage").mean().alias("avg_path_coverage"), 
+    pl.col("event_coverage").mean().alias("avg_event_coverage"),
+    (pl.col("total_path_types") / pl.col("total_entry_types")).mean().alias("path_complexity_ratio"),
+    (pl.col("total_event_pairs") / pl.col("total_entry_types")).mean().alias("event_complexity_ratio")
+])
+
+print("\nSampler performance summary:")
+print(diversity_analysis)
+```
+
 ## Advanced Topics
 
 ### Custom Docker Images
@@ -782,13 +846,46 @@ The platform provides comprehensive trace sampling capabilities for evaluating s
 The sampling framework calculates the following performance metrics:
 
 - **Controllability (RoD)**: Rate of Deviation - measures sampling rate accuracy
-- **Comprehensiveness (CR)**: Coverage Rate - measures trace type diversity  
+- **API Coverage**: API Coverage Rate based on API entry spans (renamed from "comprehensiveness")
+- **Path Coverage**: Execution Path Coverage Rate - measures diversity based on complete execution paths
+  - Uses BFS traversal with sorted nodes at same depth for consistent encoding
+  - Generally more strict than API coverage as it considers full trace structure
+  - Handles parallel calls by sorting child spans alphabetically by service:operation labels
+- **Event Coverage**: Event Coverage Rate based on event pairs from traces + logs
+  - Encodes traces and logs into event sequences (span events, status errors, performance degradation, log events)
+  - Calculates coverage based on consecutive event pairs (2-grams)
+  - Provides the most granular view of system behavior
+  - Considers performance thresholds from metrics_sli.parquet for degradation detection
 - **Proportion Metrics (PRO)**: Three types of proportion analysis:
   - `proportion_anomaly`: Proportion of detector-flagged spans in abnormal traces only
   - `proportion_rare`: Proportion of rare entry spans sampled (< 5% frequency)
   - `proportion_common`: Proportion of common spans (including detector spans in normal traces)
 - **Runtime Performance**: Runtime per span in milliseconds
 - **Actual Sampling Rate**: Achieved vs. target sampling rate
+
+#### Coverage Metrics Comparison
+
+The platform provides three types of coverage metrics to evaluate sampling comprehensiveness:
+
+1. **API Coverage**: Based on entry span names (API endpoints)
+   - Simple and fast to calculate
+   - Good for basic coverage assessment
+   - Example: 21/22 API types covered = 95.45%
+
+2. **Path Coverage**: Based on complete execution paths using TracePicker-style encoding
+   - More detailed and comprehensive
+   - Considers full trace call structure and parallel execution patterns
+   - Better reflects actual system behavior diversity
+   - Example: 50/60 execution paths covered = 83.33%
+
+3. **Event Coverage**: Based on event pairs from traces and logs combined
+   - Most granular view of system behavior
+   - Encodes traces and logs into events (span start/end, errors, performance degradation, log entries)
+   - Calculates coverage based on consecutive event pairs (behavioral sequences)
+   - Considers performance degradation using metrics_sli.parquet thresholds
+   - Example: 5682/9361 event pairs covered = 60.70%
+
+**Key insight**: Coverage granularity follows the pattern API > Path > Event, where each metric provides increasingly detailed views of trace diversity. Event coverage typically shows the lowest percentages but captures the most comprehensive behavioral patterns.
 
 #### Output Structure
 
