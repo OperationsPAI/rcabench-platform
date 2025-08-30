@@ -11,6 +11,7 @@ from tqdm.auto import tqdm
 from ..algorithms.spec import global_algorithm_registry, set_global_algorithm_registry
 from ..config import get_config, set_config
 from ..logging import get_real_logger, logger, set_real_logger, timeit
+from ..samplers.spec import global_sampler_registry, set_global_sampler_registry
 
 
 def set_cpu_limit_outer(n: int | None) -> None:
@@ -38,6 +39,7 @@ def initializers(*, cpu_limit: int | None = None) -> list[tuple[Callable, Any]]:
         # (set_real_logger, (get_real_logger(),)),
         (set_config, (get_config(),)),
         (set_global_algorithm_registry, (global_algorithm_registry(),)),
+        (set_global_sampler_registry, (global_sampler_registry(),)),
     ]
 
     return ans
