@@ -150,6 +150,7 @@ def generate_sampler_perf_report(
                 pl.col("actual_sampling_rate").mean().alias("avg_actual_sampling_rate"),
                 pl.col("runtime_per_span_ms").mean().alias("avg_runtime_per_span_ms"),
                 pl.col("runtime_per_trace_ms").mean().alias("avg_runtime_per_trace_ms"),
+                pl.col("gt_trace_proportion").mean().alias("avg_gt_trace_proportion"),
                 pl.col("total_path_types").mean().alias("avg_total_path_types"),
                 pl.col("sampled_path_types").mean().alias("avg_sampled_path_types"),
                 pl.col("total_event_pairs").mean().alias("avg_total_event_pairs"),
@@ -162,6 +163,7 @@ def generate_sampler_perf_report(
                 pl.col("actual_sampling_rate").std().alias("std_actual_sampling_rate"),
                 pl.col("runtime_per_span_ms").std().alias("std_runtime_per_span_ms"),
                 pl.col("runtime_per_trace_ms").std().alias("std_runtime_per_trace_ms"),
+                pl.col("gt_trace_proportion").std().alias("std_gt_trace_proportion"),
             ]
         )
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
@@ -189,6 +191,7 @@ def generate_sampler_perf_report(
             "avg_api_coverage",
             "avg_path_coverage",
             "avg_event_coverage",
+            "avg_gt_trace_proportion",
             "avg_proportion_anomaly",
             "avg_proportion_rare",
             "avg_proportion_common",
@@ -299,6 +302,7 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
         "actual_sampling_rate": 0.0,
         "runtime_per_span_ms": 0.0,
         "runtime_per_trace_ms": 0.0,
+        "gt_trace_proportion": 0.0,  # Ground truth trace proportion
         "total_path_types": 0,
         "sampled_path_types": 0,
         "total_event_pairs": 0,

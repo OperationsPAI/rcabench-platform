@@ -1,6 +1,7 @@
 """Single sampler execution module."""
 
 import dataclasses
+import json
 import os
 import time
 import traceback
@@ -129,6 +130,7 @@ def calculate_sampler_performance(
         - comprehensiveness (CR): API Coverage Rate based on API types (entry spans)
         - path_coverage: Coverage Rate based on execution paths with BFS encoding
         - event_coverage: Coverage Rate based on event pairs from traces+logs
+        - gt_trace_proportion: Proportion of ground truth related traces in sampled data
         - proportion_anomaly (PRO_anomaly): Proportion of detector flagged spans in abnormal traces
         - proportion_rare (PRO_rare): Proportion of rare traces (< 5% frequency)
         - proportion_common (PRO_common): Proportion of common spans (including detector spans in normal traces)
@@ -255,6 +257,9 @@ def calculate_sampler_performance(
             input_folder,  # Empty sampled set
         )
 
+        # Calculate ground truth trace proportion (will be 0.0 for empty sample)
+        gt_trace_proportion = calculate_gt_trace_proportion(input_folder, all_traces_df, set(), set())
+
         return {
             "sampled_count": sampled_count,
             "total_traces": total_traces,
@@ -268,6 +273,7 @@ def calculate_sampler_performance(
             "actual_sampling_rate": actual_sampling_rate,
             "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
             "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
+            "gt_trace_proportion": gt_trace_proportion,  # New ground truth trace proportion metric
             # Path coverage metrics
             "total_path_types": path_coverage_metrics["total_path_types"],
             "sampled_path_types": 0,
@@ -444,6 +450,12 @@ def calculate_sampler_performance(
         event_coverage_metrics["sampled_event_pairs"] = 0
         event_coverage_metrics["event_coverage"] = 0.0
 
+    # Calculate ground truth trace proportion
+    abnormal_trace_ids = set(abnormal_traces_lf.select("trace_id").collect()["trace_id"].to_list())
+    gt_trace_proportion = calculate_gt_trace_proportion(
+        input_folder, all_traces_df, sampled_trace_ids, abnormal_trace_ids
+    )
+
     return {
         "sampled_count": sampled_count,
         "total_traces": total_traces,
@@ -457,6 +469,7 @@ def calculate_sampler_performance(
         "actual_sampling_rate": actual_sampling_rate,
         "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
         "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
+        "gt_trace_proportion": gt_trace_proportion,  # New ground truth trace proportion metric
         # Path coverage metrics
         "total_path_types": path_coverage_metrics["total_path_types"],
         "sampled_path_types": path_coverage_metrics["sampled_path_types"],
@@ -561,3 +574,109 @@ def _save_sampled_traces(input_folder: Path, output_folder: Path, sampled_df: pl
     # Copy metrics_sli.parquet to sampled folder for downstream algorithms
     logger.debug("Copying metrics_sli.parquet to sampled folder")
     copy_metrics_sli_to_sampled(input_folder, output_folder)
+
+
+def calculate_gt_trace_proportion(
+    input_folder: Path, all_traces_df: pl.DataFrame, sampled_trace_ids: set[str], abnormal_trace_ids: set[str]
+) -> float:
+    """
+    Calculate the proportion of ground truth related traces in sampled abnormal traces.
+
+    Only considers abnormal traces, similar to proportion_anomaly metric.
+
+    Args:
+        input_folder: Datapack input folder containing injection.json
+        all_traces_df: DataFrame with all traces
+        sampled_trace_ids: Set of sampled trace IDs
+        abnormal_trace_ids: Set of abnormal trace IDs
+
+    Returns:
+        Proportion of ground truth related traces in sampled abnormal traces (0.0 to 1.0)
+    """
+    # Load injection.json to get ground truth services
+    injection_path = input_folder / "injection.json"
+    if not injection_path.exists():
+        logger.warning(f"injection.json not found in {input_folder}")
+        return 0.0
+
+    try:
+        with open(injection_path) as f:
+            injection_data = json.load(f)
+
+        ground_truth = injection_data.get("ground_truth", {})
+        gt_services = ground_truth.get("service", [])
+
+        if not gt_services:
+            logger.warning("No ground truth services found in injection.json")
+            return 0.0
+
+        # Remove mysql if present (as requested)
+        gt_services = [svc for svc in gt_services if svc != "mysql"]
+
+        if not gt_services:
+            logger.warning("No ground truth services after removing mysql")
+            return 0.0
+
+        logger.debug(f"Ground truth services (excluding mysql): {gt_services}")
+
+        # Only consider abnormal traces for GT analysis
+        abnormal_traces_df = all_traces_df.filter(pl.col("trace_id").is_in(abnormal_trace_ids))
+
+        if len(abnormal_traces_df) == 0:
+            logger.debug("No abnormal traces found")
+            return 0.0
+
+        # Find ground truth related traces in abnormal traces only
+        gt_trace_ids = set()
+
+        if len(gt_services) == 1:
+            # Single service: find abnormal traces containing this service
+            service = gt_services[0]
+            gt_traces = abnormal_traces_df.filter(pl.col("service_name") == service)["trace_id"].unique()
+            gt_trace_ids = set(gt_traces.to_list())
+        else:
+            # Multiple services: find abnormal traces with call relationships between them
+            # Look for parent-child relationships between any pair of gt services
+            for i, parent_service in enumerate(gt_services):
+                for j, child_service in enumerate(gt_services):
+                    if i != j:  # Different services
+                        # Find abnormal traces where parent_service calls child_service
+                        parent_spans = abnormal_traces_df.filter(pl.col("service_name") == parent_service)
+                        child_spans = abnormal_traces_df.filter(pl.col("service_name") == child_service)
+
+                        # Join to find parent-child relationships
+                        relationships = parent_spans.join(
+                            child_spans.select(["trace_id", "span_id", "parent_span_id"]),
+                            left_on=["trace_id", "span_id"],
+                            right_on=["trace_id", "parent_span_id"],
+                            how="inner",
+                        )
+
+                        if len(relationships) > 0:
+                            related_traces = relationships["trace_id"].unique().to_list()
+                            gt_trace_ids.update(related_traces)
+
+        if not gt_trace_ids:
+            logger.debug("No ground truth related traces found in abnormal traces")
+            return 0.0
+
+        # Calculate proportion in sampled abnormal traces only
+        sampled_abnormal_trace_ids = abnormal_trace_ids.intersection(sampled_trace_ids)
+        sampled_gt_traces = gt_trace_ids.intersection(sampled_abnormal_trace_ids)
+
+        if len(sampled_abnormal_trace_ids) == 0:
+            logger.debug("No sampled abnormal traces")
+            return 0.0
+
+        proportion = len(sampled_gt_traces) / len(sampled_abnormal_trace_ids)
+
+        logger.debug(
+            f"Found {len(gt_trace_ids)} GT traces in {len(abnormal_trace_ids)} abnormal traces, "
+            f"{len(sampled_gt_traces)} GT in {len(sampled_abnormal_trace_ids)} sampled abnormal, "
+            f"proportion: {proportion:.4f}"
+        )
+
+        return proportion
+    except Exception as e:
+        logger.warning(f"Error calculating GT trace proportion: {e}")
+        return 0.0
