@@ -274,6 +274,7 @@ def calculate_sampler_performance(
             "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
             "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
             "gt_trace_proportion": gt_trace_proportion,  # New ground truth trace proportion metric
+            "balance_cv": 0.0,  # Balance CV is 0.0 when no traces are sampled
             # Path coverage metrics
             "total_path_types": path_coverage_metrics["total_path_types"],
             "sampled_path_types": 0,
@@ -456,6 +457,9 @@ def calculate_sampler_performance(
         input_folder, all_traces_df, sampled_trace_ids, abnormal_trace_ids
     )
 
+    # Calculate balance (CV) using trace entries
+    balance_cv = calculate_balance_cv(trace_entries_df, sampled_trace_ids)
+
     return {
         "sampled_count": sampled_count,
         "total_traces": total_traces,
@@ -470,6 +474,7 @@ def calculate_sampler_performance(
         "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
         "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
         "gt_trace_proportion": gt_trace_proportion,  # New ground truth trace proportion metric
+        "balance_cv": balance_cv,  # Balance metric using Coefficient of Variation
         # Path coverage metrics
         "total_path_types": path_coverage_metrics["total_path_types"],
         "sampled_path_types": path_coverage_metrics["sampled_path_types"],
@@ -574,6 +579,52 @@ def _save_sampled_traces(input_folder: Path, output_folder: Path, sampled_df: pl
     # Copy metrics_sli.parquet to sampled folder for downstream algorithms
     logger.debug("Copying metrics_sli.parquet to sampled folder")
     copy_metrics_sli_to_sampled(input_folder, output_folder)
+
+
+def calculate_balance_cv(trace_entries_df: pl.DataFrame, sampled_trace_ids: set[str]) -> float:
+    """
+    Calculate balance metric using Coefficient of Variation (CV) of trace type distribution.
+
+    Based on TracePicker paper: CV = sqrt(sum((n_i - n_mean)^2) / N_t) / n_mean
+    where N_t is number of trace types, n_i is count of type i, n_mean is average count.
+
+    Lower CV indicates more balanced distribution across trace types.
+
+    Args:
+        trace_entries_df: DataFrame with trace_id and entry_span columns
+        sampled_trace_ids: Set of sampled trace IDs
+
+    Returns:
+        CV value (0.0 if no sampled traces or only one trace type)
+    """
+    if not sampled_trace_ids:
+        return 0.0
+
+    # Filter to sampled traces only
+    sampled_entries_df = trace_entries_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+
+    if len(sampled_entries_df) == 0:
+        return 0.0
+
+    # Count each trace type (entry_span) in sampled data
+    type_counts = sampled_entries_df.group_by("entry_span").agg(pl.len().alias("count"))
+
+    counts = type_counts["count"].to_list()
+
+    if len(counts) <= 1:
+        # Perfect balance if only one trace type
+        return 0.0
+
+    # Calculate CV: sqrt(variance) / mean
+    import math
+
+    n_mean = sum(counts) / len(counts)
+    variance = sum((n_i - n_mean) ** 2 for n_i in counts) / len(counts)
+    cv = math.sqrt(variance) / n_mean if n_mean > 0 else 0.0
+
+    logger.debug(f"Balance CV: {len(counts)} trace types, counts={counts}, mean={n_mean:.2f}, CV={cv:.4f}")
+
+    return cv
 
 
 def calculate_gt_trace_proportion(
