@@ -5,13 +5,17 @@ Encodes traces and logs into events and calculates coverage based on event pairs
 Simplified from original implementation, focusing on core event encoding performance.
 """
 
+import datetime
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import polars as pl
 
 from ..logging import logger
+from ..utils.serde import load_json
 
 
 class EventType(Enum):
@@ -103,8 +107,29 @@ class EventEncoder:
         self.event_manager = event_manager
         self.performance_thresholds: dict[str, float] = {}
 
-    def load_performance_thresholds(self, input_folder) -> None:
-        """Load performance thresholds from metrics_sli.parquet"""
+    def load_inject_time(self, input_folder: Path) -> datetime.datetime:
+        """Load injection time from env.json"""
+        env = load_json(path=input_folder / "env.json")
+
+        normal_start = int(env["NORMAL_START"])
+        normal_end = int(env["NORMAL_END"])
+        abnormal_start = int(env["ABNORMAL_START"])
+        abnormal_end = int(env["ABNORMAL_END"])
+
+        assert normal_start < normal_end <= abnormal_start < abnormal_end
+
+        if normal_end < abnormal_start:
+            inject_time = int(math.ceil(normal_end + abnormal_start) / 2)
+        else:
+            inject_time = abnormal_start
+
+        inject_time = datetime.datetime.fromtimestamp(inject_time, tz=datetime.timezone.utc)
+        logger.debug(f"inject_time=`{inject_time}`")
+
+        return inject_time
+
+    def load_performance_thresholds(self, input_folder: Path) -> None:
+        """Load performance thresholds from metrics_sli.parquet using only normal phase data"""
         try:
             metrics_sli_path = input_folder / "metrics_sli.parquet"
             if not metrics_sli_path.exists():
@@ -113,7 +138,17 @@ class EventEncoder:
 
             metrics_df = pl.read_parquet(metrics_sli_path)
 
-            # Calculate p90 thresholds per service_name + span_name
+            # Filter to only normal phase data for unbiased threshold calculation
+            try:
+                inject_time = self.load_inject_time(input_folder)
+                metrics_df = metrics_df.filter(pl.col("time") < inject_time)
+                logger.debug(
+                    f"Filtered metrics_sli to {len(metrics_df)} normal phase records for threshold calculation"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to load inject time, using all metrics_sli data: {e}")
+
+            # Calculate p90 thresholds per service_name + span_name using normal phase data only
             thresholds_df = (
                 metrics_df.group_by(["service_name", "span_name"])
                 .agg([pl.col("duration_p90").mean().alias("p90_threshold")])

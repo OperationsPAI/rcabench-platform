@@ -7,7 +7,6 @@ import sys
 import time
 
 from ...logging import logger, timeit
-from ...utils.fmap import fmap_processpool
 from ..spec import SamplingMode, global_sampler_registry
 from .single import run_sampler_single
 
@@ -91,6 +90,9 @@ def run_sampler_batch(
                         )
 
             logger.info(f"Running {len(tasks)} sampler tasks for {sampler} on {dataset}")
+
+            # Import here to avoid circular imports
+            from ...utils.fmap import fmap_processpool
 
             t0 = time.time()
             fmap_processpool(
