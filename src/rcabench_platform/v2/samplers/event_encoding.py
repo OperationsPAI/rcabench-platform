@@ -315,7 +315,6 @@ def calculate_event_coverage(
     all_trace_patterns = set()
     sampled_trace_patterns = set()
 
-
     # Process each trace
     for (trace_id,), trace_df in trace_groups.items():
         if not trace_id:
