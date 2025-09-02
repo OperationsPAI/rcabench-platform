@@ -32,18 +32,22 @@ class EventIDManager:
 
     def __init__(self):
         # ID ranges
-        self.SPAN_NAME_START = 1
-        self.SPAN_NAME_END = 10000
+        self.SPAN_START_BEGIN = 1
+        self.SPAN_START_END = 5000
+        self.SPAN_END_BEGIN = 5001
+        self.SPAN_END_END = 10000
         self.SPECIAL_EVENT_START = 10001
         self.LOG_TEMPLATE_START = 20001
 
         # Current counters
-        self.span_name_counter = self.SPAN_NAME_START
+        self.span_start_counter = self.SPAN_START_BEGIN
+        self.span_end_counter = self.SPAN_END_BEGIN
         self.special_event_counter = self.SPECIAL_EVENT_START
         self.log_template_counter = self.LOG_TEMPLATE_START
 
         # Mappings
-        self.span_name_to_id: dict[str, int] = {}
+        self.span_start_to_id: dict[str, int] = {}
+        self.span_end_to_id: dict[str, int] = {}
         self.special_event_to_id: dict[str, int] = {}
         self.log_template_to_id: dict[str, int] = {}
 
@@ -65,16 +69,29 @@ class EventIDManager:
         logger.debug(f"Found {len(unique_combinations)} unique service_span_name combinations")
 
         for service_span_name in unique_combinations:
-            if service_span_name not in self.span_name_to_id:
-                if self.span_name_counter <= self.SPAN_NAME_END:
-                    self.span_name_to_id[service_span_name] = self.span_name_counter
-                    self.span_name_counter += 1
+            # Assign span start ID
+            if service_span_name not in self.span_start_to_id:
+                if self.span_start_counter <= self.SPAN_START_END:
+                    self.span_start_to_id[service_span_name] = self.span_start_counter
+                    self.span_start_counter += 1
 
-        logger.debug(f"Assigned {len(self.span_name_to_id)} span name IDs")
+            # Assign span end ID
+            if service_span_name not in self.span_end_to_id:
+                if self.span_end_counter <= self.SPAN_END_END:
+                    self.span_end_to_id[service_span_name] = self.span_end_counter
+                    self.span_end_counter += 1
 
-    def get_span_event_id(self, service_span_name: str) -> int:
-        """Get event ID for service span name combination"""
-        return self.span_name_to_id.get(service_span_name, self.SPAN_NAME_END)
+        logger.debug(
+            f"Assigned {len(self.span_start_to_id)} span start IDs and {len(self.span_end_to_id)} span end IDs"
+        )
+
+    def get_span_start_id(self, service_span_name: str) -> int:
+        """Get event ID for span start"""
+        return self.span_start_to_id.get(service_span_name, self.SPAN_START_END)
+
+    def get_span_end_id(self, service_span_name: str) -> int:
+        """Get event ID for span end"""
+        return self.span_end_to_id.get(service_span_name, self.SPAN_END_END)
 
     def get_special_event_id(self, event_type: str) -> int:
         """Get event ID for special events"""
@@ -213,10 +230,11 @@ class EventEncoder:
         # 1. Generate span internal event pairs for each span
         for span_id, span_data in spans_data.items():
             service_span_name = f"{span_data['service_name']}_{span_data['span_name']}"
-            span_event_id = self.event_manager.get_span_event_id(service_span_name)
+            span_start_id = self.event_manager.get_span_start_id(service_span_name)
+            span_end_id = self.event_manager.get_span_end_id(service_span_name)
 
             # Build internal event sequence for this span
-            span_events = [span_event_id]  # Start with span start
+            span_events = [span_start_id]  # Start with span start
 
             # Add log events (sorted by timestamp)
             if span_id in log_events_by_span:
@@ -235,8 +253,8 @@ class EventEncoder:
                 perf_id = self.event_manager.get_special_event_id("perf_degradation")
                 span_events.append(perf_id)
 
-            # End with span end (same ID as start)
-            span_events.append(span_event_id)
+            # End with span end (different ID from start)
+            span_events.append(span_end_id)
 
             # Extract internal pairs for this span
             span_pairs = self.extract_event_pairs(span_events)
@@ -247,7 +265,7 @@ class EventEncoder:
             if parent_id in spans_data:
                 parent_data = spans_data[parent_id]
                 parent_service_span = f"{parent_data['service_name']}_{parent_data['span_name']}"
-                parent_end_id = self.event_manager.get_span_event_id(parent_service_span)
+                parent_end_id = self.event_manager.get_span_end_id(parent_service_span)
 
                 # Sort children by timestamp for deterministic ordering
                 children.sort(key=lambda cid: spans_data[cid]["time"])
@@ -256,7 +274,7 @@ class EventEncoder:
                     if child_id in spans_data:
                         child_data = spans_data[child_id]
                         child_service_span = f"{child_data['service_name']}_{child_data['span_name']}"
-                        child_start_id = self.event_manager.get_span_event_id(child_service_span)
+                        child_start_id = self.event_manager.get_span_start_id(child_service_span)
 
                         # Add parent_end -> child_start pair
                         all_event_pairs.add((parent_end_id, child_start_id))
