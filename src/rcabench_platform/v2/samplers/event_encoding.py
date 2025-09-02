@@ -8,35 +8,23 @@ Simplified from original implementation, focusing on core event encoding perform
 import datetime
 import math
 from collections import defaultdict
-from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 import polars as pl
 
-from ..logging import logger
+from ..logging import logger, timeit
 from ..utils.serde import load_json
 
 
 class EventType(Enum):
-    """Event types for trace encoding"""
+    """Event types for trace encoding (kept for reference)"""
 
     SPAN_START = "span_start"
     SPAN_END = "span_end"
     STATUS_ERROR = "status_error"
     PERFORMANCE_DEGRADATION = "perf_degradation"
     LOG = "log"
-
-
-@dataclass
-class Event:
-    """Event structure for trace encoding"""
-
-    event_type: EventType
-    event_id: int
-    timestamp: float
-    trace_id: str
-    span_id: str | None = None
 
 
 class EventIDManager:
@@ -169,71 +157,40 @@ class EventEncoder:
 
     def encode_trace_events(
         self, trace_spans_df: pl.DataFrame, trace_logs_df: pl.DataFrame | None = None
-    ) -> list[Event]:
-        """Encode a single trace into events"""
-        events = []
+    ) -> set[tuple[int, int]]:
+        """Encode a single trace into event ID sequence respecting span hierarchy"""
 
-        # Extract span events
+        # First, find root span using DataFrame filtering (more efficient)
+        # Root span must be loadgenerator service with null/empty parent_span_id
+        root_spans_df = trace_spans_df.filter(
+            (pl.col("service_name") == "loadgenerator")
+            & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+        )
+
+        # If no valid root span found, skip this trace
+        if root_spans_df.height == 0:
+            logger.debug("No loadgenerator root span found, skipping trace")
+            return set()
+
+        # Get the first (and only) root span ID directly (for validation only)
+        # We don't use root_span_id in the new approach since we process all spans
+
+        # Build span hierarchy
+        spans_data = {}
+        children_map = defaultdict(list)
+
         for row in trace_spans_df.iter_rows(named=True):
-            service_span_name = f"{row['service_name']}_{row['span_name']}"
-            span_start_id = self.event_manager.get_span_event_id(service_span_name)
-            span_end_id = span_start_id  # Use same ID for start/end for simplicity
+            span_id = row["span_id"]
+            parent_id = row.get("parent_span_id")
 
-            timestamp = row["time"].timestamp() if hasattr(row["time"], "timestamp") else float(row["time"])
+            spans_data[span_id] = row
 
-            # Span start event
-            events.append(
-                Event(
-                    event_type=EventType.SPAN_START,
-                    event_id=span_start_id,
-                    timestamp=timestamp,
-                    trace_id=row["trace_id"],
-                    span_id=row["span_id"],
-                )
-            )
+            if parent_id and parent_id != "":
+                children_map[parent_id].append(span_id)
 
-            # Status error event
-            if row.get("attr.status_code") == "Error":
-                error_id = self.event_manager.get_special_event_id("status_error")
-                events.append(
-                    Event(
-                        event_type=EventType.STATUS_ERROR,
-                        event_id=error_id,
-                        timestamp=timestamp + 0.001,  # Slightly after span start
-                        trace_id=row["trace_id"],
-                        span_id=row["span_id"],
-                    )
-                )
-
-            # Performance degradation event
-            duration = row.get("duration", 0)
-            p90_threshold = self.performance_thresholds.get(service_span_name)
-            if p90_threshold and duration > p90_threshold:
-                perf_id = self.event_manager.get_special_event_id("perf_degradation")
-                events.append(
-                    Event(
-                        event_type=EventType.PERFORMANCE_DEGRADATION,
-                        event_id=perf_id,
-                        timestamp=timestamp + 0.002,  # After status error
-                        trace_id=row["trace_id"],
-                        span_id=row["span_id"],
-                    )
-                )
-
-            # Span end event
-            events.append(
-                Event(
-                    event_type=EventType.SPAN_END,
-                    event_id=span_end_id,
-                    timestamp=timestamp + (duration / 1e9 if duration else 0.01),  # Convert ns to seconds
-                    trace_id=row["trace_id"],
-                    span_id=row["span_id"],
-                )
-            )
-
-        # Extract log events
+        # Prepare log events by span
+        log_events_by_span = defaultdict(list)
         if trace_logs_df is not None and len(trace_logs_df) > 0:
-            # Filter out noisy services
             filtered_logs = trace_logs_df.filter(pl.col("service_name") != "ts-ui-dashboard")
 
             for row in filtered_logs.iter_rows(named=True):
@@ -242,36 +199,79 @@ class EventEncoder:
                     log_event_id = self.event_manager.get_log_event_id(str(template_id))
                     timestamp = row["time"].timestamp() if hasattr(row["time"], "timestamp") else float(row["time"])
 
-                    events.append(
-                        Event(
-                            event_type=EventType.LOG,
-                            event_id=log_event_id,
-                            timestamp=timestamp,
-                            trace_id=row["trace_id"],
-                            span_id=row.get("span_id"),
-                        )
-                    )
+                    span_id = row.get("span_id")
+                    if span_id:
+                        log_events_by_span[span_id].append((log_event_id, timestamp))
 
-        # Sort events by timestamp
-        events.sort(key=lambda e: e.timestamp)
-        return events
+            # Sort log events within each span by timestamp
+            for span_id in log_events_by_span:
+                log_events_by_span[span_id].sort(key=lambda x: x[1])
 
-    def extract_event_pairs(self, events: list[Event]) -> set[tuple[int, int]]:
-        """Extract consecutive event pairs (2-grams) from event sequence"""
-        pairs = set()
+        # Generate event pairs more efficiently without recursion
+        all_event_pairs = set()
 
-        if len(events) < 2:
-            return pairs
+        # 1. Generate span internal event pairs for each span
+        for span_id, span_data in spans_data.items():
+            service_span_name = f"{span_data['service_name']}_{span_data['span_name']}"
+            span_event_id = self.event_manager.get_span_event_id(service_span_name)
 
-        # Create pairs from consecutive events
-        for i in range(len(events) - 1):
-            curr_event = events[i]
-            next_event = events[i + 1]
-            pairs.add((curr_event.event_id, next_event.event_id))
+            # Build internal event sequence for this span
+            span_events = [span_event_id]  # Start with span start
 
-        return pairs
+            # Add log events (sorted by timestamp)
+            if span_id in log_events_by_span:
+                for log_event_id, _ in log_events_by_span[span_id]:
+                    span_events.append(log_event_id)
 
+            # Add status error event (if applicable)
+            if span_data.get("attr.status_code") == "Error":
+                error_id = self.event_manager.get_special_event_id("status_error")
+                span_events.append(error_id)
 
+            # Add performance degradation event (if applicable)
+            duration = span_data.get("duration", 0)
+            p90_threshold = self.performance_thresholds.get(service_span_name)
+            if p90_threshold and duration > p90_threshold:
+                perf_id = self.event_manager.get_special_event_id("perf_degradation")
+                span_events.append(perf_id)
+
+            # End with span end (same ID as start)
+            span_events.append(span_event_id)
+
+            # Extract internal pairs for this span
+            span_pairs = self.extract_event_pairs(span_events)
+            all_event_pairs.update(span_pairs)
+
+        # 2. Generate span relation event pairs (parent end -> child start)
+        for parent_id, children in children_map.items():
+            if parent_id in spans_data:
+                parent_data = spans_data[parent_id]
+                parent_service_span = f"{parent_data['service_name']}_{parent_data['span_name']}"
+                parent_end_id = self.event_manager.get_span_event_id(parent_service_span)
+
+                # Sort children by timestamp for deterministic ordering
+                children.sort(key=lambda cid: spans_data[cid]["time"])
+
+                for child_id in children:
+                    if child_id in spans_data:
+                        child_data = spans_data[child_id]
+                        child_service_span = f"{child_data['service_name']}_{child_data['span_name']}"
+                        child_start_id = self.event_manager.get_span_event_id(child_service_span)
+
+                        # Add parent_end -> child_start pair
+                        all_event_pairs.add((parent_end_id, child_start_id))
+
+        return all_event_pairs
+
+    def extract_event_pairs(self, event_ids: list[int]) -> set[tuple[int, int]]:
+        """Extract consecutive event pairs (2-grams) from event ID sequence using optimized zip approach"""
+        if len(event_ids) < 2:
+            return set()
+
+        # Most efficient approach based on performance testing
+        return set(zip(event_ids[:-1], event_ids[1:]))
+
+@timeit(log_args=False)
 def calculate_event_coverage(
     traces_df: pl.DataFrame, logs_df: pl.DataFrame | None, sampled_trace_ids: set[str], input_folder
 ) -> dict[str, float]:
@@ -318,11 +318,8 @@ def calculate_event_coverage(
         # Get logs for this trace
         trace_logs = log_groups.get((trace_id,), pl.DataFrame())
 
-        # Encode events for this trace
-        events = encoder.encode_trace_events(trace_df, trace_logs)
-
-        # Extract event pairs
-        event_pairs = encoder.extract_event_pairs(events)
+        # Encode events for this trace and get event pairs directly
+        event_pairs = encoder.encode_trace_events(trace_df, trace_logs)
 
         # Add to all pairs
         all_event_pairs.update(event_pairs)
