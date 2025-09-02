@@ -164,6 +164,9 @@ def generate_sampler_perf_report(
                 pl.col("total_unique_span_names").mean().alias("avg_total_unique_span_names"),
                 pl.col("sampled_unique_span_names").mean().alias("avg_sampled_unique_span_names"),
                 pl.col("span_coverage").mean().alias("avg_span_coverage"),
+                # New metrics
+                pl.col("shannon_entropy").mean().alias("avg_shannon_entropy"),
+                pl.col("benefit_cost_ratio").mean().alias("avg_benefit_cost_ratio"),
                 # Also calculate std dev for key metrics
                 pl.col("controllability").std().alias("std_controllability"),
                 pl.col("comprehensiveness").std().alias("std_api_coverage"),
@@ -176,6 +179,9 @@ def generate_sampler_perf_report(
                 pl.col("balance_cv").std().alias("std_balance_cv"),
                 pl.col("unique_trace_coverage").std().alias("std_unique_trace_coverage"),
                 pl.col("span_coverage").std().alias("std_span_coverage"),
+                # New metrics std dev
+                pl.col("shannon_entropy").std().alias("std_shannon_entropy"),
+                pl.col("benefit_cost_ratio").std().alias("std_benefit_cost_ratio"),
             ]
         )
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
@@ -205,6 +211,8 @@ def generate_sampler_perf_report(
             "avg_event_coverage",
             "avg_unique_trace_coverage",
             "avg_span_coverage",
+            "avg_shannon_entropy",
+            "avg_benefit_cost_ratio",
             "avg_gt_trace_proportion",
             "avg_balance_cv",
             "avg_proportion_anomaly",
@@ -331,6 +339,9 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
         "total_unique_span_names": 0,
         "sampled_unique_span_names": 0,
         "span_coverage": 0.0,
+        # New metrics
+        "shannon_entropy": 0.0,
+        "benefit_cost_ratio": 0.0,
     }
 
     # Add missing columns with default values

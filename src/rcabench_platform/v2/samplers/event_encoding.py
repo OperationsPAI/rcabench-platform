@@ -302,7 +302,7 @@ def calculate_event_coverage(
         input_folder: Path to input folder for loading metrics_sli
 
     Returns:
-        Dictionary containing event coverage metrics
+        Dictionary containing event coverage metrics including Shannon entropy and benefit-cost ratio
     """
     logger.info("Calculating event coverage metrics...")
 
@@ -331,6 +331,9 @@ def calculate_event_coverage(
     all_trace_patterns = set()
     sampled_trace_patterns = set()
 
+    # For Shannon entropy calculation - track trace pattern counts in sampled data
+    sampled_pattern_counts = {}
+
     # Process each trace
     for (trace_id,), trace_df in trace_groups.items():
         if not trace_id:
@@ -354,6 +357,9 @@ def calculate_event_coverage(
             if trace_id in sampled_trace_ids:
                 sampled_trace_patterns.add(trace_pattern)
 
+                # Count pattern occurrences for Shannon entropy
+                sampled_pattern_counts[trace_pattern] = sampled_pattern_counts.get(trace_pattern, 0) + 1
+
         # Add to sampled pairs if this trace was sampled
         if trace_id in sampled_trace_ids:
             sampled_event_pairs.update(event_pairs)
@@ -369,8 +375,26 @@ def calculate_event_coverage(
     event_coverage = sampled_event_pairs_count / total_event_pairs if total_event_pairs > 0 else 0.0
     unique_trace_coverage = sampled_unique_traces / total_unique_traces if total_unique_traces > 0 else 0.0
 
+    # Calculate Shannon entropy of trace pattern distribution in sampled data
+    shannon_entropy = 0.0
+    if len(sampled_pattern_counts) > 1:  # Need at least 2 different patterns
+        total_sampled_traces = sum(sampled_pattern_counts.values())
+
+        for count in sampled_pattern_counts.values():
+            if count > 0:  # Avoid log(0)
+                p_i = count / total_sampled_traces
+                shannon_entropy -= p_i * math.log2(p_i)
+
+    # Calculate benefit-cost ratio
+    benefit_cost_ratio = 0.0
+    actual_sample_count = len(sampled_trace_ids)
+    if actual_sample_count > 0:
+        benefit_cost_ratio = sampled_unique_traces / actual_sample_count
+
     logger.info(f"Event coverage: {sampled_event_pairs_count}/{total_event_pairs} = {event_coverage:.4f}")
     logger.info(f"Unique trace coverage: {sampled_unique_traces}/{total_unique_traces} = {unique_trace_coverage:.4f}")
+    logger.info(f"Shannon entropy: {shannon_entropy:.4f} (from {len(sampled_pattern_counts)} pattern types)")
+    logger.info(f"Benefit-cost ratio: {benefit_cost_ratio:.4f} ({sampled_unique_traces}/{actual_sample_count})")
 
     return {
         "total_event_pairs": total_event_pairs,
@@ -379,4 +403,6 @@ def calculate_event_coverage(
         "total_unique_traces": total_unique_traces,
         "sampled_unique_traces": sampled_unique_traces,
         "unique_trace_coverage": unique_trace_coverage,
+        "shannon_entropy": shannon_entropy,
+        "benefit_cost_ratio": benefit_cost_ratio,
     }

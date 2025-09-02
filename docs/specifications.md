@@ -76,6 +76,16 @@ Sampler performance is evaluated using the following metrics:
   - $n_i$: count of type i in sampled data
   - $\bar{n}$: average count across all types
   - Lower CV indicates more balanced distribution across trace types
++ **Shannon Entropy**: Information density of sampled trace distribution = $H(X) = -\sum_{i=1}^{n} p(x_i) \log_2 p(x_i)$
+  - $n$: number of different trace patterns in sampled data (from event encoding)
+  - $p(x_i)$: proportion of trace pattern i in sampled traces
+  - Higher entropy indicates more uniform and diverse trace pattern distribution
+  - Calculated as part of event coverage analysis using unique trace patterns
++ **Benefit-Cost Ratio**: Efficiency of unique pattern discovery = $\frac{\text{Unique Trace Patterns Discovered}}{\text{Actual Sample Count}}$
+  - Uses unique trace patterns from event encoding as "benefit"
+  - Actual sample count as "cost" 
+  - Higher ratio indicates more efficient discovery of diverse trace patterns
+  - Calculated as part of event coverage analysis
 + **Runtime**: Algorithm runtime per span in milliseconds
 + **Actual Sampling Rate**: Achieved sampling rate
 
@@ -93,15 +103,12 @@ Sampler performance is evaluated using the following metrics:
   - Considers performance degradation using metrics_sli.parquet thresholds
   - Provides the most comprehensive view of system behavior patterns
   - Generally the most strict coverage metric, showing lowest percentages
+  - **Also calculates Shannon entropy and benefit-cost ratio** as part of this analysis
 - **Unique Trace Coverage**: Coverage based on unique trace patterns
   - Each trace is represented as a set of event pairs (from Event Coverage)
   - Measures how many different trace patterns are captured in samples
   - Provides insight into behavioral diversity beyond individual event coverage
-+ **Span Coverage**: Basic coverage based on span sampling = $N_s' / N_s$
-  - $N_s$': number of sampled spans
-  - $N_s$: total number of spans
-  - Simple volume-based metric showing sampling efficiency
-  - Complements Event Coverage by focusing on complete trace uniqueness
+  - Used for Shannon entropy and benefit-cost ratio calculations
 
 #### Additional Metrics
 
@@ -119,6 +126,25 @@ Sampler performance is evaluated using the following metrics:
   - CV = 0.0 indicates perfect balance (all types have equal sample counts)
   - Higher CV values indicate more unbalanced distribution
   - Important for ensuring diverse trace type representation in samples
+
+- **Shannon Entropy**: Measures information density in sampled trace pattern distribution
+  - Uses standard Shannon entropy formula from information theory
+  - Based on trace pattern proportions in sampled data (using event encoding patterns)
+  - Higher entropy indicates more uniform and diverse distribution of execution patterns
+  - Calculated during event coverage analysis for efficiency
+  - Entropy = 0 when only one trace pattern is sampled
+  - Maximum entropy achieved when all trace patterns are equally represented
+  - More granular than entry span-based metrics as it considers complete execution patterns
+
+- **Benefit-Cost Ratio**: Measures sampling efficiency for unique pattern discovery
+  - Benefit: number of unique trace patterns discovered (from event encoding)
+  - Cost: actual number of traces sampled
+  - Higher ratio indicates more efficient discovery of diverse execution patterns
+  - Calculated during event coverage analysis for efficiency
+  - Helps evaluate whether sampling strategy effectively captures behavioral diversity
+  - Ratio = 1.0 means every sampled trace has a unique pattern (maximum diversity)
+  - Ratio < 1.0 indicates some redundancy in sampled patterns
+  - Provides insight into sampling efficiency beyond simple coverage metrics
 
 ## Data Specification
 

@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import math
 import os
 import time
 import traceback
@@ -144,6 +145,8 @@ def calculate_sampler_performance(
         - sampled_event_pairs: Number of unique event pairs in sampled data
         - total_unique_traces: Total number of unique trace patterns
         - sampled_unique_traces: Number of unique trace patterns in sampled data
+        - shannon_entropy: Shannon entropy of trace pattern distribution in sampled data
+        - benefit_cost_ratio: Ratio of unique trace patterns discovered to actual sample count
     """
     # Load traces to get total counts
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
@@ -303,6 +306,9 @@ def calculate_sampler_performance(
             "total_unique_span_names": total_unique_span_names,
             "sampled_unique_span_names": 0,
             "span_coverage": 0.0,
+            # New metrics
+            "shannon_entropy": 0.0,
+            "benefit_cost_ratio": 0.0,
         }
 
     # Load full traces with parsed span names for analysis
@@ -523,13 +529,15 @@ def calculate_sampler_performance(
         "total_path_types": path_coverage_metrics["total_path_types"],
         "sampled_path_types": path_coverage_metrics["sampled_path_types"],
         "path_coverage": path_coverage_metrics["path_coverage"],
-        # Event coverage metrics
+        # Event coverage metrics (now includes Shannon entropy and benefit-cost ratio)
         "total_event_pairs": event_coverage_metrics["total_event_pairs"],
         "sampled_event_pairs": event_coverage_metrics["sampled_event_pairs"],
         "event_coverage": event_coverage_metrics["event_coverage"],
         "total_unique_traces": event_coverage_metrics["total_unique_traces"],
         "sampled_unique_traces": event_coverage_metrics["sampled_unique_traces"],
         "unique_trace_coverage": event_coverage_metrics["unique_trace_coverage"],
+        "shannon_entropy": event_coverage_metrics["shannon_entropy"],
+        "benefit_cost_ratio": event_coverage_metrics["benefit_cost_ratio"],
         # Span count metrics
         "total_span_count": total_span_count,
         "sampled_span_count": sampled_span_count,
@@ -669,7 +677,6 @@ def calculate_balance_cv(trace_entries_df: pl.DataFrame, sampled_trace_ids: set[
         return 0.0
 
     # Calculate CV: sqrt(variance) / mean
-    import math
 
     n_mean = sum(counts) / len(counts)
     variance = sum((n_i - n_mean) ** 2 for n_i in counts) / len(counts)
