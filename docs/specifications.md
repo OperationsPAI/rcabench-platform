@@ -54,6 +54,15 @@ Sampler performance is evaluated using the following metrics:
   - $N_e$: total number of event pairs
   - Events are encoded from traces and logs combined
   - Includes span events, status errors, performance degradation, and log events
++ **Unique Trace Coverage**: Unique Trace Pattern Coverage Rate = $N_u' / N_u$
+  - $N_u$': number of sampled unique trace patterns
+  - $N_u$: total number of unique trace patterns
+  - Each trace is represented as a set of event pairs
+  - Measures diversity of execution patterns captured
++ **Span Coverage**: Span Type Coverage Rate = $N_s' / N_s$
+  - $N_s$': number of sampled unique span types (service_name + span_name)
+  - $N_s$: total number of unique span types
+  - Also reports total span count and sampled span count
 + **Proportion (PRO)**: Three proportion metrics
   - PRO_anomaly: proportion of detector-flagged spans in abnormal traces only
   - PRO_rare: proportion of rare entry spans sampled (< 5% frequency)
@@ -84,6 +93,15 @@ Sampler performance is evaluated using the following metrics:
   - Considers performance degradation using metrics_sli.parquet thresholds
   - Provides the most comprehensive view of system behavior patterns
   - Generally the most strict coverage metric, showing lowest percentages
+- **Unique Trace Coverage**: Coverage based on unique trace patterns
+  - Each trace is represented as a set of event pairs (from Event Coverage)
+  - Measures how many different trace patterns are captured in samples
+  - Provides insight into behavioral diversity beyond individual event coverage
++ **Span Coverage**: Basic coverage based on span sampling = $N_s' / N_s$
+  - $N_s$': number of sampled spans
+  - $N_s$: total number of spans
+  - Simple volume-based metric showing sampling efficiency
+  - Complements Event Coverage by focusing on complete trace uniqueness
 
 #### Additional Metrics
 

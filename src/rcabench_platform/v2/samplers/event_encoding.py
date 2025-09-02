@@ -271,6 +271,7 @@ class EventEncoder:
         # Most efficient approach based on performance testing
         return set(zip(event_ids[:-1], event_ids[1:]))
 
+
 @timeit(log_args=False)
 def calculate_event_coverage(
     traces_df: pl.DataFrame, logs_df: pl.DataFrame | None, sampled_trace_ids: set[str], input_folder
@@ -310,6 +311,11 @@ def calculate_event_coverage(
     all_event_pairs = set()
     sampled_event_pairs = set()
 
+    # Track unique trace patterns for unique trace coverage
+    all_trace_patterns = set()
+    sampled_trace_patterns = set()
+
+
     # Process each trace
     for (trace_id,), trace_df in trace_groups.items():
         if not trace_id:
@@ -324,6 +330,15 @@ def calculate_event_coverage(
         # Add to all pairs
         all_event_pairs.update(event_pairs)
 
+        # Add unique trace pattern (frozenset of event pairs for hashability)
+        if event_pairs:  # Only add non-empty patterns
+            trace_pattern = frozenset(event_pairs)
+            all_trace_patterns.add(trace_pattern)
+
+            # Add to sampled patterns if this trace was sampled
+            if trace_id in sampled_trace_ids:
+                sampled_trace_patterns.add(trace_pattern)
+
         # Add to sampled pairs if this trace was sampled
         if trace_id in sampled_trace_ids:
             sampled_event_pairs.update(event_pairs)
@@ -332,12 +347,21 @@ def calculate_event_coverage(
     total_event_pairs = len(all_event_pairs)
     sampled_event_pairs_count = len(sampled_event_pairs)
 
+    # Calculate unique trace coverage metrics
+    total_unique_traces = len(all_trace_patterns)
+    sampled_unique_traces = len(sampled_trace_patterns)
+
     event_coverage = sampled_event_pairs_count / total_event_pairs if total_event_pairs > 0 else 0.0
+    unique_trace_coverage = sampled_unique_traces / total_unique_traces if total_unique_traces > 0 else 0.0
 
     logger.info(f"Event coverage: {sampled_event_pairs_count}/{total_event_pairs} = {event_coverage:.4f}")
+    logger.info(f"Unique trace coverage: {sampled_unique_traces}/{total_unique_traces} = {unique_trace_coverage:.4f}")
 
     return {
         "total_event_pairs": total_event_pairs,
         "sampled_event_pairs": sampled_event_pairs_count,
         "event_coverage": event_coverage,
+        "total_unique_traces": total_unique_traces,
+        "sampled_unique_traces": sampled_unique_traces,
+        "unique_trace_coverage": unique_trace_coverage,
     }

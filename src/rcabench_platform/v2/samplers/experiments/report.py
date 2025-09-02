@@ -156,6 +156,14 @@ def generate_sampler_perf_report(
                 pl.col("sampled_path_types").mean().alias("avg_sampled_path_types"),
                 pl.col("total_event_pairs").mean().alias("avg_total_event_pairs"),
                 pl.col("sampled_event_pairs").mean().alias("avg_sampled_event_pairs"),
+                pl.col("total_unique_traces").mean().alias("avg_total_unique_traces"),
+                pl.col("sampled_unique_traces").mean().alias("avg_sampled_unique_traces"),
+                pl.col("unique_trace_coverage").mean().alias("avg_unique_trace_coverage"),
+                pl.col("total_span_count").mean().alias("avg_total_span_count"),
+                pl.col("sampled_span_count").mean().alias("avg_sampled_span_count"),
+                pl.col("total_unique_span_names").mean().alias("avg_total_unique_span_names"),
+                pl.col("sampled_unique_span_names").mean().alias("avg_sampled_unique_span_names"),
+                pl.col("span_coverage").mean().alias("avg_span_coverage"),
                 # Also calculate std dev for key metrics
                 pl.col("controllability").std().alias("std_controllability"),
                 pl.col("comprehensiveness").std().alias("std_api_coverage"),
@@ -166,6 +174,8 @@ def generate_sampler_perf_report(
                 pl.col("runtime_per_trace_ms").std().alias("std_runtime_per_trace_ms"),
                 pl.col("gt_trace_proportion").std().alias("std_gt_trace_proportion"),
                 pl.col("balance_cv").std().alias("std_balance_cv"),
+                pl.col("unique_trace_coverage").std().alias("std_unique_trace_coverage"),
+                pl.col("span_coverage").std().alias("std_span_coverage"),
             ]
         )
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
@@ -193,6 +203,8 @@ def generate_sampler_perf_report(
             "avg_api_coverage",
             "avg_path_coverage",
             "avg_event_coverage",
+            "avg_unique_trace_coverage",
+            "avg_span_coverage",
             "avg_gt_trace_proportion",
             "avg_balance_cv",
             "avg_proportion_anomaly",
@@ -311,6 +323,14 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
         "sampled_path_types": 0,
         "total_event_pairs": 0,
         "sampled_event_pairs": 0,
+        "total_unique_traces": 0,
+        "sampled_unique_traces": 0,
+        "unique_trace_coverage": 0.0,
+        "total_span_count": 0,
+        "sampled_span_count": 0,
+        "total_unique_span_names": 0,
+        "sampled_unique_span_names": 0,
+        "span_coverage": 0.0,
     }
 
     # Add missing columns with default values

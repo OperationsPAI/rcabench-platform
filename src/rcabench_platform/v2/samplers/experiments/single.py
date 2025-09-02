@@ -130,6 +130,7 @@ def calculate_sampler_performance(
         - comprehensiveness (CR): API Coverage Rate based on API types (entry spans)
         - path_coverage: Coverage Rate based on execution paths with BFS encoding
         - event_coverage: Coverage Rate based on event pairs from traces+logs
+        - unique_trace_coverage: Coverage Rate based on unique trace patterns (sets of event pairs)
         - gt_trace_proportion: Proportion of ground truth related traces in sampled data
         - proportion_anomaly (PRO_anomaly): Proportion of detector flagged spans in abnormal traces
         - proportion_rare (PRO_rare): Proportion of rare traces (< 5% frequency)
@@ -141,6 +142,8 @@ def calculate_sampler_performance(
         - sampled_path_types: Number of unique execution paths in sampled data
         - total_event_pairs: Total number of unique event pairs
         - sampled_event_pairs: Number of unique event pairs in sampled data
+        - total_unique_traces: Total number of unique trace patterns
+        - sampled_unique_traces: Number of unique trace patterns in sampled data
     """
     # Load traces to get total counts
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
@@ -260,6 +263,14 @@ def calculate_sampler_performance(
         # Calculate ground truth trace proportion (will be 0.0 for empty sample)
         gt_trace_proportion = calculate_gt_trace_proportion(input_folder, all_traces_df, set(), set())
 
+        # Calculate span statistics for empty sample
+        total_span_count = len(all_traces_for_events_df)
+        total_unique_span_names = len(
+            all_traces_for_events_df.select(
+                pl.concat_str(["service_name", "span_name"], separator="_").alias("span_name")
+            ).unique()
+        )
+
         return {
             "sampled_count": sampled_count,
             "total_traces": total_traces,
@@ -283,6 +294,15 @@ def calculate_sampler_performance(
             "total_event_pairs": event_coverage_metrics["total_event_pairs"],
             "sampled_event_pairs": 0,
             "event_coverage": 0.0,
+            "total_unique_traces": event_coverage_metrics["total_unique_traces"],
+            "sampled_unique_traces": 0,
+            "unique_trace_coverage": 0.0,
+            # Span count metrics
+            "total_span_count": total_span_count,
+            "sampled_span_count": 0,
+            "total_unique_span_names": total_unique_span_names,
+            "sampled_unique_span_names": 0,
+            "span_coverage": 0.0,
         }
 
     # Load full traces with parsed span names for analysis
@@ -446,10 +466,34 @@ def calculate_sampler_performance(
         all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder
     )
 
+    # Calculate span statistics
+    total_span_count = len(all_traces_for_events_df)
+    sampled_span_count = len(all_traces_for_events_df.filter(pl.col("trace_id").is_in(sampled_trace_ids)))
+
+    # Calculate span coverage based on unique span names (service_name + span_name)
+    all_unique_spans = all_traces_for_events_df.select(
+        pl.concat_str(["service_name", "span_name"], separator="_").alias("span_name")
+    ).unique()
+    total_unique_span_names = len(all_unique_spans)
+
+    sampled_unique_spans = (
+        all_traces_for_events_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+        .select(pl.concat_str(["service_name", "span_name"], separator="_").alias("span_name"))
+        .unique()
+    )
+    sampled_unique_span_names = len(sampled_unique_spans)
+
+    span_coverage = sampled_unique_span_names / total_unique_span_names if total_unique_span_names > 0 else 0.0
+
     # If no traces sampled, override sampled metrics but keep total metrics
     if sampled_count == 0:
         event_coverage_metrics["sampled_event_pairs"] = 0
         event_coverage_metrics["event_coverage"] = 0.0
+        event_coverage_metrics["sampled_unique_traces"] = 0
+        event_coverage_metrics["unique_trace_coverage"] = 0.0
+        sampled_span_count = 0
+        sampled_unique_span_names = 0
+        span_coverage = 0.0
 
     # Calculate ground truth trace proportion
     abnormal_trace_ids = set(abnormal_traces_lf.select("trace_id").collect()["trace_id"].to_list())
@@ -483,6 +527,15 @@ def calculate_sampler_performance(
         "total_event_pairs": event_coverage_metrics["total_event_pairs"],
         "sampled_event_pairs": event_coverage_metrics["sampled_event_pairs"],
         "event_coverage": event_coverage_metrics["event_coverage"],
+        "total_unique_traces": event_coverage_metrics["total_unique_traces"],
+        "sampled_unique_traces": event_coverage_metrics["sampled_unique_traces"],
+        "unique_trace_coverage": event_coverage_metrics["unique_trace_coverage"],
+        # Span count metrics
+        "total_span_count": total_span_count,
+        "sampled_span_count": sampled_span_count,
+        "total_unique_span_names": total_unique_span_names,
+        "sampled_unique_span_names": sampled_unique_span_names,
+        "span_coverage": span_coverage,
     }
 
 
