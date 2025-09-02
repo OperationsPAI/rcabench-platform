@@ -208,9 +208,7 @@ class EventEncoder:
         # Prepare log events by span
         log_events_by_span = defaultdict(list)
         if trace_logs_df is not None and len(trace_logs_df) > 0:
-            filtered_logs = trace_logs_df.filter(pl.col("service_name") != "ts-ui-dashboard")
-
-            for row in filtered_logs.iter_rows(named=True):
+            for row in trace_logs_df.iter_rows(named=True):
                 template_id = row.get("attr.template_id")
                 if template_id is not None:
                     log_event_id = self.event_manager.get_log_event_id(str(template_id))
