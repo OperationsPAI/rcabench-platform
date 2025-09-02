@@ -2,11 +2,10 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import polars as pl
 import streamlit as st
-import streamlit.components.v1 as components
 
 from rcabench_platform.v2.tools.label.config import (
     APP_ICON,
@@ -15,7 +14,6 @@ from rcabench_platform.v2.tools.label.config import (
     DATASET_CONVERTED_SUFFIX,
     LAYOUT,
 )
-from rcabench_platform.v2.tools.label.data_loader import DataLoader
 from rcabench_platform.v2.tools.label.logs_search import LogsSearcher
 from rcabench_platform.v2.tools.label.metrics_viz import MetricsVisualizer
 from rcabench_platform.v2.tools.label.traces_viz import TracesVisualizer
@@ -23,42 +21,20 @@ from rcabench_platform.v2.tools.label.utils import get_data_loader, get_label_ma
 
 
 def build_dataset_path(datapack_name: str) -> str:
-    """Build the full dataset path from datapack name."""
     return str(DATASET_BASE_PATH / datapack_name / DATASET_CONVERTED_SUFFIX)
 
 
 def get_current_dataset_path() -> str:
-    """Get the current dataset path from session state."""
     if hasattr(st.session_state, "datapack_name") and st.session_state.datapack_name:
         return build_dataset_path(st.session_state.datapack_name)
-    elif hasattr(st.session_state, "dataset_path") and st.session_state.dataset_path:
-        # Fallback for backward compatibility
-        return st.session_state.dataset_path
     else:
         return ""
 
 
-def create_cache_key(*args) -> str:
-    """Create a cache key from arguments."""
-    return "_".join(str(arg) for arg in args)
-
-
-def get_dataframe_length(df) -> int:
-    """Get length of polars dataframe."""
-    return df.height
-
-
-def dataframe_is_empty(df) -> bool:
-    """Check if polars dataframe is empty."""
-    return df.height == 0
-
-
 def ensure_dataframe_for_display(data: Any) -> pl.DataFrame:
-    """Ensure data is a Polars DataFrame for Streamlit display."""
     if isinstance(data, pl.DataFrame):
         return data
     else:
-        # Convert other types to DataFrame if needed
         return pl.DataFrame(data) if data else pl.DataFrame()
 
 
@@ -73,7 +49,6 @@ def load_dataset_summary(dataset_path: str) -> dict[str, Any]:
 
 @st.cache_data
 def get_available_data(dataset_path: str) -> tuple[list[str], list[str]]:
-    """Cache available metrics and services."""
     data_loader = get_data_loader()
     data_loader.set_dataset_path(dataset_path)
     return data_loader.get_available_metrics(), data_loader.get_available_services()
@@ -81,7 +56,6 @@ def get_available_data(dataset_path: str) -> tuple[list[str], list[str]]:
 
 @st.cache_data
 def load_logs_data(dataset_path: str, data_type: str) -> pl.DataFrame:
-    """Cache logs data to improve pagination performance."""
     data_loader = get_data_loader()
     data_loader.set_dataset_path(dataset_path)
     return data_loader.get_logs_data(data_type)
@@ -97,7 +71,6 @@ def search_logs_cached(
     log_level: str,
     service_filter: str,
 ) -> pl.DataFrame:
-    """Cache search results to improve performance."""
     data_loader = get_data_loader()
     data_loader.set_dataset_path(dataset_path)
     searcher = LogsSearcher()
@@ -123,14 +96,12 @@ def get_metrics_data_cached(dataset_path: str, services: list[str], metrics: lis
 
 @st.cache_data
 def get_traces_data_cached(dataset_path: str, data_type: str) -> pl.DataFrame:
-    """Cache traces data to improve performance."""
     data_loader = get_data_loader()
     data_loader.set_dataset_path(dataset_path)
     return data_loader.get_traces_data(data_type)
 
 
 def initialize_session_state() -> None:
-    """Initialize session state variables using Streamlit's built-in setdefault."""
     st.session_state.setdefault("dataset_loaded", False)
     st.session_state.setdefault(
         "datapack_name",
@@ -167,10 +138,8 @@ def render_sidebar() -> None:
         if load_submitted and datapack_name:
             with st.spinner("Loading dataset..."):
                 try:
-                    # Build full dataset path
                     dataset_path = build_dataset_path(datapack_name)
 
-                    # Clear cache when loading new dataset
                     load_dataset_summary.clear()
                     get_available_data.clear()
                     load_logs_data.clear()
@@ -178,7 +147,6 @@ def render_sidebar() -> None:
                     get_metrics_data_cached.clear()
                     get_traces_data_cached.clear()
 
-                    # Clear session state cache
                     st.session_state.logs_search_cache = {}
                     st.session_state.last_search_params = {}
                     st.session_state.current_filtered_logs = pl.DataFrame()
@@ -188,9 +156,9 @@ def render_sidebar() -> None:
                     if summary:
                         st.session_state.dataset_loaded = True
                         st.session_state.datapack_name = datapack_name
-                        st.session_state.dataset_path = dataset_path  # Keep for backward compatibility
+                        st.session_state.dataset_path = dataset_path
                         st.sidebar.success("Dataset loaded successfully!")
-                        st.rerun()  # Refresh to show new data
+                        st.rerun()
                     else:
                         st.session_state.dataset_loaded = False
                         st.sidebar.error("Dataset loading failed, please check the datapack name and file integrity")
@@ -198,10 +166,8 @@ def render_sidebar() -> None:
                     st.session_state.dataset_loaded = False
                     st.sidebar.error(f"Error loading dataset: {str(e)}")
 
-    # Display dataset information
     if st.session_state.dataset_loaded:
         try:
-            # Build dataset path from datapack name
             dataset_path = build_dataset_path(st.session_state.datapack_name)
             summary = load_dataset_summary(dataset_path)
             if summary:
@@ -220,7 +186,6 @@ def render_sidebar() -> None:
 
 
 def render_label_management(dataset_path: str) -> None:
-    """Render the label management interface."""
     st.sidebar.subheader("Label Management")
 
     label_manager = get_label_manager()
@@ -349,7 +314,6 @@ def render_metrics_tab() -> None:
         return
 
     try:
-        # Get cached available metrics and services
         dataset_path = get_current_dataset_path()
         available_metrics, available_services = get_available_data(dataset_path)
 
@@ -368,16 +332,11 @@ def render_metrics_tab() -> None:
         st.error(f"Error loading metrics data: {str(e)}")
         return
 
-    # Use default values for chart type, data type, and selection mode
     data_type = "both"
 
-    # Display different UI based on selection mode
     if available_services:
-        # st.subheader("Batch Select Services and Metrics")
-
         col_svc, col_metric = st.columns([1, 1])
 
-        # Services selection
         with col_svc:
             st.write("**Services**")
 
@@ -541,7 +500,6 @@ def render_metrics_tab() -> None:
                                 )
                                 if label_manager.delete_selection_template(selected_id):
                                     st.success("Template deleted successfully!")
-                                    # 标记需要刷新模板列表
                                     st.session_state.templates_refresh = True
                                     st.rerun()
                                 else:
@@ -646,7 +604,7 @@ def render_logs_tab():
                 selected_level = st.selectbox("Log Level", ["all"] + log_levels, key="log_level_filter")
 
             with filter_col2:
-                services = list(log_stats.get("services", {}).keys())
+                services = sorted(list(log_stats.get("services", {}).keys()))
                 selected_service = st.selectbox("Service", ["all"] + services[:10], key="service_filter")
 
         current_search_params.update(
@@ -656,7 +614,6 @@ def render_logs_tab():
             }
         )
 
-        # 只有在搜索参数改变时才重新搜索
         search_params_changed = current_search_params != st.session_state.last_search_params
 
         if search_params_changed:
@@ -729,7 +686,6 @@ def render_logs_tab():
 
 
 def render_traces_tab():
-    """Render the traces tab with normal vs abnormal span aggregation comparison."""
     if not st.session_state.dataset_loaded:
         st.warning("Please load a dataset in the sidebar first")
         st.info("Enter the dataset path in the sidebar and click 'Load Dataset' to begin.")
@@ -757,7 +713,7 @@ def render_traces_tab():
         with st.spinner("Analyzing services..."):
             normal_services = visualizer.get_service_list(normal_traces_df) if len(normal_traces_df) > 0 else []
             abnormal_services = visualizer.get_service_list(abnormal_traces_df) if len(abnormal_traces_df) > 0 else []
-            all_services = list(set(normal_services + abnormal_services))
+            all_services = sorted(list(set(normal_services + abnormal_services)))
 
         if not all_services:
             st.warning("No services found in the trace data")
@@ -767,7 +723,7 @@ def render_traces_tab():
         col_select, col_info = st.columns([2, 1])
 
         with col_select:
-            st.subheader("📊 Service Analysis")
+            st.subheader("Service Analysis")
             selected_service = st.selectbox(
                 "Select Service to Analyze",
                 all_services,
@@ -777,7 +733,7 @@ def render_traces_tab():
 
         with col_info:
             if selected_service:
-                st.subheader("🔗 Service Dependencies")
+                st.subheader("Service Dependencies")
 
                 # Get upstream and downstream services from both normal and abnormal data
                 upstream_services = set()
@@ -795,7 +751,7 @@ def render_traces_tab():
                 if upstream_services:
                     st.write("**Upstream Services:**")
                     for service in sorted(upstream_services):
-                        st.write(f"• {service}")
+                        st.write(f"{service}")
                 else:
                     st.write("**Upstream Services:** None")
 
@@ -803,7 +759,7 @@ def render_traces_tab():
                 if downstream_services:
                     st.write("**Downstream Services:**")
                     for service in sorted(downstream_services):
-                        st.write(f"• {service}")
+                        st.write(f"{service}")
                 else:
                     st.write("**Downstream Services:** None")
 
@@ -909,15 +865,57 @@ def render_traces_tab():
                                 )
                                 duration_increase = abnormal_duration - normal_duration
 
+                                # Calculate percentile differences
+                                abnormal_p99 = (
+                                    float(abnormal_row["p99_duration_ms"])
+                                    if abnormal_row["p99_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                normal_p99 = (
+                                    float(normal_row["p99_duration_ms"])
+                                    if normal_row["p99_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                p99_increase = abnormal_p99 - normal_p99
+
+                                abnormal_p95 = (
+                                    float(abnormal_row["p95_duration_ms"])
+                                    if abnormal_row["p95_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                normal_p95 = (
+                                    float(normal_row["p95_duration_ms"])
+                                    if normal_row["p95_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                p95_increase = abnormal_p95 - normal_p95
+
+                                abnormal_p90 = (
+                                    float(abnormal_row["p90_duration_ms"])
+                                    if abnormal_row["p90_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                normal_p90 = (
+                                    float(normal_row["p90_duration_ms"])
+                                    if normal_row["p90_duration_ms"] is not None
+                                    else 0.0
+                                )
+                                p90_increase = abnormal_p90 - normal_p90
+
                                 impact_analysis.append(
                                     {
                                         "Span Name": span_name,
                                         "Error Rate Increase (%)": f"{error_rate_increase:.2f}",
                                         "Duration Increase (ms)": f"{duration_increase:.2f}",
+                                        "P90 Increase (ms)": f"{p90_increase:.2f}",
+                                        "P95 Increase (ms)": f"{p95_increase:.2f}",
+                                        "P99 Increase (ms)": f"{p99_increase:.2f}",
                                         "Normal Error Rate (%)": f"{normal_error_rate:.2f}",
                                         "Abnormal Error Rate (%)": f"{abnormal_error_rate:.2f}",
                                         "Normal Avg Duration (ms)": f"{normal_duration:.2f}",
                                         "Abnormal Avg Duration (ms)": f"{abnormal_duration:.2f}",
+                                        "Normal P99 (ms)": f"{normal_p99:.2f}",
+                                        "Abnormal P99 (ms)": f"{abnormal_p99:.2f}",
                                     }
                                 )
 
@@ -932,10 +930,6 @@ def render_traces_tab():
                 except Exception as e:
                     st.error(f"Error generating comparison summary: {str(e)}")
 
-            # Add some spacing before the detailed sections
-            # st.divider()
-
-            # Then show normal and abnormal period details side by side
             col_normal, col_abnormal = st.columns(2)
 
             with col_normal:
@@ -1002,7 +996,6 @@ def render_traces_tab():
 
 
 def render_annotations_tab():
-    """Render the annotations management tab."""
     if not st.session_state.dataset_loaded:
         st.warning("Please load a dataset in the sidebar first")
         st.info("Enter the dataset path in the sidebar and click 'Load Dataset' to begin.")
@@ -1098,11 +1091,8 @@ def render_annotations_tab():
 def main() -> None:
     try:
         configure_page()
-
         render_sidebar()
-
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["Metadata", "Metrics", "Logs", "Traces", "Annotations"])
-
         current_tab = None
 
         with tab1:
@@ -1137,7 +1127,6 @@ def main() -> None:
             else:
                 st.warning("Please load a dataset in the sidebar first")
 
-        # 更新最后活跃的标签页
         if current_tab:
             st.session_state.last_tab_active = current_tab
 
@@ -1148,7 +1137,6 @@ def main() -> None:
 
 
 def run_streamlit():
-    """Run the Streamlit application."""
     app_path = Path(__file__)
     subprocess.run([sys.executable, "-m", "streamlit", "run", str(app_path)])
 

@@ -158,6 +158,28 @@ def _smart_wrap_text(text: str, width: int = 30) -> str:
     return "\n".join(lines)
 
 
+def _escape_latex_chars(text: str) -> str:
+    """Escape LaTeX special characters in text"""
+    if not isinstance(text, str):
+        text = str(text)
+
+    # Escape LaTeX special characters in proper order
+    for char, escape in [
+        ("\\", "\\textbackslash{}"),  # Backslash must be first
+        ("&", "\\&"),
+        ("%", "\\%"),
+        ("$", "\\$"),
+        ("#", "\\#"),
+        ("_", "\\_"),
+        ("{", "\\{"),
+        ("}", "\\}"),
+        ("^", "\\textasciicircum{}"),
+        ("~", "\\textasciitilde{}"),
+    ]:
+        text = text.replace(char, escape)
+    return text
+
+
 def _merge_consecutive_cells(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     """
     Merge consecutive cells with same values in specified columns (by clearing duplicate values)
@@ -213,8 +235,10 @@ def _export_latex(df: pd.DataFrame, merge_columns: list[str] | None = None, **kw
     latex_parts.append(f"\\begin{{tabular}}{{{column_format}}}")
     latex_parts.append("\\toprule")
 
-    # Header
-    header_cols = [str(col).replace("_", "\\_") for col in df.columns]
+    # Header with proper LaTeX escaping
+    header_cols = []
+    for col in df.columns:
+        header_cols.append(_escape_latex_chars(str(col)))
     latex_parts.append(" & ".join(header_cols) + " \\\\")
     latex_parts.append("\\midrule")
 
@@ -230,18 +254,18 @@ def _export_latex(df: pd.DataFrame, merge_columns: list[str] | None = None, **kw
             if cell_value is None:
                 cell_value = ""
             else:
+                # Format numeric values to 2 decimal places
+                if isinstance(cell_value, (int, float)) and not pd.isna(cell_value):
+                    if isinstance(cell_value, float):
+                        cell_value = f"{cell_value:.2f}"
+                    else:
+                        cell_value = f"{float(cell_value):.2f}"
+                else:
+                    cell_value = str(cell_value)
+
                 # Escape LaTeX special characters
-                cell_value = str(cell_value)
-                for char, escape in [
-                    ("&", "\\&"),
-                    ("%", "\\%"),
-                    ("$", "\\$"),
-                    ("#", "\\#"),
-                    ("_", "\\_"),
-                    ("{", "\\{"),
-                    ("}", "\\}"),
-                ]:
-                    cell_value = cell_value.replace(char, escape)
+                cell_value = _escape_latex_chars(cell_value)
+
                 # Handle newlines
                 if "\n" in cell_value:
                     cell_value = cell_value.replace("\n", "\\\\\n")

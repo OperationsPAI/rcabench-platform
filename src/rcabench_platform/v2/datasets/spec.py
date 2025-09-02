@@ -289,6 +289,66 @@ def calculate_trace_length(df: pl.DataFrame) -> list[int]:
     return trace_depths
 
 
+def calculate_trace_service_count(df: pl.LazyFrame) -> list[int]:
+    df_processed = df.select(["trace_id", "span_id", "parent_span_id", "service_name"]).with_columns(
+        pl.when(pl.col("parent_span_id") == "").then(None).otherwise(pl.col("parent_span_id")).alias("parent_span_id")
+    )
+
+    df_collected = df_processed.collect()
+
+    if len(df_collected) == 0:
+        return []
+
+    trace_service_counts = []
+
+    for trace_group in df_collected.group_by("trace_id", maintain_order=False):
+        trace_id, trace_data = trace_group
+
+        if len(trace_data) == 0:
+            trace_service_counts.append(0)
+            continue
+
+        spans_info = trace_data.select(["span_id", "parent_span_id", "service_name"])
+        if len(spans_info) == 1:
+            trace_service_counts.append(1)
+            continue
+
+        span_ids = spans_info["span_id"].to_list()
+        parent_span_ids = spans_info["parent_span_id"].to_list()
+        service_names = spans_info["service_name"].to_list()
+
+        span_to_service = {sid: sname for sid, sname in zip(span_ids, service_names)}
+        span_to_parent = {sid: pid for sid, pid in zip(span_ids, parent_span_ids)}
+
+        all_spans = set(span_ids)
+        parent_spans = {pid for pid in parent_span_ids if pid is not None}
+        leaf_spans = all_spans - parent_spans
+
+        if not leaf_spans:
+            root_spans = {sid for sid, pid in span_to_parent.items() if pid is None}
+            leaf_spans = root_spans if root_spans else {span_ids[0]}
+
+        max_path_services_count = 0
+
+        for leaf_span in leaf_spans:
+            path_services = set()
+            current_span = leaf_span
+            visited = set()
+
+            while current_span is not None and current_span not in visited:
+                visited.add(current_span)
+                service = span_to_service.get(current_span)
+                if service:
+                    path_services.add(service)
+                current_span = span_to_parent.get(current_span)
+
+            max_path_services_count = max(max_path_services_count, len(path_services))
+
+        trace_service_counts.append(max_path_services_count)
+
+    return trace_service_counts
+
+
 def _compute_span_depths(trace_df: pl.DataFrame) -> dict[str, int]:
     spans_data = {
         row["span_id"]: row["parent_span_id"]

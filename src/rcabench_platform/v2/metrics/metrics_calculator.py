@@ -72,7 +72,24 @@ class DatasetMetricsCalculator:
                     v1 = normal_metrics[metric]
                     v2 = abnormal_metrics[metric]
                     if v1 and v2:
-                        contribution = abs((sum(v2) / len(v2)) - (sum(v1) / len(v1)))
+                        # Combine normal and abnormal values for min-max normalization
+                        all_values = v1 + v2
+                        min_val = min(all_values)
+                        max_val = max(all_values)
+
+                        # Perform min-max normalization if there's variance in the data
+                        if max_val != min_val:
+                            normalized_v1 = [(x - min_val) / (max_val - min_val) for x in v1]
+                            normalized_v2 = [(x - min_val) / (max_val - min_val) for x in v2]
+                        else:
+                            # If all values are the same, no normalization needed
+                            normalized_v1 = v1
+                            normalized_v2 = v2
+
+                        # Calculate contribution using normalized values
+                        mean_normalized_v1 = sum(normalized_v1) / len(normalized_v1)
+                        mean_normalized_v2 = sum(normalized_v2) / len(normalized_v2)
+                        contribution = abs(mean_normalized_v2 - mean_normalized_v1)
                         delta += contribution
                         metric_contributions.append((metric, contribution))
 

@@ -382,6 +382,9 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
         self.files: dict[str, Any] = self._load_datapack_files()
 
     def _get_datapack_folder(self) -> Path | None:
+        in_p = Path(os.environ.get("INPUT_PATH", ""))
+        if in_p.exists() and in_p.is_dir() and (in_p / "converted").exists():
+            return in_p / "converted"
         return Path("data") / "rcabench_dataset" / self.datapack / "converted"
 
     def _load_datapack_files(self) -> dict[str, Any]:

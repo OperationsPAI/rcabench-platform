@@ -9,7 +9,11 @@ from rcabench_platform.v2.analysis.aggregation import (
     DuckDBAggregator,
     aggregate,
 )
-from rcabench_platform.v2.analysis.algo_perf_vis import algo_perf_by_groups, algo_perf_scatter_by_fault_category
+from rcabench_platform.v2.analysis.algo_perf_vis import (
+    algo_failure_by_fault_type_bar,
+    algo_perf_by_fault_type,
+    algo_perf_by_groups,
+)
 from rcabench_platform.v2.analysis.data_prepare import (
     build_items_with_cache,
     get_execution_item,
@@ -61,55 +65,34 @@ def analysis():
 
     aggregator = DuckDBAggregator(df)
 
-    def vis_hook(df, name):
+    def vis_hook(df, name, fig=False):
         format_dataframe(df, "html", output_file=f"temp/algo/{name}.html")
-        algo_perf_by_groups(df, output_file=Path(f"temp/algo/{name}.png"))
+        print_dataframe(df)
+        format_dataframe(df, "csv", output_file=f"temp/algo/{name}.csv")
+        format_dataframe(df, "latex", output_file=f"temp/algo/{name}.tex")
+        if fig:
+            algo_perf_by_groups(df, output_file=Path(f"temp/algo/{name}.png"))
 
     try:
-        print_dataframe(aggregator.algorithm_performance_summary())
-        vis_hook(aggregator.algorithm_performance_summary(), "performance_all")
-        vis_hook(aggregator.fault_category(), "fault_category_analysis")
-        vis_hook(aggregator.fault_type(), "fault_type_analysis")
+        # vis_hook(aggregator.dataset_overall(), "dataset_overall")
+        # vis_hook(aggregator.dataset_fault_type(), "dataset_fault_type")
 
-        sdd1 = aggregator.sdd_k(1)
-        sdd3 = aggregator.sdd_k(3)
-        sdd5 = aggregator.sdd_k(5)
+        # vis_hook(aggregator.perf_overall(), "overall_perf")
+        # vis_hook(aggregator.perf_group_by_fault_category(), "fault_category", True)
 
-        print_dataframe(sdd1)
-        print_dataframe(sdd3)
-        print_dataframe(sdd5)
+        # vis_hook(aggregator.perf_common_failures(5, 6), "common_failures")
+        # algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/fault_type.pdf"))
 
-        # print_dataframe(aggregator.algorithm_performance_breakdown("baro"))
-        algo = "microrank"
-        format_dataframe(
-            aggregator.algorithm_success_failure_stats(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_success_failure_stats.html",
-        )
-        format_dataframe(
-            aggregator.algorithm_failure_characteristics(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_failure_characteristics.html",
-        )
-        format_dataframe(
-            aggregator.algorithm_comparative_analysis(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_comparative_analysis.html",
-        )
-        format_dataframe(
-            aggregator.algorithm_detailed_performance_matrix(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_detailed_performance_matrix.html",
-        )
+        failure_data = aggregator.perf_algo_failure_by_fault_type()
+        vis_hook(failure_data, "algo_failure_by_fault_type")
 
-        fcasdd_df = aggregator.fault_category_and_sdd_analysis(1)
-        format_dataframe(
-            fcasdd_df,
-            "html",
-            output_file="temp/algo/fault_category_and_sdd_analysis.html",
-        )
+        # Create bar chart visualization for failure patterns
+        algo_failure_by_fault_type_bar(failure_data, Path("temp/algo/algo_failure_by_fault_type_bar.pdf"))
+        # sdd1 = aggregator.perf_sdd_k(1)
+        # sdd3 = aggregator.perf_sdd_k(3)
+        # sdd5 = aggregator.perf_sdd_k(5)
 
-        # batch_visualization(datapack_paths, False)
+        # print_dataframe(sdd5)
 
         # aggregator.print_schema()
 

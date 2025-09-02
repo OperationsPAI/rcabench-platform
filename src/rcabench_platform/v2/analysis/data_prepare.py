@@ -27,7 +27,7 @@ from rcabench.openapi import (
 )
 
 from ..clients.rcabench_ import RCABenchClient, get_datapacks_from_dataset_id, get_evaluation_by_dataset
-from ..datasets.spec import calculate_trace_length
+from ..datasets.spec import calculate_trace_length, calculate_trace_service_count
 from ..logging import logger
 from ..metrics.algo_metrics import AlgoMetricItem, calculate_metrics_for_level
 from ..utils.env import debug, getenv_int
@@ -86,6 +86,8 @@ class Item:
 
     # Trace depth statistics
     trace_length: Counter[int] = field(default_factory=Counter)
+
+    service_length: Counter[int] = field(default_factory=Counter)
 
     def __post_init__(self):
         if self._algo_evals is None:
@@ -331,6 +333,9 @@ def process_item(
 
         trace_spans = trace_df.select(["trace_id", "span_id", "parent_span_id"]).collect()
         depth_results = calculate_trace_length(trace_spans)
+        service_length = calculate_trace_service_count(trace_df)
+
+        trace_service_length = Counter(service_length)
         trace_length = Counter(depth_results)
 
         min_time = trace_df.select(pl.col("time").min().alias("min_time")).collect().item()
@@ -376,6 +381,7 @@ def process_item(
         datapack_metric_values=datapack_metric_values,
         injection_metric_counts=injection_metric_counts,
         trace_length=trace_length,
+        service_length=trace_service_length,
     )
 
 

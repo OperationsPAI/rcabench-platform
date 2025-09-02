@@ -1,8 +1,3 @@
-"""Configuration module for the fault injection data labeling and analysis system."""
-
-from __future__ import annotations
-
-import os
 from pathlib import Path
 
 # Application configuration

@@ -12,14 +12,7 @@ from .utils import (
 
 
 class DataLoader:
-    """Data loader class for managing dataset operations with Polars acceleration."""
-
     def __init__(self, dataset_path: str | None = None) -> None:
-        """Initialize the data loader.
-
-        Args:
-            dataset_path: Optional path to the dataset directory.
-        """
         self.dataset_path = Path(dataset_path) if dataset_path else None
         self._env_data: dict[str, Any] | None = None
         self._injection_data: dict[str, Any] | None = None
@@ -29,14 +22,6 @@ class DataLoader:
         self._traces_data: dict[str, pl.DataFrame] = {}
 
     def set_dataset_path(self, path: str) -> bool:
-        """Set dataset path and validate it.
-
-        Args:
-            path: Path to the dataset directory.
-
-        Returns:
-            True if validation succeeds, False otherwise.
-        """
         dataset_path = Path(path)
         is_valid, missing_files = validate_dataset_folder(dataset_path)
 
@@ -49,7 +34,6 @@ class DataLoader:
         return True
 
     def _clear_cache(self) -> None:
-        """Clear cached data."""
         self._env_data = None
         self._injection_data = None
         self._conclusion_data = None
@@ -59,15 +43,9 @@ class DataLoader:
 
     @property
     def is_loaded(self) -> bool:
-        """Check if dataset is loaded."""
         return self.dataset_path is not None and self.dataset_path.exists()
 
     def get_env_data(self) -> dict[str, Any]:
-        """Get environment data.
-
-        Returns:
-            Environment data dictionary.
-        """
         if not self.is_loaded or self.dataset_path is None:
             return {}
 
@@ -78,11 +56,6 @@ class DataLoader:
         return self._env_data
 
     def get_injection_data(self) -> dict[str, Any]:
-        """Get fault injection data.
-
-        Returns:
-            Fault injection data dictionary.
-        """
         if not self.is_loaded or self.dataset_path is None:
             return {}
 
@@ -93,11 +66,6 @@ class DataLoader:
         return self._injection_data
 
     def get_conclusion_data(self) -> pl.DataFrame:
-        """Get conclusion data.
-
-        Returns:
-            Conclusion dataframe.
-        """
         if not self.is_loaded or self.dataset_path is None:
             return pl.DataFrame()
 
@@ -108,14 +76,6 @@ class DataLoader:
         return self._conclusion_data
 
     def get_metrics_data(self, data_type: str = "both") -> pl.DataFrame:
-        """Get metrics data using Polars for acceleration.
-
-        Args:
-            data_type: Type of data to retrieve ("normal", "abnormal", "both").
-
-        Returns:
-            Metrics dataframe.
-        """
         if not self.is_loaded or self.dataset_path is None:
             return pl.DataFrame()
 
@@ -150,14 +110,6 @@ class DataLoader:
         return self._metrics_data.get(data_type, pl.DataFrame())
 
     def get_logs_data(self, data_type: str = "both") -> pl.DataFrame:
-        """Get logs data using Polars for acceleration.
-
-        Args:
-            data_type: Type of data to retrieve ("normal", "abnormal", "both").
-
-        Returns:
-            Logs dataframe.
-        """
         if not self.is_loaded or self.dataset_path is None:
             return pl.DataFrame()
 
@@ -173,14 +125,12 @@ class DataLoader:
                 abnormal_df = self.get_logs_data("abnormal")
 
                 if not normal_df.is_empty() and not abnormal_df.is_empty():
-                    # Use Polars to combine data efficiently
                     try:
                         normal_df = normal_df.with_columns(pl.lit("normal").alias("data_type"))
                         abnormal_df = abnormal_df.with_columns(pl.lit("abnormal").alias("data_type"))
                         combined_df = pl.concat([normal_df, abnormal_df])
                         self._logs_data[data_type] = combined_df
                     except Exception:
-                        # Fallback if concat fails
                         self._logs_data[data_type] = normal_df
                 elif not normal_df.is_empty():
                     self._logs_data[data_type] = normal_df
@@ -226,14 +176,12 @@ class DataLoader:
         return self._traces_data.get(data_type, pl.DataFrame())
 
     def get_available_metrics(self) -> list[str]:
-        """Get available metrics using Polars for acceleration."""
         metrics_df = self.get_metrics_data("both")
         if metrics_df.is_empty():
             return []
 
         if "metric" in metrics_df.columns:
             try:
-                # Use Polars for fast unique extraction
                 unique_metrics = (
                     metrics_df.select("metric").filter(pl.col("metric").is_not_null()).unique().sort("metric")
                 )
@@ -250,14 +198,12 @@ class DataLoader:
         return [col for col in numeric_cols if col not in exclude_cols]
 
     def get_available_services(self) -> list[str]:
-        """Get available services using Polars for acceleration."""
         metrics_df = self.get_metrics_data("both")
         if metrics_df.is_empty():
             return []
 
         if "service_name" in metrics_df.columns:
             try:
-                # Use Polars for fast unique extraction
                 unique_services = (
                     metrics_df.select("service_name")
                     .filter(pl.col("service_name").is_not_null())
@@ -274,14 +220,12 @@ class DataLoader:
         return []
 
     def get_metrics_by_service(self, services: list[str], metrics: list[str], data_type: str = "both") -> pl.DataFrame:
-        """Get metrics by service using Polars for acceleration."""
         metrics_df = self.get_metrics_data(data_type)
         if metrics_df.is_empty():
             return pl.DataFrame()
 
         if "metric" in metrics_df.columns and "service_name" in metrics_df.columns:
             try:
-                # Use Polars for fast filtering
                 filtered_df = metrics_df.filter(
                     pl.col("service_name").is_in(services) & pl.col("metric").is_in(metrics)
                 )
