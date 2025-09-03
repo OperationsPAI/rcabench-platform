@@ -18,10 +18,10 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
 
     output_paths = [get_output_folder(dataset, datapack, algorithm) / "output.parquet" for datapack, algorithm in items]
 
-    # 如果include_sampled为True，还要查找包含sampler信息的output文件
+    # If include_sampled is True, also look for output files containing sampler information
     if include_sampled:
         for datapack in datapacks:
-            # 查找所有包含sampler信息的算法目录
+            # Find all algorithm directories containing sampler information
             base_output_folder = get_output_folder(dataset, datapack, "dummy").parent
             if base_output_folder.exists():
                 for algorithm_dir in base_output_folder.iterdir():
@@ -77,7 +77,7 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
     save_parquet(perf_df, path=output_meta_folder / "dataset.perf.parquet")
 
     if include_sampled:
-        # 如果包含sampled数据，显示包含sampler字段的完整报告
+        # If sampled data is included, display the full report with sampler fields
         print_dataframe(
             perf_df.select(
                 "dataset",
@@ -105,13 +105,13 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
             )
         )
 
-        # 保存包含sampler信息的报告
+        # Save report with sampler information
         sampled_df = output_df.filter(pl.col("sampler.name").is_not_null())
         if len(sampled_df) > 0:
             sampler_perf_df = calc_all_perf(sampled_df, agg_level="dataset")
             save_parquet(sampler_perf_df, path=output_meta_folder / "sampler.dataset.perf.parquet")
     else:
-        # 如果不包含sampled数据，显示原来的报告格式
+        # If sampled data is not included, display the original report format
         print_dataframe(
             perf_df.select(
                 "dataset",
