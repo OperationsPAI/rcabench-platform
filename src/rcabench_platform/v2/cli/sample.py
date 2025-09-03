@@ -83,7 +83,45 @@ def perf_report(
     modes: Annotated[list[SamplingMode], typer.Option("-m", "--mode")] | None = None,
     warn_missing: bool = False,
 ):
-    """Generate performance report for samplers."""
+    """
+    Generate performance report for samplers.
+
+    By default, auto-detects all available samplers, sampling rates, and modes.
+    Use filters to specify particular configurations:
+
+    Examples:
+        # Report all configurations for datasets
+        sample perf-report -d dataset1 -d dataset2
+
+        # Report specific sampler only
+        sample perf-report -d dataset1 -s random
+
+        # Report specific rates and modes
+        sample perf-report -d dataset1 -r 0.1 -r 0.2 -m offline
+
+        # Report specific combinations
+        sample perf-report -d dataset1 -s random -s my_sampler -r 0.1 -m offline -m online
+    """
+    if not datasets:
+        logger.error("At least one dataset must be specified with -d/--dataset")
+        raise typer.Exit(1)
+
+    # Show what will be processed
+    if samplers is None:
+        logger.info("Auto-detecting available samplers...")
+    else:
+        logger.info(f"Filtering samplers: {samplers}")
+
+    if sampling_rates is None:
+        logger.info("Auto-detecting available sampling rates...")
+    else:
+        logger.info(f"Filtering sampling rates: {sampling_rates}")
+
+    if modes is None:
+        logger.info("Auto-detecting available sampling modes...")
+    else:
+        logger.info(f"Filtering sampling modes: {[m.value for m in modes]}")
+
     generate_sampler_perf_report(
         datasets=datasets,
         samplers=samplers,

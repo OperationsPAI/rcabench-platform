@@ -189,12 +189,31 @@ python main.py sample batch \
   --mode offline \
   --mode online
 
-# Generate sampling performance report
+# Generate sampling performance report (auto-detects all configurations)
+python main.py sample perf-report \
+  --dataset "my-dataset"
+
+# Generate report for specific samplers only
 python main.py sample perf-report \
   --dataset "my-dataset" \
   --sampler "random" \
+  --sampler "my-custom-sampler"
+
+# Generate report for specific rates and modes
+python main.py sample perf-report \
+  --dataset "my-dataset" \
   --rate 0.1 \
+  --rate 0.2 \
   --mode offline
+
+# Generate report for multiple datasets with specific filters
+python main.py sample perf-report \
+  --dataset "dataset1" \
+  --dataset "dataset2" \
+  --sampler "random" \
+  --rate 0.1 \
+  --mode offline \
+  --mode online
 
 # Generate SLI metrics aggregation for RCA algorithms
 python main.py sample generate-sli-metrics my-dataset --datapack my-datapack
@@ -203,29 +222,28 @@ python main.py sample generate-sli-metrics my-dataset --datapack my-datapack
 python main.py sample generate-sli-metrics my-dataset
 ```
 
-**SLI Metrics Generation:**
+**Sampler Report Output Structure:**
 
-The platform automatically generates `metrics_sli.parquet` files that contain aggregated Service Level Indicator (SLI) metrics. These metrics are essential for downstream RCA algorithms that depend on service-level statistics.
+Reports are now organized by dataset for better management:
 
-**What metrics_sli.parquet contains:**
-- **Time aggregation**: Metrics grouped by minute intervals
-- **Service and span aggregation**: Grouped by service_name and span_name
-- **Duration metrics**: min, max, average, and percentiles (p50, p90, p95, p99)
-- **Count metrics**: total request count and error count per time window
-- **Normalized span names**: Special processing for loadgenerator and ts-ui-dashboard services
+```
+{output}/sampler_reports/
+├── detailed_perf.parquet          # Combined cross-dataset results
+├── aggregated_perf.parquet        # Combined cross-dataset aggregates
+├── dataset1/
+│   ├── detailed_perf.parquet      # Dataset1-specific detailed results
+│   └── aggregated_perf.parquet    # Dataset1-specific aggregates
+└── dataset2/
+    ├── detailed_perf.parquet      # Dataset2-specific detailed results
+    └── aggregated_perf.parquet    # Dataset2-specific aggregates
+```
 
-**Key features:**
-- Automatically generated during sampling operations
-- Available in both original datapack and sampled subdirectories
-- Uses original (pre-sampling) data to ensure metric accuracy
-- Handles span name normalization for URL path parameters
-- Correctly identifies errors based on status_code == "Error"
+**Auto-Detection vs. Filtering:**
 
-**Use cases:**
-- RCA algorithms requiring service-level aggregated metrics
-- Performance analysis and trending
-- Baseline comparison for anomaly detection
-- Service dependency analysis with quantified performance metrics
+- **Auto-detection (default)**: When samplers, rates, or modes are not specified, the system scans existing results and includes all available configurations
+- **Filtering**: Use `-s/--sampler`, `-r/--rate`, and `-m/--mode` flags to filter to specific configurations
+- **Multiple values**: Each flag can be specified multiple times to include multiple values
+- **Cross-filtering**: All specified filters are applied (AND logic between filter types, OR logic within each filter type)
 
 #### Monitoring and Analysis
 
@@ -751,12 +769,12 @@ perf_df = pl.read_parquet(config.output / "sampler_reports" / "detailed_perf.par
 # Compare all three coverage metrics
 coverage_analysis = perf_df.select([
     "sampler", "dataset", "sampling_rate", "mode",
-    "comprehensiveness",      # API coverage (renamed from comprehensiveness)
-    "path_coverage",          # Execution path coverage  
-    "event_coverage",         # Event coverage (traces + logs)
-    "total_entry_types",      # Total API types
-    "total_path_types",       # Total execution path types
-    "total_event_pairs",      # Total event pairs
+    "comprehensiveness",  # API coverage (renamed from comprehensiveness)
+    "path_coverage",      # Execution path coverage  
+    "event_coverage",     # Event coverage (traces + logs)
+    "total_entry_types",  # Total API types
+    "total_path_types",   # Total execution path types
+    "total_event_pairs",  # Total event pairs
     (pl.col("path_coverage") - pl.col("comprehensiveness")).alias("path_vs_api_diff"),
     (pl.col("event_coverage") - pl.col("comprehensiveness")).alias("event_vs_api_diff")
 ])
@@ -896,20 +914,3 @@ Sampling results are stored in:
 ├── perf.parquet                        # Performance metrics
 └── .finished                          # Completion marker
 ```
-
-## Related Documentation
-
-For more detailed information, refer to:
-
-- [Development Guide](../CONTRIBUTING.md): Setting up development environment
-- [Installation Guide](./INSTALL.md): Detailed installation instructions  
-- [Specifications](./specifications.md): Technical specifications and data formats
-- [Workflow References](./workflow-references.md): Detailed workflow documentation
-- [Maintenance Guide](./maintenance.md): Project maintenance and release procedures
-
-## Support
-
-For issues and questions:
-- Check the [GitHub Issues](https://github.com/LGU-SE-Internal/rcabench-platform/issues)
-- Review the existing documentation in the `docs/` directory
-- See related projects: [rcabench](https://github.com/LGU-SE-Internal/rcabench), [rca-algo-contrib](https://github.com/LGU-SE-Internal/rca-algo-contrib)

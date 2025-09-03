@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from ...datasets.spec import get_datapack_list
+from ...datasets.spec import get_datapack_list, get_datapack_folder
 from ...logging import logger, timeit
 from ...utils.dataframe import print_dataframe
 from ...utils.serde import save_parquet
@@ -32,6 +32,22 @@ def generate_sampler_perf_report(
         modes: List of modes (default: auto-detect from outputs)
         warn_missing: Whether to warn about missing result files
     """
+    # Auto-detect available samplers, rates, and modes if not specified
+    if samplers is None or sampling_rates is None or modes is None:
+        available_samplers, available_rates, available_modes = _scan_available_configurations(datasets)
+
+        if samplers is None:
+            samplers = available_samplers
+            logger.info(f"Auto-detected samplers: {samplers}")
+
+        if sampling_rates is None:
+            sampling_rates = available_rates
+            logger.info(f"Auto-detected sampling rates: {sampling_rates}")
+
+        if modes is None:
+            modes = available_modes
+            logger.info(f"Auto-detected sampling modes: {[m.value for m in modes]}")
+
     all_perf_data = []
 
     for dataset in datasets:
@@ -187,15 +203,30 @@ def generate_sampler_perf_report(
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
     )
 
-    # Save detailed and aggregated results
+    # Save detailed and aggregated results with dataset-specific directories
     from ...config import get_config
 
     config = get_config()
-    output_folder = config.output / "sampler_reports"
-    output_folder.mkdir(parents=True, exist_ok=True)
 
-    save_parquet(combined_perf_df, path=output_folder / "detailed_perf.parquet")
-    save_parquet(agg_perf_df, path=output_folder / "aggregated_perf.parquet")
+    # Create dataset-specific output directories
+    for dataset in datasets:
+        dataset_output_folder = config.output / "sampler_reports" / dataset
+        dataset_output_folder.mkdir(parents=True, exist_ok=True)
+
+        # Filter data for this dataset
+        dataset_detailed_df = combined_perf_df.filter(pl.col("dataset") == dataset)
+        dataset_agg_df = agg_perf_df.filter(pl.col("dataset") == dataset)
+
+        if len(dataset_detailed_df) > 0:
+            save_parquet(dataset_detailed_df, path=dataset_output_folder / "detailed_perf.parquet")
+            save_parquet(dataset_agg_df, path=dataset_output_folder / "aggregated_perf.parquet")
+            logger.info(f"Saved {dataset} sampler reports to: {dataset_output_folder}")
+
+    # Also save combined reports to the main folder for cross-dataset analysis
+    main_output_folder = config.output / "sampler_reports"
+    main_output_folder.mkdir(parents=True, exist_ok=True)
+    save_parquet(combined_perf_df, path=main_output_folder / "detailed_perf.parquet")
+    save_parquet(agg_perf_df, path=main_output_folder / "aggregated_perf.parquet")
 
     # Print summary table
     display_df = agg_perf_df.select(
@@ -227,7 +258,67 @@ def generate_sampler_perf_report(
     logger.info("Sampler Performance Summary:")
     print_dataframe(display_df)
 
-    logger.info(f"Detailed results saved to: {output_folder}")
+    logger.info(f"Dataset-specific results saved to: {config.output / 'sampler_reports'}")
+    logger.info(f"Combined results saved to: {main_output_folder}")
+
+
+def _scan_available_configurations(datasets: list[str]) -> tuple[list[str], list[float], list[SamplingMode]]:
+    """
+    Scan all available sampler configurations across datasets.
+
+    Returns:
+        Tuple of (available_samplers, available_rates, available_modes)
+    """
+    samplers = set()
+    rates = set()
+    modes = set()
+
+    for dataset in datasets:
+        datapacks = get_datapack_list(dataset)
+
+        # Scan first few datapacks to find available configurations
+        scan_datapacks = datapacks[: min(10, len(datapacks))]
+
+        for datapack in scan_datapacks:
+            datapack_folder = get_datapack_folder(dataset, datapack)
+            sampled_folder = datapack_folder / "sampled"
+
+            if not sampled_folder.exists():
+                continue
+
+            # Look for all sampler folders matching pattern: {sampler}_{rate}_{mode}
+            for sampler_folder in sampled_folder.iterdir():
+                if not sampler_folder.is_dir():
+                    continue
+
+                folder_name = sampler_folder.name
+                parts = folder_name.split("_")
+
+                if len(parts) >= 3:
+                    try:
+                        # Extract sampler name (all parts except last 2)
+                        sampler_name = "_".join(parts[:-2])
+                        rate_str = parts[-2]
+                        mode_str = parts[-1]
+
+                        # Validate and add to sets
+                        rate = float(rate_str)
+                        mode = SamplingMode(mode_str)
+
+                        if 0.0 <= rate <= 1.0:
+                            samplers.add(sampler_name)
+                            rates.add(rate)
+                            modes.add(mode)
+
+                    except (ValueError, TypeError):
+                        continue
+
+    # Convert to sorted lists
+    available_samplers = sorted(list(samplers))
+    available_rates = sorted(list(rates))
+    available_modes = sorted(list(modes), key=lambda x: x.value)
+
+    return available_samplers, available_rates, available_modes
 
 
 def _scan_available_sampling_rates(
