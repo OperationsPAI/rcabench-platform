@@ -2,7 +2,7 @@
 
 import polars as pl
 
-from ...datasets.spec import get_datapack_list, get_datapack_folder
+from ...datasets.spec import get_datapack_folder, get_datapack_list
 from ...logging import logger, timeit
 from ...utils.dataframe import print_dataframe
 from ...utils.serde import save_parquet
