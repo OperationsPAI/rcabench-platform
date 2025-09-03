@@ -93,50 +93,31 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
             sampler_agg_perf = calc_all_perf(output_df, agg_level="sampler_dataset", include_sampled=True)
             save_parquet(sampler_agg_perf, path=output_meta_folder / "sampler.aggregated.perf.parquet")
 
-            # Calculate sampler-specific aggregations similar to sampler experiments
-            # Group by algorithm + sampler configuration and aggregate performance metrics
-            sampler_grouped_perf = (
-                output_df.filter(pl.col("sampler.name").is_not_null())
-                .group_by(["algorithm", "dataset", "sampler.name", "sampler.rate", "sampler.mode"])
-                .agg(
-                    [
-                        pl.col("datapack").n_unique().alias("datapack_count"),
-                        pl.col("hit").sum().alias("total_hits"),
-                        pl.col("hit").len().alias("total_attempts"),
-                        pl.col("hit").mean().alias("avg_hit_rate"),
-                        pl.col("rank").filter(pl.col("hit")).mean().alias("avg_rank_when_hit"),
-                        pl.col("runtime.seconds").mean().alias("avg_runtime_seconds"),
-                        pl.col("runtime.seconds").max().alias("max_runtime_seconds"),
-                        pl.col("exception.type").is_not_null().sum().alias("error_count"),
-                        # Calculate MRR manually for this aggregation
-                        (1.0 / pl.col("rank")).filter(pl.col("hit")).mean().alias("avg_mrr"),
-                    ]
-                )
-                .with_columns(
-                    [
-                        (pl.col("total_hits") / pl.col("total_attempts")).alias("hit_rate"),
-                        (pl.col("error_count") / pl.col("total_attempts")).alias("error_rate"),
-                        pl.col("sampler.rate").round(3),
-                    ]
-                )
-                .sort(["algorithm", "dataset", "sampler.name", "sampler.rate", "sampler.mode"])
-            )
+            # Use the same calc_all_perf function to generate sampler performance report
+            # This ensures consistency with regular performance metrics
+            sampler_grouped_perf = calc_all_perf(output_df, agg_level="sampler_dataset", include_sampled=True)
 
             save_parquet(sampler_grouped_perf, path=output_meta_folder / "sampler.grouped.perf.parquet")
 
-            # Display sampler performance report (grouped by sampler configuration)
+            # Display sampler performance report with same format as regular report
             display_columns = [
                 "algorithm",
                 "dataset",
                 "sampler.name",
                 "sampler.rate",
                 "sampler.mode",
-                "datapack_count",
-                "hit_rate",
-                "avg_mrr",
-                "avg_rank_when_hit",
-                "avg_runtime_seconds",
-                "error_rate",
+                "total",
+                "error",
+                "runtime.seconds:avg",
+                "MRR",
+                "AC@1.count",
+                "AC@3.count",
+                "AC@5.count",
+                "AC@1",
+                "AC@3",
+                "AC@5",
+                "Avg@3",
+                "Avg@5",
             ]
 
             # Filter columns that actually exist in the dataframe
