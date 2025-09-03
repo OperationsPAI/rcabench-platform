@@ -144,6 +144,26 @@ python main.py eval batch \
   --sampling-rate 0.5 \
   --sampling-mode OFFLINE
 
+# Run batch evaluation with auto-detected sampler configurations
+python main.py eval batch \
+  --algorithm nsigma \
+  --algorithm baro \
+  --dataset rcabench-train \
+  --include-sampled
+
+# Run batch evaluation with multiple sampler configurations
+python main.py eval batch \
+  --algorithm nsigma \
+  --algorithm baro \
+  --dataset rcabench-train \
+  --include-sampled \
+  --sampler random \
+  --sampler my-custom-sampler \
+  --sampling-rate 0.1 \
+  --sampling-rate 0.2 \
+  --sampling-mode OFFLINE \
+  --sampling-mode ONLINE
+
 # Generate performance reports
 python main.py eval perf-report rcabench-train
 
@@ -161,6 +181,25 @@ When using sampler parameters with eval commands:
 - Input data is read from `{datapack}/sampled/{sampler}_{rate}_{mode}/` directory
 - Output results include sampler metadata for tracking
 - Performance reports can distinguish between sampled and non-sampled results
+
+**Auto-Detection vs. Manual Configuration:**
+
+- **Auto-detection**: Use `--include-sampled` without specifying samplers, rates, or modes to automatically detect all available sampler configurations in the output directory
+- **Manual configuration**: Specify exact sampler parameters with `--sampler`, `--sampling-rate`, and `--sampling-mode` flags
+- **Hybrid approach**: Use `--include-sampled` with specific filters to auto-detect configurations but limit to certain samplers, rates, or modes
+- **Multiple values**: Each sampler parameter flag can be specified multiple times to include multiple configurations
+
+**Examples:**
+```bash
+# Auto-detect all available sampler configurations
+python main.py eval batch --algorithm nsigma --dataset rcabench-train --include-sampled
+
+# Filter to specific samplers while auto-detecting rates and modes
+python main.py eval batch --algorithm nsigma --dataset rcabench-train --include-sampled --sampler random
+
+# Specify exact configuration (traditional approach)
+python main.py eval batch --algorithm nsigma --dataset rcabench-train --sampler random --sampling-rate 0.1 --sampling-mode OFFLINE
+```
 
 **Available Sampling Modes:**
 - `ONLINE`: Independent sampling where each trace decision is made individually using various strategies (threshold-based, probability-based, etc.)

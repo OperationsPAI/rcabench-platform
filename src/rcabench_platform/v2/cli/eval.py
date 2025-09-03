@@ -68,9 +68,10 @@ def batch(
     use_cpus: int | None = None,
     submit_result: bool = False,
     ignore_exceptions: bool = True,
-    sampler: str | None = None,
-    sampling_rate: float | None = None,
-    sampling_mode: str | None = None,
+    include_sampled: bool = False,
+    samplers: Annotated[list[str] | None, typer.Option("-s", "--sampler")] = None,
+    sampling_rates: Annotated[list[float] | None, typer.Option("-r", "--sampling-rate")] = None,
+    sampling_modes: Annotated[list[str] | None, typer.Option("-m", "--sampling-mode")] = None,
 ):
     run_batch(
         algorithms,
@@ -81,9 +82,10 @@ def batch(
         use_cpus=use_cpus,
         submit_result=submit_result,
         ignore_exceptions=ignore_exceptions,
-        sampler=sampler,
-        sampling_rate=sampling_rate,
-        sampling_mode=sampling_mode,
+        include_sampled=include_sampled,
+        samplers=samplers,
+        sampling_rates=sampling_rates,
+        sampling_modes=sampling_modes,
     )
 
 
