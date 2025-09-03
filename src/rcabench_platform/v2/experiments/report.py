@@ -100,7 +100,7 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
                 .group_by(["algorithm", "dataset", "sampler.name", "sampler.rate", "sampler.mode"])
                 .agg(
                     [
-                        pl.len().alias("datapack_count"),
+                        pl.col("datapack").n_unique().alias("datapack_count"),
                         pl.col("hit").sum().alias("total_hits"),
                         pl.col("hit").len().alias("total_attempts"),
                         pl.col("hit").mean().alias("avg_hit_rate"),
