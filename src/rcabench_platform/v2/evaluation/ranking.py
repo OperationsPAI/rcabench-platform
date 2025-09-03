@@ -5,28 +5,43 @@ import polars as pl
 from ..utils.dataframe import assert_columns
 
 INDEX_COLUMNS = ["algorithm", "dataset", "datapack"]
-AGG_LEVEL = Literal["algorithm", "dataset", "datapack"]
+SAMPLER_COLUMNS = ["sampler.name", "sampler.rate", "sampler.mode"]
+AGG_LEVEL = Literal["algorithm", "dataset", "datapack", "sampler", "sampler_dataset"]
 
 
-def agg_index(agg_level: AGG_LEVEL):
-    if agg_level == "datapack":
-        index_columns = INDEX_COLUMNS
-    elif agg_level == "dataset":
-        index_columns = INDEX_COLUMNS[:-1]
-    elif agg_level == "algorithm":
-        index_columns = INDEX_COLUMNS[:-2]
-    else:
-        raise ValueError(f"Invalid agg_level: {agg_level}")
-
-    return index_columns
+def agg_index(agg_level: AGG_LEVEL) -> list[str]:
+    """Get the index columns for the specified aggregation level."""
+    match agg_level:
+        case "datapack":
+            return INDEX_COLUMNS
+        case "dataset":
+            return INDEX_COLUMNS[:-1]  # ["algorithm", "dataset"]
+        case "algorithm":
+            return INDEX_COLUMNS[:-2]  # ["algorithm"]
+        case "sampler":
+            return INDEX_COLUMNS + SAMPLER_COLUMNS
+        case "sampler_dataset":
+            # Include sampler info but aggregate at dataset level (no datapack)
+            return INDEX_COLUMNS[:-1] + SAMPLER_COLUMNS  # ["algorithm", "dataset"] + sampler columns
+        case _:
+            raise ValueError(f"Invalid agg_level: {agg_level}")
 
 
 def calc_avg_runtime(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
     lf = df.lazy()
 
-    lf = lf.select(*INDEX_COLUMNS, pl.col("runtime.seconds"))
+    # Select columns based on aggregation level
+    is_sampler_level = agg_level in ["sampler", "sampler_dataset"]
+    if is_sampler_level:
+        columns_to_select = INDEX_COLUMNS + SAMPLER_COLUMNS
+        group_by_columns = INDEX_COLUMNS + SAMPLER_COLUMNS
+    else:
+        columns_to_select = INDEX_COLUMNS
+        group_by_columns = INDEX_COLUMNS
 
-    lf = lf.group_by(INDEX_COLUMNS).agg(pl.col("runtime.seconds").max())
+    lf = lf.select(*columns_to_select, pl.col("runtime.seconds"))
+
+    lf = lf.group_by(group_by_columns).agg(pl.col("runtime.seconds").max())
 
     lf = lf.group_by(agg_index(agg_level)).agg(pl.col("runtime.seconds").mean().round(6).alias("runtime.seconds:avg"))
 
@@ -45,9 +60,18 @@ def calc_mrr(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
 
     lf = lf.filter(pl.col("hit"))
 
-    lf = lf.select(*INDEX_COLUMNS, pl.col("rank"))
+    # Select columns based on aggregation level
+    is_sampler_level = agg_level in ["sampler", "sampler_dataset"]
+    if is_sampler_level:
+        columns_to_select = INDEX_COLUMNS + SAMPLER_COLUMNS
+        group_by_columns = INDEX_COLUMNS + SAMPLER_COLUMNS
+    else:
+        columns_to_select = INDEX_COLUMNS
+        group_by_columns = INDEX_COLUMNS
 
-    lf = lf.group_by(INDEX_COLUMNS).agg(pl.col("rank").min().alias("rank"))
+    lf = lf.select(*columns_to_select, pl.col("rank"))
+
+    lf = lf.group_by(group_by_columns).agg(pl.col("rank").min().alias("rank"))
 
     lf = lf.with_columns((1 / pl.col("rank")).alias("MRR"))
 
@@ -78,9 +102,18 @@ def calc_accurary(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
 
     hit_k = [(pl.col("hit") & (pl.col("rank") <= k)).alias(f"hit@{k}") for k in rangeK]
 
-    lf = lf.select(*INDEX_COLUMNS, *hit_k)
+    # Select columns based on aggregation level
+    is_sampler_level = agg_level in ["sampler", "sampler_dataset"]
+    if is_sampler_level:
+        columns_to_select = INDEX_COLUMNS + SAMPLER_COLUMNS
+        group_by_columns = INDEX_COLUMNS + SAMPLER_COLUMNS
+    else:
+        columns_to_select = INDEX_COLUMNS
+        group_by_columns = INDEX_COLUMNS
 
-    lf = lf.group_by(INDEX_COLUMNS).agg([pl.col(f"hit@{k}").any().cast(pl.Float64).alias(f"AC@{k}") for k in rangeK])
+    lf = lf.select(*columns_to_select, *hit_k)
+
+    lf = lf.group_by(group_by_columns).agg([pl.col(f"hit@{k}").any().cast(pl.Float64).alias(f"AC@{k}") for k in rangeK])
 
     lf = lf.group_by(agg_index(agg_level)).agg(
         *[pl.col(f"AC@{k}").sum().alias(f"AC@{k}.count") for k in rangeK],
@@ -112,7 +145,16 @@ def calc_precision(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
     hit_k = [(pl.col("hit") & (pl.col("rank") <= k)).alias(f"hit@{k}") for k in rangeK]
     rel_k = [(pl.col("hit") & (pl.col("rank") == k)).alias(f"rel@{k}") for k in rangeK]
 
-    lf = lf.select(*INDEX_COLUMNS, *hit_k, *rel_k)
+    # Select columns based on aggregation level
+    is_sampler_level = agg_level in ["sampler", "sampler_dataset"]
+    if is_sampler_level:
+        columns_to_select = INDEX_COLUMNS + SAMPLER_COLUMNS
+        group_by_columns = INDEX_COLUMNS + SAMPLER_COLUMNS
+    else:
+        columns_to_select = INDEX_COLUMNS
+        group_by_columns = INDEX_COLUMNS
+
+    lf = lf.select(*columns_to_select, *hit_k, *rel_k)
 
     p_k = [pl.col(f"hit@{k}").sum().cast(pl.Float64).truediv(k).alias(f"P@{k}") for k in rangeK]
 
@@ -120,7 +162,7 @@ def calc_precision(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
 
     hit_k = [pl.col(f"hit@{k}").sum().cast(pl.Float64).alias(f"hit@{k}") for k in rangeK]
 
-    lf = lf.group_by(INDEX_COLUMNS).agg(*p_k, *rel_k, *hit_k)
+    lf = lf.group_by(group_by_columns).agg(*p_k, *rel_k, *hit_k)
 
     ap_k = [
         (
@@ -152,7 +194,16 @@ def calc_index(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
 
     lf = lf.with_columns(pl.col("exception.type").is_not_null().cast(pl.UInt32).alias("error"))
 
-    lf = lf.select(*INDEX_COLUMNS, "error").unique(subset=INDEX_COLUMNS)
+    # Select columns based on aggregation level
+    is_sampler_level = agg_level in ["sampler", "sampler_dataset"]
+    if is_sampler_level:
+        columns_to_select = INDEX_COLUMNS + SAMPLER_COLUMNS + ["error"]
+        unique_subset = INDEX_COLUMNS + SAMPLER_COLUMNS
+    else:
+        columns_to_select = INDEX_COLUMNS + ["error"]
+        unique_subset = INDEX_COLUMNS
+
+    lf = lf.select(*columns_to_select).unique(subset=unique_subset)
 
     lf = lf.group_by(agg_index(agg_level)).agg(
         pl.len().cast(pl.UInt32).alias("total"),
@@ -163,10 +214,24 @@ def calc_index(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:
     return df
 
 
-def calc_all_perf(df: pl.DataFrame, *, agg_level: AGG_LEVEL) -> pl.DataFrame:
-    assert_columns(df, INDEX_COLUMNS)
+def calc_all_perf(df: pl.DataFrame, *, agg_level: AGG_LEVEL, include_sampled: bool = False) -> pl.DataFrame:
+    # Check if sampler columns exist in the dataframe
+    has_sampler_columns = all(col in df.columns for col in SAMPLER_COLUMNS)
+
+    # For sampler aggregation levels, we need sampler columns
+    if agg_level in ["sampler", "sampler_dataset"]:
+        if not include_sampled or not has_sampler_columns:
+            raise ValueError(f"Aggregation level '{agg_level}' requires include_sampled=True and sampler columns")
+        assert_columns(df, INDEX_COLUMNS + SAMPLER_COLUMNS)
+    else:
+        assert_columns(df, INDEX_COLUMNS)
+        # Filter out sampled data if not including sampled results
+        if has_sampler_columns and not include_sampled:
+            df = df.filter(pl.col("sampler.name").is_null())
+
     assert_columns(df, ["hit", "rank", "runtime.seconds", "exception.type"])
 
+    # Get the correct index columns for joins
     index = agg_index(agg_level)
 
     ans = calc_index(df, agg_level)
@@ -178,10 +243,15 @@ def calc_all_perf(df: pl.DataFrame, *, agg_level: AGG_LEVEL) -> pl.DataFrame:
 
     ans = ans.fill_null(strategy="zero")
 
+    # Sort by appropriate columns
     if agg_level == "datapack":
         ans = ans.sort(by=["algorithm", "rank", "dataset", "datapack"])
     elif agg_level == "dataset":
         ans = ans.sort(by=["algorithm", "dataset"])
+    elif agg_level == "sampler":
+        ans = ans.sort(by=["algorithm", "dataset", "datapack", "sampler.name", "sampler.rate"])
+    elif agg_level == "sampler_dataset":
+        ans = ans.sort(by=["algorithm", "dataset", "sampler.name", "sampler.rate"])
 
     return ans
 
