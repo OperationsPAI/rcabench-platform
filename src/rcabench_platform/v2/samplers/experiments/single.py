@@ -392,20 +392,19 @@ def calculate_sampler_performance(
     # PRO_anomaly: detector flagged spans in abnormal traces only
     abnormal_sampled = sampled_traces_info.filter(pl.col("is_abnormal"))
     abnormal_detector_sampled = abnormal_sampled.filter(pl.col("entry_span").is_in(list(detector_spans)))
-    proportion_anomaly = len(abnormal_detector_sampled) / len(abnormal_sampled) if len(abnormal_sampled) > 0 else 0.0
+    proportion_anomaly = len(abnormal_detector_sampled) / sampled_count if sampled_count > 0 else 0.0
 
     # PRO_rare: rare spans (< 5% frequency) in all sampled traces
     rare_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(rare_spans))
     proportion_rare = len(rare_sampled) / sampled_count if sampled_count > 0 else 0.0
 
-    # PRO_common: common spans that are not flagged by detector in all sampled traces
-    # Note: detector spans in normal traces should be considered as common (not anomalous)
-    common_spans = [span for span in entry_span_counts["entry_span"].to_list() if span not in rare_spans]
-    # For common spans calculation, we include detector spans from normal traces
-    common_sampled = sampled_traces_info.filter(pl.col("entry_span").is_in(common_spans))
-    # Exclude detector spans from abnormal traces (those are counted in PRO_anomaly)
-    abnormal_detector_traces = abnormal_sampled.filter(pl.col("entry_span").is_in(list(detector_spans)))
-    common_sampled_count = len(common_sampled) - len(abnormal_detector_traces)
+    abnormal_detector_sampled = abnormal_detector_sampled["trace_id"].unique().to_list()
+    # common sampled = total sampled id - set(rare sampled id & abnormal detector sampled id)
+    common_sampled_count = len(
+        set(sampled_traces_info["trace_id"].to_list())
+        - set(rare_sampled["trace_id"].to_list())
+        - set(abnormal_detector_sampled)
+    )
     proportion_common = common_sampled_count / sampled_count if sampled_count > 0 else 0.0
 
     # Calculate path coverage based on execution paths
