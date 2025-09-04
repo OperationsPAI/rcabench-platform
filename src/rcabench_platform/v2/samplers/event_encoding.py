@@ -186,7 +186,7 @@ class EventEncoder:
 
         # If no valid root span found, skip this trace
         if root_spans_df.height == 0:
-            logger.debug("No loadgenerator root span found, skipping trace")
+            logger.debug("No root span found, skipping trace")
             return set()
 
         # Get the first (and only) root span ID directly (for validation only)

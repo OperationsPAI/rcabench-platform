@@ -17,7 +17,7 @@ from ...utils.fs import running_mark
 from ...utils.serde import save_parquet
 from ..event_encoding import calculate_event_coverage
 from ..metrics_sli import copy_metrics_sli_to_sampled, generate_metrics_sli
-from ..path_encoding import calculate_path_coverage
+from ..path_encoding import calculate_path_coverage, calculate_path_coverage_dedup
 from ..spec import SamplerArgs, SamplingMode, global_sampler_registry
 from .spec import get_sampler_output_folder
 
@@ -133,6 +133,7 @@ def calculate_sampler_performance(
         - controllability (RoD): Rate of Deviation
         - comprehensiveness (CR): API Coverage Rate based on API types (entry spans)
         - path_coverage: Coverage Rate based on execution paths with BFS encoding
+        - path_coverage_dedup: Coverage Rate based on deduplicated execution paths (removes parallel spans)
         - event_coverage: Coverage Rate based on event pairs from traces+logs
         - unique_trace_coverage: Coverage Rate based on unique trace patterns (sets of event pairs)
         - gt_trace_proportion: Proportion of ground truth related traces in sampled data
@@ -144,6 +145,8 @@ def calculate_sampler_performance(
         - runtime_per_trace_ms: Runtime per trace in milliseconds
         - total_path_types: Total number of unique execution paths
         - sampled_path_types: Number of unique execution paths in sampled data
+        - total_path_types_dedup: Total number of unique deduplicated execution paths
+        - sampled_path_types_dedup: Number of unique deduplicated execution paths in sampled data
         - total_event_pairs: Total number of unique event pairs
         - sampled_event_pairs: Number of unique event pairs in sampled data
         - total_unique_traces: Total number of unique trace patterns
@@ -215,6 +218,9 @@ def calculate_sampler_performance(
             ]
         ).collect()
         path_coverage_metrics = calculate_path_coverage(all_traces_df, set())  # Empty sampled set
+
+        # Calculate total deduplicated path types (removing parallel spans at same level)
+        path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, set())  # Empty sampled set
 
         # Calculate total event pairs
         all_traces_for_events_df = pl.concat(
@@ -296,6 +302,10 @@ def calculate_sampler_performance(
             "total_path_types": path_coverage_metrics["total_path_types"],
             "sampled_path_types": 0,
             "path_coverage": 0.0,
+            # Deduplicated path coverage metrics (removes parallel spans at same level)
+            "total_path_types_dedup": path_coverage_dedup_metrics["total_path_types_dedup"],
+            "sampled_path_types_dedup": 0,
+            "path_coverage_dedup": 0.0,
             # Event coverage metrics
             "total_event_pairs": event_coverage_metrics["total_event_pairs"],
             "sampled_event_pairs": 0,
@@ -419,10 +429,15 @@ def calculate_sampler_performance(
     # Always calculate path coverage to get total_path_types, even when no traces sampled
     path_coverage_metrics = calculate_path_coverage(all_traces_df, sampled_trace_ids)
 
+    # Calculate deduplicated path coverage (removes parallel spans at same level)
+    path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, sampled_trace_ids)
+
     # If no traces sampled, override sampled metrics but keep total metrics
     if sampled_count == 0:
         path_coverage_metrics["sampled_path_types"] = 0
         path_coverage_metrics["path_coverage"] = 0.0
+        path_coverage_dedup_metrics["sampled_path_types_dedup"] = 0
+        path_coverage_dedup_metrics["path_coverage_dedup"] = 0.0
 
     # Calculate event coverage based on trace+log events
     # Load full trace and log data for event encoding
@@ -531,6 +546,10 @@ def calculate_sampler_performance(
         "total_path_types": path_coverage_metrics["total_path_types"],
         "sampled_path_types": path_coverage_metrics["sampled_path_types"],
         "path_coverage": path_coverage_metrics["path_coverage"],
+        # Deduplicated path coverage metrics (removes parallel spans at same level)
+        "total_path_types_dedup": path_coverage_dedup_metrics["total_path_types_dedup"],
+        "sampled_path_types_dedup": path_coverage_dedup_metrics["sampled_path_types_dedup"],
+        "path_coverage_dedup": path_coverage_dedup_metrics["path_coverage_dedup"],
         # Event coverage metrics (now includes Shannon entropy and benefit-cost ratio)
         "total_event_pairs": event_coverage_metrics["total_event_pairs"],
         "sampled_event_pairs": event_coverage_metrics["sampled_event_pairs"],

@@ -49,6 +49,11 @@ Sampler performance is evaluated using the following metrics:
   - $N_p$': number of sampled execution path types
   - $N_p$: total number of execution path types
   - Uses BFS traversal with sorted nodes at same depth for consistent encoding
++ **Deduplicated Path Coverage**: Execution Path Coverage Rate with parallel span deduplication = $N_{pd}' / N_{pd}$
+  - $N_{pd}$': number of sampled deduplicated execution path types
+  - $N_{pd}$: total number of deduplicated execution path types
+  - Removes duplicate spans at the same level to handle parallel calls
+  - Uses BFS traversal with deduplication at each depth level for cleaner path patterns
 + **Event Coverage**: Event Coverage Rate = $N_e' / N_e$
   - $N_e$': number of sampled event pairs (2-grams)
   - $N_e$: total number of event pairs
@@ -89,6 +94,15 @@ Sampler performance is evaluated using the following metrics:
 + **Runtime**: Algorithm runtime per span in milliseconds
 + **Actual Sampling Rate**: Achieved sampling rate
 
+#### Coverage Metrics Requirements
+
+All coverage metrics (Path Coverage, Deduplicated Path Coverage, and Event Coverage) require:
+- **Root Span Validation**: Only traces with a valid loadgenerator root span are processed
+  - Root span must have `service_name == "loadgenerator"`
+  - Root span must have `parent_span_id` as null or empty string
+  - Traces without valid loadgenerator root spans are excluded from coverage calculations
+- **Consistent Trace Processing**: Ensures all coverage metrics use the same trace validation logic
+
 #### Coverage Metrics Comparison
 
 - **API Coverage**: Simple coverage based on entry span names (API endpoints)
@@ -97,6 +111,11 @@ Sampler performance is evaluated using the following metrics:
   - Handles parallel calls by sorting at same depth
   - Provides more detailed insight into trace structure diversity
   - Generally more strict than API coverage as multiple paths can share the same entry point
+- **Deduplicated Path Coverage**: Enhanced path coverage that removes parallel span duplicates
+  - Removes duplicate spans at the same level to focus on core execution patterns
+  - Better reflects unique execution flows without parallel call noise
+  - Useful for understanding essential system behavior patterns
+  - Generally shows higher coverage than regular path coverage due to deduplication
 - **Event Coverage**: Most granular coverage based on event sequences from traces and logs
   - Encodes traces and logs into events (spans, errors, performance issues, log entries)
   - Calculates coverage using consecutive event pairs (2-grams)

@@ -170,6 +170,10 @@ def generate_sampler_perf_report(
                 pl.col("balance_cv").mean().alias("avg_balance_cv"),
                 pl.col("total_path_types").mean().alias("avg_total_path_types"),
                 pl.col("sampled_path_types").mean().alias("avg_sampled_path_types"),
+                # Deduplicated path coverage metrics
+                pl.col("total_path_types_dedup").mean().alias("avg_total_path_types_dedup"),
+                pl.col("sampled_path_types_dedup").mean().alias("avg_sampled_path_types_dedup"),
+                pl.col("path_coverage_dedup").mean().alias("avg_path_coverage_dedup"),
                 pl.col("total_event_pairs").mean().alias("avg_total_event_pairs"),
                 pl.col("sampled_event_pairs").mean().alias("avg_sampled_event_pairs"),
                 pl.col("total_unique_traces").mean().alias("avg_total_unique_traces"),
@@ -187,6 +191,8 @@ def generate_sampler_perf_report(
                 pl.col("controllability").std().alias("std_controllability"),
                 pl.col("comprehensiveness").std().alias("std_api_coverage"),
                 pl.col("path_coverage").std().alias("std_path_coverage"),
+                # Deduplicated path coverage std dev
+                pl.col("path_coverage_dedup").std().alias("std_path_coverage_dedup"),
                 pl.col("event_coverage").std().alias("std_event_coverage"),
                 pl.col("actual_sampling_rate").std().alias("std_actual_sampling_rate"),
                 pl.col("runtime_per_span_ms").std().alias("std_runtime_per_span_ms"),
@@ -239,6 +245,7 @@ def generate_sampler_perf_report(
             "avg_controllability",
             "avg_api_coverage",
             "avg_path_coverage",
+            "avg_path_coverage_dedup",
             "avg_event_coverage",
             "avg_unique_trace_coverage",
             "avg_span_coverage",
@@ -420,6 +427,10 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
         "balance_cv": 0.0,  # Balance metric using Coefficient of Variation
         "total_path_types": 0,
         "sampled_path_types": 0,
+        # Deduplicated path coverage metrics
+        "total_path_types_dedup": 0,
+        "sampled_path_types_dedup": 0,
+        "path_coverage_dedup": 0.0,
         "total_event_pairs": 0,
         "sampled_event_pairs": 0,
         "total_unique_traces": 0,
