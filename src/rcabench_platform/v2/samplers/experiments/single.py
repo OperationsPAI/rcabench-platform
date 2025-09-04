@@ -49,6 +49,9 @@ def run_sampler_single(
 
     input_folder = get_datapack_folder(dataset, datapack)
     output_folder = get_sampler_output_folder(dataset, datapack, sampler, sampling_rate, mode)
+    # Generate metrics_sli.parquet in the original input folder if it doesn't exist
+    logger.debug("Ensuring metrics_sli.parquet exists in input folder")
+    generate_metrics_sli(input_folder, output_folder=input_folder)
 
     with running_mark(output_folder, clear=clear):
         finished = output_folder / ".finished"
@@ -632,10 +635,6 @@ def _save_sampled_traces(input_folder: Path, output_folder: Path, sampled_df: pl
 
                     shutil.copy2(source_path, target_path)
                     logger.debug(f"Copied file: {filename}")
-
-    # Generate metrics_sli.parquet in the original input folder if it doesn't exist
-    logger.debug("Ensuring metrics_sli.parquet exists in input folder")
-    generate_metrics_sli(input_folder, output_folder=input_folder)
 
     # Copy metrics_sli.parquet to sampled folder for downstream algorithms
     logger.debug("Copying metrics_sli.parquet to sampled folder")
