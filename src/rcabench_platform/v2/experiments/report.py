@@ -81,25 +81,52 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
         # Check if there's any sampled data
         if "sampler.name" in output_df.columns:
             sampled_df = output_df.filter(pl.col("sampler.name").is_not_null())
+            non_sampled_df = output_df.filter(pl.col("sampler.name").is_null())
         else:
             sampled_df = pl.DataFrame()
+            non_sampled_df = output_df
 
         if len(sampled_df) > 0:
             # Generate detailed sampler performance report (all datapack details)
-            sampler_detailed_perf = calc_all_perf(output_df, agg_level="sampler", include_sampled=True)
+            sampler_detailed_perf = calc_all_perf(sampled_df, agg_level="sampler", include_sampled=True)
             save_parquet(sampler_detailed_perf, path=output_meta_folder / "sampler.detailed.perf.parquet")
 
             # Generate sampler performance aggregated at dataset level
-            sampler_agg_perf = calc_all_perf(output_df, agg_level="sampler_dataset", include_sampled=True)
+            sampler_agg_perf = calc_all_perf(sampled_df, agg_level="sampler_dataset", include_sampled=True)
             save_parquet(sampler_agg_perf, path=output_meta_folder / "sampler.aggregated.perf.parquet")
 
-            # Use the same calc_all_perf function to generate sampler performance report
-            # This ensures consistency with regular performance metrics
-            sampler_grouped_perf = calc_all_perf(output_df, agg_level="sampler_dataset", include_sampled=True)
+            # Generate sampler grouped performance using only sampled data
+            sampler_grouped_perf = calc_all_perf(sampled_df, agg_level="sampler_dataset", include_sampled=True)
 
-            save_parquet(sampler_grouped_perf, path=output_meta_folder / "sampler.grouped.perf.parquet")
+            # Also generate regular performance for non-sampled data
+            regular_perf = calc_all_perf(non_sampled_df, agg_level="dataset", include_sampled=False)
 
-            # Display sampler performance report with same format as regular report
+            # Combine sampler and regular performance for unified display
+            # Add sampler columns to regular data with null values for consistency
+            if len(regular_perf) > 0:
+                # Get the column order from sampler_grouped_perf to ensure consistency
+                sampler_columns = sampler_grouped_perf.columns
+
+                # Add missing sampler columns to regular performance data
+                regular_perf_with_sampler = regular_perf.with_columns(
+                    [
+                        pl.lit(None).cast(pl.Utf8).alias("sampler.name"),
+                        pl.lit(None).cast(pl.Float64).alias("sampler.rate"),
+                        pl.lit(None).cast(pl.Utf8).alias("sampler.mode"),
+                    ]
+                )
+
+                # Ensure both DataFrames have the same column order
+                regular_perf_with_sampler = regular_perf_with_sampler.select(sampler_columns)
+
+                # Combine sampler and regular performance
+                combined_perf = pl.concat([sampler_grouped_perf, regular_perf_with_sampler])
+            else:
+                combined_perf = sampler_grouped_perf
+
+            save_parquet(combined_perf, path=output_meta_folder / "sampler.grouped.perf.parquet")
+
+            # Display combined performance report
             display_columns = [
                 "algorithm",
                 "dataset",
@@ -121,33 +148,32 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
             ]
 
             # Filter columns that actually exist in the dataframe
-            available_columns = [col for col in display_columns if col in sampler_grouped_perf.columns]
+            available_columns = [col for col in display_columns if col in combined_perf.columns]
 
-            print("=== Sampler Performance Report (Algorithm + Sampler Aggregation) ===")
-            print_dataframe(sampler_grouped_perf.select(available_columns))
+            print("=== Performance Report (Including Sampled Data) ===")
+            print_dataframe(combined_perf.select(available_columns))
         else:
-            logger.info("No sampled data found in the output files")
-
-        # Also display the regular (non-sampled) report for comparison
-        print("=== Regular Performance Report ===")
-        print_dataframe(
-            perf_df.select(
-                "dataset",
-                "algorithm",
-                "total",
-                "error",
-                "runtime.seconds:avg",
-                "MRR",
-                "AC@1.count",
-                "AC@3.count",
-                "AC@5.count",
-                "AC@1",
-                "AC@3",
-                "AC@5",
-                "Avg@3",
-                "Avg@5",
+            logger.info("No sampled data found, showing regular performance report")
+            # Show regular report when no sampled data is found
+            print("=== Regular Performance Report ===")
+            print_dataframe(
+                perf_df.select(
+                    "dataset",
+                    "algorithm",
+                    "total",
+                    "error",
+                    "runtime.seconds:avg",
+                    "MRR",
+                    "AC@1.count",
+                    "AC@3.count",
+                    "AC@5.count",
+                    "AC@1",
+                    "AC@3",
+                    "AC@5",
+                    "Avg@3",
+                    "Avg@5",
+                )
             )
-        )
     else:
         # If sampled data is not included, display the original report format
         print_dataframe(
