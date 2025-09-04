@@ -174,7 +174,15 @@ python main.py eval perf-report rcabench-train --include-sampled
 python main.py eval perf-report rcabench-train --no-include-sampled
 ```
 
-**Sampler Integration with Evaluation:**
+**Performance Report Output Formats:**
+
+When using `--include-sampled`, the report will show a unified format with both sampled and non-sampled results:
+- Rows with `sampler.name` values show performance on sampled data
+- Rows with `sampler.name` as null show performance on original (non-sampled) data
+- This allows direct comparison between sampled and non-sampled algorithm performance
+- All metrics use the same calculation method for consistency
+
+```bash
 
 When using sampler parameters with eval commands:
 - The algorithm will run on the sampled traces from the specified sampler
@@ -529,6 +537,12 @@ args = SamplerArgs(
 sample_results = random_sampler(args)
 for result in sample_results:
     print(f"Trace ID: {result.trace_id}, Score: {result.sample_score}")
+
+# Sample results can be used for different purposes:
+if args.mode == SamplingMode.OFFLINE:
+    print(f"Offline mode: Got exactly {len(sample_results)} sampled traces")
+else:
+    print(f"Online mode: Got {len(sample_results)} traces with scores > threshold")
 ```
 
 ### Generating SLI Metrics
@@ -794,7 +808,39 @@ python main.py sample batch \
   --mode online
 ```
 
-### 6. Coverage Metrics Analysis
+### 6. Integrated Sampler and Algorithm Evaluation
+
+```bash
+# Run algorithms on both sampled and original data for comparison
+python main.py eval batch \
+  --algorithm nsigma \
+  --algorithm baro \
+  --dataset rcabench-train \
+  --include-sampled
+
+# This will:
+# 1. Auto-detect all available sampler configurations
+# 2. Run algorithms on both sampled and original data
+# 3. Generate unified performance report comparing results
+
+# Generate performance report showing both sampled and non-sampled results
+python main.py eval perf-report rcabench-train --include-sampled
+
+# The unified report will show:
+# - Algorithm performance on original data (sampler.name = null)  
+# - Algorithm performance on sampled data (with sampler details)
+# - Direct comparison of accuracy impact from sampling
+
+# Filter to specific sampler configurations while including baseline
+python main.py eval batch \
+  --algorithm nsigma \
+  --dataset rcabench-train \
+  --include-sampled \
+  --sampler random \
+  --sampling-mode OFFLINE
+```
+
+### 7. Coverage Metrics Analysis
 
 ```python
 # Analyze different coverage metrics to understand sampling quality
