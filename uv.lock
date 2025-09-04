@@ -3629,7 +3629,7 @@ wheels = [
 
 [[package]]
 name = "rcabench-platform"
-version = "0.3.34rc8"
+version = "0.3.34rc9"
 source = { editable = "." }
 dependencies = [
     { name = "altair" },
