@@ -391,10 +391,15 @@ def calculate_event_coverage(
     if actual_sample_count > 0:
         benefit_cost_ratio = sampled_unique_traces / actual_sample_count
 
+    # Calculate intra-sample average dissimilarity
+    sampled_patterns_list = list(sampled_trace_patterns)
+    intra_sample_dissimilarity = calculate_intra_sample_dissimilarity(sampled_patterns_list)
+
     logger.info(f"Event coverage: {sampled_event_pairs_count}/{total_event_pairs} = {event_coverage:.4f}")
     logger.info(f"Unique trace coverage: {sampled_unique_traces}/{total_unique_traces} = {unique_trace_coverage:.4f}")
     logger.info(f"Shannon entropy: {shannon_entropy:.4f} (from {len(sampled_pattern_counts)} pattern types)")
     logger.info(f"Benefit-cost ratio: {benefit_cost_ratio:.4f} ({sampled_unique_traces}/{actual_sample_count})")
+    logger.info(f"Intra-sample dissimilarity: {intra_sample_dissimilarity:.4f}")
 
     return {
         "total_event_pairs": total_event_pairs,
@@ -405,4 +410,54 @@ def calculate_event_coverage(
         "unique_trace_coverage": unique_trace_coverage,
         "shannon_entropy": shannon_entropy,
         "benefit_cost_ratio": benefit_cost_ratio,
+        "intra_sample_dissimilarity": intra_sample_dissimilarity,
     }
+
+
+def calculate_intra_sample_dissimilarity(sampled_trace_patterns: list[frozenset]) -> float:
+    """
+    Calculate intra-sample average dissimilarity for sampled traces.
+
+    This measures how dissimilar traces are to each other within the sampled set,
+    which is essential for evaluating diversity-aware sampling algorithms like DPP.
+
+    Args:
+        sampled_trace_patterns: List of trace patterns (each as frozenset of event pairs)
+
+    Returns:
+        Average dissimilarity score [0, 1] where 1 = maximum diversity
+    """
+    n = len(sampled_trace_patterns)
+
+    if n <= 1:
+        return 0.0  # No diversity possible with 0 or 1 trace
+
+    total_dissimilarity = 0.0
+    pair_count = 0
+
+    # Calculate pairwise Jaccard dissimilarity for all pairs
+    for i in range(n):
+        for j in range(i + 1, n):
+            trace_i = sampled_trace_patterns[i]
+            trace_j = sampled_trace_patterns[j]
+
+            # Calculate Jaccard similarity
+            intersection = len(trace_i & trace_j)
+            union = len(trace_i | trace_j)
+
+            if union == 0:
+                jaccard_similarity = 0.0  # Both traces empty
+            else:
+                jaccard_similarity = intersection / union
+
+            # Convert to dissimilarity
+            dissimilarity = 1.0 - jaccard_similarity
+            total_dissimilarity += dissimilarity
+            pair_count += 1
+
+    # Return average dissimilarity
+    average_dissimilarity = total_dissimilarity / pair_count if pair_count > 0 else 0.0
+
+    logger.debug(f"Intra-sample dissimilarity: {average_dissimilarity:.4f} from {n} traces ({pair_count} pairs)")
+
+    return average_dissimilarity

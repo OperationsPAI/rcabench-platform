@@ -153,6 +153,7 @@ def calculate_sampler_performance(
         - sampled_unique_traces: Number of unique trace patterns in sampled data
         - shannon_entropy: Shannon entropy of trace pattern distribution in sampled data
         - benefit_cost_ratio: Ratio of unique trace patterns discovered to actual sample count
+        - intra_sample_dissimilarity: Average dissimilarity between sampled traces (diversity metric)
     """
     # Load traces to get total counts
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
@@ -322,6 +323,7 @@ def calculate_sampler_performance(
             # New metrics
             "shannon_entropy": 0.0,
             "benefit_cost_ratio": 0.0,
+            "intra_sample_dissimilarity": 0.0,
         }
 
     # Load full traces with parsed span names for analysis
@@ -559,6 +561,7 @@ def calculate_sampler_performance(
         "unique_trace_coverage": event_coverage_metrics["unique_trace_coverage"],
         "shannon_entropy": event_coverage_metrics["shannon_entropy"],
         "benefit_cost_ratio": event_coverage_metrics["benefit_cost_ratio"],
+        "intra_sample_dissimilarity": event_coverage_metrics["intra_sample_dissimilarity"],
         # Span count metrics
         "total_span_count": total_span_count,
         "sampled_span_count": sampled_span_count,

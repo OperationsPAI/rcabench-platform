@@ -91,6 +91,13 @@ Sampler performance is evaluated using the following metrics:
   - Actual sample count as "cost" 
   - Higher ratio indicates more efficient discovery of diverse trace patterns
   - Calculated as part of event coverage analysis
++ **Intra-Sample Average Dissimilarity**: Diversity of sampled trace collection = $\frac{\sum_{i=1}^{N} \sum_{j=i+1}^{N} (1 - JaccardSimilarity(T_i, T_j))}{N(N-1)/2}$
+  - $N$: number of traces in sampled set
+  - $T_i, T_j$: trace pairs represented as sets of event pairs (from event encoding)
+  - Measures average pairwise dissimilarity within the sampled trace collection
+  - Higher values indicate better diversity (traces are more dissimilar to each other)
+  - Directly quantifies the effectiveness of diversity-aware sampling algorithms like DPP
+  - Value range: [0, 1], where 0 = all traces identical, 1 = all traces completely different
 + **Runtime**: Algorithm runtime per span in milliseconds
 + **Actual Sampling Rate**: Achieved sampling rate
 
@@ -164,6 +171,16 @@ All coverage metrics (Path Coverage, Deduplicated Path Coverage, and Event Cover
   - Ratio = 1.0 means every sampled trace has a unique pattern (maximum diversity)
   - Ratio < 1.0 indicates some redundancy in sampled patterns
   - Provides insight into sampling efficiency beyond simple coverage metrics
+
+- **Intra-Sample Average Dissimilarity**: Measures internal diversity of sampled trace collection
+  - Quantifies how dissimilar traces are to each other within the sampled set
+  - Uses Jaccard dissimilarity between trace event pair sets: D(Ti, Tj) = 1 - Jaccard(Ti, Tj)
+  - Calculates average pairwise dissimilarity across all trace pairs in sample
+  - Directly evaluates effectiveness of diversity-aware sampling algorithms (e.g., DPP)
+  - Higher values indicate better diversity - traces are more different from each other
+  - Can be used for A/B testing: compare diversity-aware vs. quality-only sampling
+  - Complements coverage metrics by focusing on internal sample diversity rather than coverage breadth
+  - Essential metric for validating diversity algorithms in trace sampling
 
 ## Data Specification
 

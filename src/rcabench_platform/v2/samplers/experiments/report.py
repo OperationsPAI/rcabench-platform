@@ -187,11 +187,11 @@ def generate_sampler_perf_report(
                 # New metrics
                 pl.col("shannon_entropy").mean().alias("avg_shannon_entropy"),
                 pl.col("benefit_cost_ratio").mean().alias("avg_benefit_cost_ratio"),
-                # Also calculate std dev for key metrics
+                pl.col("intra_sample_dissimilarity").mean().alias("avg_intra_sample_dissimilarity"),
+                # Standard deviation for key metrics
                 pl.col("controllability").std().alias("std_controllability"),
                 pl.col("comprehensiveness").std().alias("std_api_coverage"),
                 pl.col("path_coverage").std().alias("std_path_coverage"),
-                # Deduplicated path coverage std dev
                 pl.col("path_coverage_dedup").std().alias("std_path_coverage_dedup"),
                 pl.col("event_coverage").std().alias("std_event_coverage"),
                 pl.col("actual_sampling_rate").std().alias("std_actual_sampling_rate"),
@@ -201,9 +201,41 @@ def generate_sampler_perf_report(
                 pl.col("balance_cv").std().alias("std_balance_cv"),
                 pl.col("unique_trace_coverage").std().alias("std_unique_trace_coverage"),
                 pl.col("span_coverage").std().alias("std_span_coverage"),
-                # New metrics std dev
                 pl.col("shannon_entropy").std().alias("std_shannon_entropy"),
                 pl.col("benefit_cost_ratio").std().alias("std_benefit_cost_ratio"),
+                pl.col("intra_sample_dissimilarity").std().alias("std_intra_sample_dissimilarity"),
+                # Minimum values for key metrics
+                pl.col("controllability").min().alias("min_controllability"),
+                pl.col("comprehensiveness").min().alias("min_api_coverage"),
+                pl.col("path_coverage").min().alias("min_path_coverage"),
+                pl.col("path_coverage_dedup").min().alias("min_path_coverage_dedup"),
+                pl.col("event_coverage").min().alias("min_event_coverage"),
+                pl.col("actual_sampling_rate").min().alias("min_actual_sampling_rate"),
+                pl.col("runtime_per_span_ms").min().alias("min_runtime_per_span_ms"),
+                pl.col("runtime_per_trace_ms").min().alias("min_runtime_per_trace_ms"),
+                pl.col("gt_trace_proportion").min().alias("min_gt_trace_proportion"),
+                pl.col("balance_cv").min().alias("min_balance_cv"),
+                pl.col("unique_trace_coverage").min().alias("min_unique_trace_coverage"),
+                pl.col("span_coverage").min().alias("min_span_coverage"),
+                pl.col("shannon_entropy").min().alias("min_shannon_entropy"),
+                pl.col("benefit_cost_ratio").min().alias("min_benefit_cost_ratio"),
+                pl.col("intra_sample_dissimilarity").min().alias("min_intra_sample_dissimilarity"),
+                # Maximum values for key metrics
+                pl.col("controllability").max().alias("max_controllability"),
+                pl.col("comprehensiveness").max().alias("max_api_coverage"),
+                pl.col("path_coverage").max().alias("max_path_coverage"),
+                pl.col("path_coverage_dedup").max().alias("max_path_coverage_dedup"),
+                pl.col("event_coverage").max().alias("max_event_coverage"),
+                pl.col("actual_sampling_rate").max().alias("max_actual_sampling_rate"),
+                pl.col("runtime_per_span_ms").max().alias("max_runtime_per_span_ms"),
+                pl.col("runtime_per_trace_ms").max().alias("max_runtime_per_trace_ms"),
+                pl.col("gt_trace_proportion").max().alias("max_gt_trace_proportion"),
+                pl.col("balance_cv").max().alias("max_balance_cv"),
+                pl.col("unique_trace_coverage").max().alias("max_unique_trace_coverage"),
+                pl.col("span_coverage").max().alias("max_span_coverage"),
+                pl.col("shannon_entropy").max().alias("max_shannon_entropy"),
+                pl.col("benefit_cost_ratio").max().alias("max_benefit_cost_ratio"),
+                pl.col("intra_sample_dissimilarity").max().alias("max_intra_sample_dissimilarity"),
             ]
         )
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
@@ -251,6 +283,7 @@ def generate_sampler_perf_report(
             "avg_span_coverage",
             "avg_shannon_entropy",
             "avg_benefit_cost_ratio",
+            "avg_intra_sample_dissimilarity",
             "avg_gt_trace_proportion",
             "avg_balance_cv",
             "avg_proportion_anomaly",
