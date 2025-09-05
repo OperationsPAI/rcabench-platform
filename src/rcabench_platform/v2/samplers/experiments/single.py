@@ -15,7 +15,7 @@ from ...datasets.train_ticket import extract_path
 from ...logging import logger, timeit
 from ...utils.fs import running_mark
 from ...utils.serde import save_parquet
-from ..event_encoding import calculate_anomaly_score_per_trace, calculate_event_coverage
+from ..event_encoding import calculate_event_coverage
 from ..metrics_sli import copy_metrics_sli_to_sampled, generate_metrics_sli
 from ..path_encoding import calculate_path_coverage, calculate_path_coverage_dedup
 from ..spec import SamplerArgs, SamplingMode, global_sampler_registry
@@ -493,11 +493,6 @@ def calculate_sampler_performance(
         all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder
     )
 
-    # Calculate average anomaly score per trace for sampled traces
-    anomaly_score_metrics = calculate_anomaly_score_per_trace(
-        all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder
-    )
-
     # Calculate span statistics
     total_span_count = len(all_traces_for_events_df)
     sampled_span_count = len(all_traces_for_events_df.filter(pl.col("trace_id").is_in(sampled_trace_ids)))
@@ -569,7 +564,7 @@ def calculate_sampler_performance(
         "shannon_entropy": event_coverage_metrics["shannon_entropy"],
         "benefit_cost_ratio": event_coverage_metrics["benefit_cost_ratio"],
         "intra_sample_dissimilarity": event_coverage_metrics["intra_sample_dissimilarity"],
-        "avg_anomaly_score": anomaly_score_metrics["avg_anomaly_score"],
+        "avg_anomaly_score": event_coverage_metrics["avg_anomaly_score"],
         # Span count metrics
         "total_span_count": total_span_count,
         "sampled_span_count": sampled_span_count,
