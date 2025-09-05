@@ -567,7 +567,7 @@ def calculate_anomaly_score_per_trace(
                 try:
                     # Apply log scoring rules: WARN=1, ERROR/SEVERE=2
                     log_scores = trace_logs.with_columns(
-                        pl.when(pl.col("level") == "WARN")
+                        pl.when(pl.col("level").is_in(["WARN", "WARNING"]))
                         .then(pl.lit(1))
                         .when(pl.col("level").is_in(["ERROR", "SEVERE"]))
                         .then(pl.lit(2))
