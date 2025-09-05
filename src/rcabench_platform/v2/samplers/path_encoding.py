@@ -33,7 +33,7 @@ def build_trace_path_encoding(trace_df: pl.DataFrame) -> str:
 
     # If no valid loadgenerator root span found, skip this trace
     if root_spans_df.height == 0:
-        logger.debug("No loadgenerator root span found, skipping trace")
+        logger.debug("No root span found, skipping trace")
         return ""
 
     # Build parent-child relationships
