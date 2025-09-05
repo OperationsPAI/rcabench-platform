@@ -461,3 +461,139 @@ def calculate_intra_sample_dissimilarity(sampled_trace_patterns: list[frozenset]
     logger.debug(f"Intra-sample dissimilarity: {average_dissimilarity:.4f} from {n} traces ({pair_count} pairs)")
 
     return average_dissimilarity
+
+
+def calculate_anomaly_score_per_trace(
+    traces_df: pl.DataFrame,
+    logs_df: pl.DataFrame | None,
+    sampled_trace_ids: set[str],
+    input_folder: Path,
+) -> dict[str, float]:
+    """
+    Calculate average anomaly score per trace for sampled traces.
+
+    Optimized version using vectorized operations for better performance.
+
+    Anomaly score calculation follows DPP-like scoring:
+    - Error spans: +5 per error span
+    - Performance degradation: +1/2/3 based on P90 ratio (1.5x/3x/5x)
+    - Log level score: WARN +1, ERROR/SEVERE +2 each
+
+    Args:
+        traces_df: All traces data
+        logs_df: All logs data (optional)
+        sampled_trace_ids: Set of sampled trace IDs
+        input_folder: Path to input folder for loading metrics_sli thresholds
+
+    Returns:
+        Dictionary with 'avg_anomaly_score' key
+    """
+    logger.info("Calculating average anomaly score per trace...")
+
+    if not sampled_trace_ids:
+        return {"avg_anomaly_score": 0.0}
+
+    # Initialize event manager and encoder for performance thresholds
+    event_manager = EventIDManager()
+    encoder = EventEncoder(event_manager)
+
+    # Load performance thresholds
+    encoder.load_performance_thresholds(input_folder)
+
+    # Filter to only sampled traces
+    sampled_traces_df = traces_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+
+    # Step 1: Batch extract root spans info for all sampled traces
+    root_spans_df = sampled_traces_df.filter(
+        (pl.col("service_name") == "loadgenerator")
+        & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+    ).select(["trace_id", "span_name", (pl.col("duration") / 1_000_000.0).alias("duration_ms")])
+
+    if root_spans_df.is_empty():
+        return {"avg_anomaly_score": 0.0}
+
+    # Step 2: Batch calculate performance scores using vectorized operations
+    # Create P90 threshold lookup using expression
+    perf_conditions = pl.lit(0.0)  # Default performance score
+
+    for span_pattern, threshold_ns in encoder.performance_thresholds.items():
+        threshold_ms = threshold_ns / 1_000_000.0
+
+        # Build condition for this threshold pattern
+        pattern_condition = (
+            pl.col("span_name").str.contains(span_pattern) | pl.lit(span_pattern).str.contains(pl.col("span_name"))
+        ) & (pl.col("duration_ms") > threshold_ms)
+
+        ratio = pl.col("duration_ms") / threshold_ms
+        perf_score = (
+            pl.when(ratio >= 5.0)
+            .then(pl.lit(3.0))
+            .when(ratio >= 3.0)
+            .then(pl.lit(2.0))
+            .when(ratio >= 1.5)
+            .then(pl.lit(1.0))
+            .otherwise(pl.lit(0.0))
+        )
+
+        # Update performance conditions
+        perf_conditions = pl.when(pattern_condition).then(perf_score).otherwise(perf_conditions)
+
+    # Add performance scores to root spans
+    root_spans_with_perf = root_spans_df.with_columns([perf_conditions.alias("perf_score")])
+
+    # Step 3: Batch calculate error span counts per trace
+    error_counts = (
+        sampled_traces_df.filter(pl.col("attr.status_code") == "Error")
+        .group_by("trace_id")
+        .agg([pl.len().alias("error_count")])
+    )
+
+    # Step 4: Batch calculate log scores per trace if logs available
+    log_scores_df = None
+    if logs_df is not None and not logs_df.is_empty():
+        sampled_logs_df = logs_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+
+        if not sampled_logs_df.is_empty():
+            log_scores_df = (
+                sampled_logs_df.with_columns(
+                    [
+                        pl.when(pl.col("level").is_in(["WARNING", "WARN"]))
+                        .then(pl.lit(1))
+                        .when(pl.col("level").is_in(["ERROR", "SEVERE"]))
+                        .then(pl.lit(2))
+                        .otherwise(pl.lit(0))
+                        .alias("log_score")
+                    ]
+                )
+                .group_by("trace_id")
+                .agg([pl.col("log_score").sum().alias("total_log_score")])
+            )
+
+    # Step 5: Join all components and calculate final anomaly scores
+    anomaly_df = root_spans_with_perf
+
+    # Left join with error counts (default 0 if no errors)
+    anomaly_df = anomaly_df.join(error_counts, on="trace_id", how="left").with_columns(
+        [pl.col("error_count").fill_null(0)]
+    )
+
+    # Left join with log scores (default 0 if no logs)
+    if log_scores_df is not None:
+        anomaly_df = anomaly_df.join(log_scores_df, on="trace_id", how="left").with_columns(
+            [pl.col("total_log_score").fill_null(0.0)]
+        )
+    else:
+        anomaly_df = anomaly_df.with_columns([pl.lit(0.0).alias("total_log_score")])
+
+    # Step 6: Calculate final anomaly scores using vectorized operations
+    final_scores = anomaly_df.with_columns(
+        [(pl.col("error_count") * 5.0 + pl.col("perf_score") + pl.col("total_log_score")).alias("anomaly_score")]
+    )
+
+    # Calculate average anomaly score
+    avg_anomaly_score = final_scores.select(pl.col("anomaly_score").mean()).item()
+    avg_anomaly_score = float(avg_anomaly_score or 0.0)
+
+    logger.debug(f"Average anomaly score: {avg_anomaly_score:.4f} from {len(final_scores)} traces")
+
+    return {"avg_anomaly_score": avg_anomaly_score}
