@@ -98,6 +98,14 @@ Sampler performance is evaluated using the following metrics:
   - Higher values indicate better diversity (traces are more dissimilar to each other)
   - Directly quantifies the effectiveness of diversity-aware sampling algorithms like DPP
   - Value range: [0, 1], where 0 = all traces identical, 1 = all traces completely different
++ **Average Anomaly Score**: Mean anomaly score per trace in sampled set = $\frac{\sum_{i=1}^{N} S_i}{N}$
+  - $N$: number of traces in sampled set
+  - $S_i$: anomaly score for trace i = $E_i \times 5 + P_i + L_i$
+  - $E_i$: number of error spans in trace i (spans with status_code = "Error")
+  - $P_i$: performance degradation score (1/2/3 based on root span P90 threshold ratio: 1.5x/3x/5x)
+  - $L_i$: log level score (WARN: +1, ERROR/SEVERE: +2 each per log entry)
+  - Higher values indicate traces with more anomalous characteristics
+  - Useful for evaluating sampling algorithms' ability to capture problematic traces
 + **Runtime**: Algorithm runtime per span in milliseconds
 + **Actual Sampling Rate**: Achieved sampling rate
 

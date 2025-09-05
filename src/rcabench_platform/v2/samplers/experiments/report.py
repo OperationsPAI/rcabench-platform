@@ -188,6 +188,7 @@ def generate_sampler_perf_report(
                 pl.col("shannon_entropy").mean().alias("avg_shannon_entropy"),
                 pl.col("benefit_cost_ratio").mean().alias("avg_benefit_cost_ratio"),
                 pl.col("intra_sample_dissimilarity").mean().alias("avg_intra_sample_dissimilarity"),
+                pl.col("avg_anomaly_score").mean().alias("avg_avg_anomaly_score"),
                 # Standard deviation for key metrics
                 pl.col("controllability").std().alias("std_controllability"),
                 pl.col("comprehensiveness").std().alias("std_api_coverage"),
@@ -204,6 +205,7 @@ def generate_sampler_perf_report(
                 pl.col("shannon_entropy").std().alias("std_shannon_entropy"),
                 pl.col("benefit_cost_ratio").std().alias("std_benefit_cost_ratio"),
                 pl.col("intra_sample_dissimilarity").std().alias("std_intra_sample_dissimilarity"),
+                pl.col("avg_anomaly_score").std().alias("std_avg_anomaly_score"),
                 # Minimum values for key metrics
                 pl.col("controllability").min().alias("min_controllability"),
                 pl.col("comprehensiveness").min().alias("min_api_coverage"),
@@ -220,6 +222,7 @@ def generate_sampler_perf_report(
                 pl.col("shannon_entropy").min().alias("min_shannon_entropy"),
                 pl.col("benefit_cost_ratio").min().alias("min_benefit_cost_ratio"),
                 pl.col("intra_sample_dissimilarity").min().alias("min_intra_sample_dissimilarity"),
+                pl.col("avg_anomaly_score").min().alias("min_avg_anomaly_score"),
                 # Maximum values for key metrics
                 pl.col("controllability").max().alias("max_controllability"),
                 pl.col("comprehensiveness").max().alias("max_api_coverage"),
@@ -236,6 +239,7 @@ def generate_sampler_perf_report(
                 pl.col("shannon_entropy").max().alias("max_shannon_entropy"),
                 pl.col("benefit_cost_ratio").max().alias("max_benefit_cost_ratio"),
                 pl.col("intra_sample_dissimilarity").max().alias("max_intra_sample_dissimilarity"),
+                pl.col("avg_anomaly_score").max().alias("max_avg_anomaly_score"),
             ]
         )
         .sort(["sampler", "dataset", "sampling_rate", "mode"])
@@ -284,6 +288,7 @@ def generate_sampler_perf_report(
             "avg_shannon_entropy",
             "avg_benefit_cost_ratio",
             "avg_intra_sample_dissimilarity",
+            "avg_avg_anomaly_score",
             "avg_gt_trace_proportion",
             "avg_balance_cv",
             "avg_proportion_anomaly",

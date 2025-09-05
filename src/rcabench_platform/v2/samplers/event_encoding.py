@@ -461,3 +461,130 @@ def calculate_intra_sample_dissimilarity(sampled_trace_patterns: list[frozenset]
     logger.debug(f"Intra-sample dissimilarity: {average_dissimilarity:.4f} from {n} traces ({pair_count} pairs)")
 
     return average_dissimilarity
+
+
+def calculate_anomaly_score_per_trace(
+    traces_df: pl.DataFrame,
+    logs_df: pl.DataFrame | None,
+    sampled_trace_ids: set[str],
+    input_folder: Path,
+) -> dict[str, float]:
+    """
+    Calculate average anomaly score per trace for sampled traces.
+
+    Anomaly score calculation follows DPP-like scoring:
+    - Error spans: +5 per error span
+    - Performance degradation: +1/2/3 based on P90 ratio (1.5x/3x/5x)
+    - Log level score: WARN +1, ERROR/SEVERE +2 each
+
+    Args:
+        traces_df: All traces data
+        logs_df: All logs data (optional)
+        sampled_trace_ids: Set of sampled trace IDs
+        input_folder: Path to input folder for loading metrics_sli thresholds
+
+    Returns:
+        Dictionary with 'avg_anomaly_score' key
+    """
+    logger.info("Calculating average anomaly score per trace...")
+
+    if not sampled_trace_ids:
+        return {"avg_anomaly_score": 0.0}
+
+    # Initialize event manager and encoder for performance thresholds
+    event_manager = EventIDManager()
+    encoder = EventEncoder(event_manager)
+
+    # Load performance thresholds
+    encoder.load_performance_thresholds(input_folder)
+
+    # Filter to only sampled traces
+    sampled_traces_df = traces_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+
+    # Group traces by trace_id
+    trace_groups = sampled_traces_df.partition_by("trace_id", as_dict=True)
+
+    # Group logs by trace_id if available
+    log_groups = None
+    if logs_df is not None and not logs_df.is_empty():
+        sampled_logs_df = logs_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+        log_groups = sampled_logs_df.partition_by("trace_id", as_dict=True)
+
+    # Precompute thresholds list for matching (convert to milliseconds)
+    thresholds_list = [(k, (v / 1_000_000.0)) for k, v in encoder.performance_thresholds.items()]
+
+    def find_p90_ms(root_name: str) -> float:
+        """Find P90 threshold for root span name"""
+        for key, th_ms in thresholds_list:
+            if key in root_name or root_name in key:
+                return float(th_ms)
+        return 0.0
+
+    anomaly_scores = []
+
+    for trace_id in sampled_trace_ids:
+        trace_df = trace_groups.get((trace_id,))
+        if trace_df is None or trace_df.is_empty():
+            continue
+
+        # Find root span (loadgenerator with null parent)
+        root_spans = trace_df.filter(
+            (pl.col("service_name") == "loadgenerator")
+            & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+        )
+
+        if root_spans.is_empty():
+            continue  # Skip traces without valid root span
+
+        root_span = root_spans.row(0, named=True)
+        root_name = root_span["span_name"]
+        root_duration_ms = float(root_span.get("duration", 0.0)) / 1_000_000.0
+
+        # Calculate performance score
+        p90_ms = find_p90_ms(root_name)
+        perf_score = 0.0
+        if p90_ms > 0 and root_duration_ms > p90_ms:
+            ratio = root_duration_ms / p90_ms
+            if ratio >= 5.0:
+                perf_score = 3.0
+            elif ratio >= 3.0:
+                perf_score = 2.0
+            elif ratio >= 1.5:
+                perf_score = 1.0
+
+        # Count error spans
+        error_count = 0
+        try:
+            error_count = trace_df.filter(pl.col("attr.status_code") == "Error").height
+        except Exception:
+            error_count = 0
+
+        # Calculate log score for this trace
+        log_score = 0.0
+        if log_groups is not None:
+            trace_logs = log_groups.get((trace_id,))
+            if trace_logs is not None and not trace_logs.is_empty():
+                try:
+                    # Apply log scoring rules: WARN=1, ERROR/SEVERE=2
+                    log_scores = trace_logs.with_columns(
+                        pl.when(pl.col("level") == "WARN")
+                        .then(pl.lit(1))
+                        .when(pl.col("level").is_in(["ERROR", "SEVERE"]))
+                        .then(pl.lit(2))
+                        .otherwise(pl.lit(0))
+                        .alias("score")
+                    )
+                    log_score = float(log_scores.select(pl.col("score").sum()).item() or 0.0)
+                except Exception:
+                    log_score = 0.0
+
+        # Calculate total anomaly score for this trace
+        anomaly_score = error_count * 5.0 + perf_score + log_score
+        anomaly_scores.append(anomaly_score)
+
+    # Calculate average anomaly score
+    avg_anomaly_score = sum(anomaly_scores) / len(anomaly_scores) if anomaly_scores else 0.0
+
+    logger.debug(f"Average anomaly score: {avg_anomaly_score:.4f} from {len(anomaly_scores)} traces")
+
+    return {"avg_anomaly_score": avg_anomaly_score}
