@@ -59,10 +59,13 @@ class EventIDManager:
 
     def extract_span_names_from_traces(self, traces_df: pl.DataFrame) -> None:
         """Extract unique service_name + span_name combinations and assign IDs"""
+        # Use lazy evaluation and collect only unique combinations
         unique_combinations = (
-            traces_df.select([pl.concat_str(["service_name", "span_name"], separator="_").alias("service_span_name")])
+            traces_df.lazy()
+            .select(pl.concat_str(["service_name", "span_name"], separator="_").alias("service_span_name"))
             .unique()
-            .to_series()
+            .collect()
+            .get_column("service_span_name")
             .to_list()
         )
 
@@ -177,42 +180,39 @@ class EventEncoder:
     ) -> set[tuple[int, int]]:
         """Encode a single trace into event ID sequence respecting span hierarchy"""
 
-        # First, find root span using DataFrame filtering (more efficient)
-        # Root span must be loadgenerator service with null/empty parent_span_id
-        root_spans_df = trace_spans_df.filter(
-            (pl.col("service_name") == "loadgenerator")
-            & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
-        )
-
-        # If no valid root span found, skip this trace
-        if root_spans_df.height == 0:
-            logger.debug("No root span found, skipping trace")
-            return set()
-
-        # Get the first (and only) root span ID directly (for validation only)
-        # We don't use root_span_id in the new approach since we process all spans
-
-        # Build span hierarchy
+        # Convert DataFrame to native Python data structures for faster iteration
         spans_data = {}
         children_map = defaultdict(list)
+        has_root_span = False
 
+        # Single pass through trace spans - convert to dict for faster access
         for row in trace_spans_df.iter_rows(named=True):
             span_id = row["span_id"]
             parent_id = row.get("parent_span_id")
+            service_name = row["service_name"]
+
+            # Check for root span during iteration
+            if service_name == "loadgenerator" and (not parent_id or parent_id == ""):
+                has_root_span = True
 
             spans_data[span_id] = row
 
             if parent_id and parent_id != "":
                 children_map[parent_id].append(span_id)
 
-        # Prepare log events by span
+        # Early exit if no root span found
+        if not has_root_span:
+            return set()
+
+        # Prepare log events by span - optimize timestamp handling
         log_events_by_span = defaultdict(list)
         if trace_logs_df is not None and len(trace_logs_df) > 0:
             for row in trace_logs_df.iter_rows(named=True):
                 template_id = row.get("attr.template_id")
                 if template_id is not None:
                     log_event_id = self.event_manager.get_log_event_id(str(template_id))
-                    timestamp = row["time"].timestamp() if hasattr(row["time"], "timestamp") else float(row["time"])
+                    # Simplified timestamp handling - assume it's already a number
+                    timestamp = row["time"]
 
                     span_id = row.get("span_id")
                     if span_id:
@@ -227,7 +227,10 @@ class EventEncoder:
 
         # 1. Generate span internal event pairs for each span
         for span_id, span_data in spans_data.items():
-            service_span_name = f"{span_data['service_name']}_{span_data['span_name']}"
+            service_name = span_data["service_name"]
+            span_name = span_data["span_name"]
+            service_span_name = f"{service_name}_{span_name}"
+
             span_start_id = self.event_manager.get_span_start_id(service_span_name)
             span_end_id = self.event_manager.get_span_end_id(service_span_name)
 
@@ -265,9 +268,6 @@ class EventEncoder:
                 parent_data = spans_data[parent_id]
                 parent_service_span = f"{parent_data['service_name']}_{parent_data['span_name']}"
                 parent_end_id = self.event_manager.get_span_end_id(parent_service_span)
-
-                # Sort children by timestamp for deterministic ordering
-                children.sort(key=lambda cid: spans_data[cid]["time"])
 
                 for child_id in children:
                     if child_id in spans_data:
@@ -383,14 +383,16 @@ def calculate_event_coverage(
             sampled_event_pairs.update(event_pairs)
 
             # Calculate anomaly score for this sampled trace
-            # Find root span (loadgenerator with null parent)
-            root_spans = trace_df.filter(
-                (pl.col("service_name") == "loadgenerator")
-                & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
-            )
+            # Find root span (loadgenerator with null parent) - use existing data
+            root_span = None
+            for span_data in trace_df.iter_rows(named=True):
+                if span_data["service_name"] == "loadgenerator" and (
+                    not span_data.get("parent_span_id") or span_data.get("parent_span_id") == ""
+                ):
+                    root_span = span_data
+                    break
 
-            if not root_spans.is_empty():
-                root_span = root_spans.row(0, named=True)
+            if root_span:
                 root_name = root_span["span_name"]
                 root_duration_ms = float(root_span.get("duration", 0.0)) / 1_000_000.0
 
@@ -406,12 +408,11 @@ def calculate_event_coverage(
                     elif ratio >= 1.5:
                         perf_score = 1.0
 
-                # Count error spans
+                # Count error spans - do this during iteration instead of filtering
                 error_count = 0
-                try:
-                    error_count = trace_df.filter(pl.col("attr.status_code") == "Error").height
-                except Exception:
-                    error_count = 0
+                for span_data in trace_df.iter_rows(named=True):
+                    if span_data.get("attr.status_code") == "Error":
+                        error_count += 1
 
                 # Calculate log score for this trace
                 log_score = 0.0
