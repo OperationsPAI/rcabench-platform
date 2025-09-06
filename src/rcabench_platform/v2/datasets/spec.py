@@ -49,6 +49,9 @@ def predefined_dependency() -> nx.DiGraph:
             "ts-voucher-service",
             "ts-travel-plan-service",
             "ts-execute-service",
+            "ts-news-service",
+            "ts-ticket-office-service",
+            "ts-gateway-service",
         ],
         "ts-admin-basic-info-service": [
             "ts-config-service",
@@ -78,7 +81,7 @@ def predefined_dependency() -> nx.DiGraph:
         ],
         "ts-consign-service": ["ts-consign-price-service"],
         "ts-execute-service": ["ts-order-other-service", "ts-order-service"],
-        "ts-food-delivery-service": ["ts-station-food-service"],
+        "ts-food-delivery-service": ["ts-station-food-service", "ts-rabbitmq"],
         "ts-food-service": ["ts-station-food-service", "ts-train-food-service", "ts-travel-service"],
         "ts-inside-payment-service": ["ts-order-other-service", "ts-order-service", "ts-payment-service"],
         "ts-order-other-service": ["ts-station-service"],

@@ -565,7 +565,7 @@ class DuckDBAggregator:
             if not col.replace("_", "").replace("@", "").isalnum():
                 logger.warning(f"Skipping invalid column name: {col}")
                 continue
-            fail_conditions.append(f"({col} = 0 OR {col} IS NULL)")
+            fail_conditions.append(f"({col} = 0)")
 
         if not fail_conditions:
             return pl.DataFrame()
@@ -709,11 +709,13 @@ class DuckDBAggregator:
         SELECT 
             fault_type,
             fault_category,
-            COUNT(*) AS count,
-            ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS percentage
+            SUM(CASE WHEN anomaly_degree = 'no' THEN 1 ELSE 0 END) AS no,
+            SUM(CASE WHEN anomaly_degree = 'absolute' THEN 1 ELSE 0 END) AS absolute,
+            SUM(CASE WHEN anomaly_degree = 'may' THEN 1 ELSE 0 END) AS may,
+            COUNT(*) AS total_count
         FROM data
         GROUP BY fault_type, fault_category
-        ORDER BY count DESC
+        ORDER BY total_count DESC
         """
 
         try:

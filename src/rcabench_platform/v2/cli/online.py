@@ -436,7 +436,6 @@ def submit_unevaluated_execution(
     tag: Annotated[str, typer.Option("--tag", help="Tag for the execution")],
     project: Annotated[str | None, typer.Option("-p", "--project", help="Project name")] = None,
     dataset_id: Annotated[int | None, typer.Option("--dataset-id", "-d", help="Dataset ID")] = None,
-    project_id: Annotated[int | None, typer.Option("--project-id", "-pid", help="Project ID")] = None,
     envs: Annotated[list[str] | None, typer.Option("--env")] = None,
     base_url: Annotated[str | None, typer.Option("--base-url")] = None,
 ):

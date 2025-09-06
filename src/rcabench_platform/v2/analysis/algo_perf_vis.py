@@ -1,11 +1,9 @@
 from pathlib import Path
-from typing import Literal, Union
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
-from matplotlib.patches import Rectangle
 
 from ..logging import logger
 
@@ -361,8 +359,8 @@ def algo_failure_by_fault_type_bar(
 
     # Two row layout with algorithms distributed across rows
     n_algos = len(algorithms)
-    n_cols = min(n_algos, max(3, (n_algos + 1) // 2))  # At most half the algorithms per row, minimum 3 columns
-    n_rows = 2 if n_algos > n_cols else 1
+    n_cols = 4  # At most half the algorithms per row, minimum 3 columns
+    n_rows = 3
 
     fig_width = 20
     fig_height = 6
@@ -509,6 +507,230 @@ def algo_failure_by_fault_type_bar(
         else:
             plt.savefig(output_file, dpi=300, bbox_inches="tight")
 
+        logger.info(f"Chart saved to: {output_file} (format: {file_format.upper()})")
+
+    plt.show()
+
+
+def dataset_anomaly_distribution(
+    df: pl.DataFrame,
+    output_file: Path | None = None,
+) -> None:
+    """Visualize anomaly distribution by fault type using grouped bars.
+
+    Expects a DataFrame like the output of `dataset_fault_type` with columns:
+    - fault_type, fault_category, no, absolute, may, total_count
+    """
+    # Basic validations
+    if df.height == 0:
+        logger.warning("No data available to generate chart")
+        return
+
+    required_cols = ["fault_type", "no", "may", "absolute"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        logger.warning(f"Missing required columns: {missing}")
+        return
+
+    # Sort by total_count desc if available, otherwise keep as-is
+    if "total_count" in df.columns:
+        plot_df = df.sort("total_count", descending=True)
+    else:
+        plot_df = df
+
+    fault_types = plot_df["fault_type"].to_list()
+    n = len(fault_types)
+    if n == 0:
+        logger.warning("No fault_type data found")
+        return
+
+    # Build abbreviated labels for fault types (referencing logic used above)
+    fault_type_abbrev: dict[str | None, str] = {}
+    for ft in fault_types:
+        if ft:
+            if "HTTP" in ft:
+                parts = (
+                    ft.replace("HTTP", "")
+                    .replace("Request", "Req")
+                    .replace("Response", "Resp")
+                    .replace("Replace", "Repl")
+                    .replace("Abort", "Abrt")
+                    .replace("Delay", "Del")
+                )
+                abbrev = parts
+            elif "JVM" in ft:
+                parts = (
+                    ft.replace("JVM", "")
+                    .replace("Memory", "Mem")
+                    .replace("Latency", "Lat")
+                    .replace("Exception", "Exc")
+                    .replace("MySQL", "SQL")
+                    .replace("GarbageCollector", "GC")
+                )
+                abbrev = "JVM" + parts
+            elif "Network" in ft:
+                parts = (
+                    ft.replace("Network", "")
+                    .replace("Partition", "Part")
+                    .replace("Bandwidth", "BW")
+                    .replace("Corrupt", "Corr")
+                )
+                abbrev = "Net" + parts
+            elif "Container" in ft:
+                abbrev = ft.replace("Container", "Cont")
+            elif "Memory" in ft:
+                abbrev = ft.replace("Memory", "Mem")
+            else:
+                abbrev = ft
+            fault_type_abbrev[ft] = abbrev
+        else:
+            fault_type_abbrev[ft] = "N/A"
+    fault_types_abbrev = [fault_type_abbrev.get(ft, ft or "N/A") for ft in fault_types]
+
+    # Data arrays (fill None with 0)
+    def _col_values(name: str) -> list[float]:
+        values = plot_df[name].to_list()
+        return [float(v) if v is not None else 0.0 for v in values]
+
+    counts_no = _col_values("no")
+    counts_may = _col_values("may")
+    counts_abs = _col_values("absolute")
+
+    # Sort by total count (no + may + absolute) in descending order
+    totals = [counts_no[i] + counts_may[i] + counts_abs[i] for i in range(n)]
+    order = sorted(range(n), key=lambda i: totals[i], reverse=True)
+
+    fault_types = [fault_types[i] for i in order]
+    fault_types_abbrev = [fault_types_abbrev[i] for i in order]
+    counts_no = [counts_no[i] for i in order]
+    counts_may = [counts_may[i] for i in order]
+    counts_abs = [counts_abs[i] for i in order]
+
+    # Layout and styling
+    x = np.arange(n)
+    group_width = 0.8
+    bar_w = group_width / 3
+
+    colors = {
+        "no": "#6baed6",  # blue-ish
+        "may": "#fd8d3c",  # orange
+        "absolute": "#31a354",  # green
+    }
+
+    # Helper to compute max for range decisions
+    max_y = max(max(counts_no), max(counts_may), max(counts_abs)) if n > 0 else 0
+
+    # Figure size adjusts with number of fault types
+    base_width = max(8, n * 0.5)
+
+    # We'll allow compressing values above 100 into the top band (r units)
+    compress_band = 20.0  # top band height on the axis for values > 100
+
+    # Prepare possibly transformed heights for plotting
+    plot_no = counts_no
+    plot_may = counts_may
+    plot_abs = counts_abs
+
+    if max_y > 100:
+        low_scale = (100.0 - compress_band) / 100.0
+        high_span = max(1.0, float(max_y - 100.0))
+
+        def _transform(v: float) -> float:
+            v = float(v)
+            if v <= 100.0:
+                return v * low_scale
+            return (100.0 - compress_band) + (v - 100.0) / high_span * compress_band
+
+        plot_no = [_transform(v) for v in counts_no]
+        plot_may = [_transform(v) for v in counts_may]
+        plot_abs = [_transform(v) for v in counts_abs]
+
+    def _plot_bars(ax):
+        ax.bar(
+            x - bar_w,
+            plot_no,
+            width=bar_w,
+            label="No Anomaly",
+            color=colors["no"],
+            edgecolor="black",
+            linewidth=0.4,
+        )
+        ax.bar(
+            x,
+            plot_may,
+            width=bar_w,
+            label="May Anomaly",
+            color=colors["may"],
+            edgecolor="black",
+            linewidth=0.4,
+        )
+        ax.bar(
+            x + bar_w,
+            plot_abs,
+            width=bar_w,
+            label="Absolute Anomaly",
+            color=colors["absolute"],
+            edgecolor="black",
+            linewidth=0.4,
+        )
+
+    # Always use a single axis; customize tick labels density
+    fig, ax = plt.subplots(figsize=(base_width, 5))
+    _plot_bars(ax)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(fault_types_abbrev, rotation=45, ha="right", fontsize=12)
+    ax.set_ylabel("Count", fontsize=12)
+    ax.grid(True, axis="y", alpha=0.3)
+
+    ticks: list[float] = []
+    if max_y <= 100:
+        upper = 100 if max_y == 100 else (int(np.ceil(max_y / 20.0)) * 20)
+        ax.set_ylim(0, upper)
+        ticks = [float(v) for v in range(0, upper + 1, 20)]
+        tick_pos = ticks  # identity mapping
+    else:
+        # Axis stays 0..100, but we'll compress >100 into top band
+        ax.set_ylim(0, 100)
+        # Build original tick labels
+        ticks_low_orig = [float(v) for v in range(0, 101, 20)]
+        # Upper labels every 300 up to cover max_y
+        extra = max(0.0, float(max_y - 100.0))
+        steps = int(np.ceil(extra / 300.0))
+        ticks_high_orig = [float(100 + i * 300) for i in range(1, max(1, steps) + 1)]
+
+        # Map to positions
+        low_scale = (100.0 - compress_band) / 100.0
+
+        def _pos(v: float) -> float:
+            return v * low_scale if v <= 100.0 else (100.0 - compress_band)
+
+        tick_pos_low = [_pos(v) for v in ticks_low_orig]
+        # For high ticks, spread linearly in the compressed band
+        high_span = max(1.0, float(max_y - 100.0))
+        tick_pos_high = [(100.0 - compress_band) + (v - 100.0) / high_span * compress_band for v in ticks_high_orig]
+
+        ticks = ticks_low_orig + ticks_high_orig
+        tick_pos = tick_pos_low + tick_pos_high
+
+    ax.set_yticks(np.array(tick_pos, dtype=float))
+    ax.set_yticklabels([str(int(t)) for t in ticks])
+
+    ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.12), fontsize=10)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85, bottom=0.22)
+
+    # Save or show
+    if output_file:
+        parent = output_file.parent
+        parent.mkdir(parents=True, exist_ok=True)
+
+        file_format = output_file.suffix.lower().lstrip(".")
+        if file_format == "pdf":
+            plt.savefig(output_file, format="pdf", bbox_inches="tight")
+        else:
+            plt.savefig(output_file, dpi=300, bbox_inches="tight")
         logger.info(f"Chart saved to: {output_file} (format: {file_format.upper()})")
 
     plt.show()

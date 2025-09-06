@@ -204,10 +204,10 @@ def get_execution_item(
     unrunned_algo: list[tuple[str, str]] = []
     input_items: list[InputItem] = []
 
-    # Get dataset information
     datapack_infos, dataset, dataset_version = get_datapacks_from_dataset_id(dataset_id)
 
-    # Build algorithm-datapack execution mapping more efficiently
+    logger.info(f"get {len(datapack_infos)} datapacks from dataset {dataset} version {dataset_version}")
+
     algorithm_executions: dict[str, list[DtoDatapackEvaluationItem]] = {}
 
     all_possible_executions = {
@@ -232,12 +232,10 @@ def get_execution_item(
 
     unrunned_algo = sorted(list(all_possible_executions - executed_pairs))
 
-    # Process each datapack and build input items
     for datapack in datapack_infos:
         algo_durations: dict[str, float] = {}
         algo_evaluations: dict[str, tuple[HandlerGroundtruth, list[DtoGranularityRecord]]] = {}
 
-        # Match evaluations to current datapack
         for algorithm, executions in algorithm_executions.items():
             for execution in executions:
                 if execution.datapack_name == datapack.injection_name:
@@ -248,10 +246,9 @@ def get_execution_item(
                     algo_evaluations[algorithm] = (execution.groundtruth, execution.predictions)
                     algo_durations[algorithm] = float(execution.execution_duration)
 
-        # Only create InputItem if we have data for this datapack
-        if algo_evaluations or algo_durations:
-            input_item = InputItem(injection=datapack, algo_durations=algo_durations, algo_evals=algo_evaluations)
-            input_items.append(input_item)
+        # if algo_evaluations or algo_durations:
+        input_item = InputItem(injection=datapack, algo_durations=algo_durations, algo_evals=algo_evaluations)
+        input_items.append(input_item)
 
     return input_items, unrunned_algo
 
@@ -293,7 +290,22 @@ def process_item(
             value = 0
             value_str = label_mapping.get(metric)
             if value_str is not None:
-                value = int(value_str)
+                try:
+                    value = int(value_str)
+                except ValueError:
+                    if value_str.lower() in ("inf", "infinity", "+inf"):
+                        value = 999999999
+                    elif value_str.lower() in ("-inf", "-infinity"):
+                        value = -999999999
+                    else:
+                        try:
+                            float_value = float(value_str)
+                            if float_value == float("inf") or float_value == float("-inf"):
+                                value = 999999999
+                            else:
+                                value = int(float_value)
+                        except ValueError:
+                            value = 0
 
             datapack_metric_values[metric] = value
 
@@ -407,7 +419,7 @@ def batch_process_item(
 
     cpu = os.cpu_count()
     assert cpu is not None, "CPU count must not be None"
-    res = fmap_processpool(tasks, parallel=cpu // 2, cpu_limit_each=2)
+    res = fmap_processpool(tasks, parallel=cpu // 2, cpu_limit_each=2, ignore_exceptions=True)
 
     filtered_results = [i for i in res if i is not None]
 

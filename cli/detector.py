@@ -899,12 +899,15 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
             valid_datapacks.append(datapack_path)
         else:
             invalid_datapacks.append(datapack_path)
-        injection_api.api_v2_injections_name_tags_patch(
-            name=datapack_path.name,
-            manage=DtoInjectionV2LabelManageReq(
-                add_tags=[tag],
-            ),
-        )
+        try:
+            injection_api.api_v2_injections_name_tags_patch(
+                name=datapack_path.name,
+                manage=DtoInjectionV2LabelManageReq(
+                    add_tags=[tag],
+                ),
+            )
+        except Exception as e:
+            logger.error(e)
 
     # Summary statistics
     valid_count = len(valid_datapacks)
@@ -974,8 +977,8 @@ def patch_detection():
     cpu = os.cpu_count()
     assert cpu is not None, "Cannot determine CPU count"
 
-    parallel = cpu // 4
-    results = fmap_processpool(tasks, parallel=parallel, cpu_limit_each=4, ignore_exceptions=False)
+    parallel = cpu // 2
+    results = fmap_processpool(tasks, parallel=parallel, cpu_limit_each=2, ignore_exceptions=True)
 
     # Create temp directory if it doesn't exist
     temp_dir = Path("temp")
