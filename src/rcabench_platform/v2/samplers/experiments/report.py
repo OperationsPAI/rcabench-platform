@@ -146,7 +146,7 @@ def generate_sampler_perf_report(
         return
 
     # Combine all performance data
-    combined_perf_df = pl.concat(all_perf_data, rechunk=True)
+    combined_perf_df = pl.concat(all_perf_data, how="vertical_relaxed", rechunk=True)
 
     # Calculate aggregate statistics
     agg_perf_df = (
@@ -447,10 +447,12 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
     This handles cases where sampling resulted in 0 traces, causing coverage metrics
     and other derived columns to be missing.
     """
-    # Define all expected columns with their default values
+    # Define all expected columns with their default values in correct order
     expected_columns = {
         "sampled_count": 0,
         "total_traces": 0,
+        "total_entry_types": 0,
+        "sampled_entry_types": 0,
         "controllability": 0.0,
         "comprehensiveness": 0.0,  # API coverage
         "path_coverage": 0.0,
@@ -482,6 +484,8 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
         # New metrics
         "shannon_entropy": 0.0,
         "benefit_cost_ratio": 0.0,
+        "intra_sample_dissimilarity": 0.0,
+        "avg_anomaly_score": 0.0,
     }
 
     # Add missing columns with default values
@@ -494,5 +498,11 @@ def _normalize_perf_schema(perf_df: pl.DataFrame) -> pl.DataFrame:
 
     if missing_columns:
         perf_df = perf_df.with_columns(missing_columns)
+
+    # Ensure consistent column ordering by selecting in expected order
+    # Only select columns that exist (some might be missing in old data)
+    available_columns = [col for col in expected_columns.keys() if col in perf_df.columns]
+    if available_columns:
+        perf_df = perf_df.select(available_columns)
 
     return perf_df
