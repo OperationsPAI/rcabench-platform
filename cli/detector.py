@@ -868,7 +868,7 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     assert dataset_path.exists(), f"Dataset path does not exist: {dataset_path}"
 
     # Get all datapack directories
-    datapack_paths = [p for p in dataset_path.iterdir() if p.is_dir()]
+    datapack_paths = [p for p in dataset_path.iterdir() if p.is_dir() and not p.name.startswith("drain")]
     total_datapacks = len(datapack_paths)
 
     if total_datapacks == 0:
