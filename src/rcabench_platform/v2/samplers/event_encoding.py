@@ -36,26 +36,25 @@ class EventIDManager:
         self.SPAN_START_END = 5000
         self.SPAN_END_BEGIN = 5001
         self.SPAN_END_END = 10000
-        self.SPECIAL_EVENT_START = 10001
+        self.STATUS_ERROR_BEGIN = 10001
+        self.STATUS_ERROR_END = 15000
+        self.PERF_DEGRADATION_BEGIN = 15001
+        self.PERF_DEGRADATION_END = 20000
         self.LOG_TEMPLATE_START = 20001
 
         # Current counters
         self.span_start_counter = self.SPAN_START_BEGIN
         self.span_end_counter = self.SPAN_END_BEGIN
-        self.special_event_counter = self.SPECIAL_EVENT_START
+        self.status_error_counter = self.STATUS_ERROR_BEGIN
+        self.perf_degradation_counter = self.PERF_DEGRADATION_BEGIN
         self.log_template_counter = self.LOG_TEMPLATE_START
 
         # Mappings
         self.span_start_to_id: dict[str, int] = {}
         self.span_end_to_id: dict[str, int] = {}
-        self.special_event_to_id: dict[str, int] = {}
+        self.status_error_to_id: dict[str, int] = {}  # service_span_name -> status_error_id
+        self.perf_degradation_to_id: dict[str, int] = {}  # service_span_name -> perf_degradation_id
         self.log_template_to_id: dict[str, int] = {}
-
-        # Initialize fixed special events
-        self.special_event_to_id["status_error"] = self.special_event_counter
-        self.special_event_counter += 1
-        self.special_event_to_id["perf_degradation"] = self.special_event_counter
-        self.special_event_counter += 1
 
     def extract_span_names_from_traces(self, traces_df: pl.DataFrame) -> None:
         """Extract unique service_name + span_name combinations and assign IDs"""
@@ -84,8 +83,23 @@ class EventIDManager:
                     self.span_end_to_id[service_span_name] = self.span_end_counter
                     self.span_end_counter += 1
 
+            # Pre-assign status error ID for this service_span_name
+            if service_span_name not in self.status_error_to_id:
+                if self.status_error_counter <= self.STATUS_ERROR_END:
+                    self.status_error_to_id[service_span_name] = self.status_error_counter
+                    self.status_error_counter += 1
+
+            # Pre-assign performance degradation ID for this service_span_name
+            if service_span_name not in self.perf_degradation_to_id:
+                if self.perf_degradation_counter <= self.PERF_DEGRADATION_END:
+                    self.perf_degradation_to_id[service_span_name] = self.perf_degradation_counter
+                    self.perf_degradation_counter += 1
+
         logger.debug(
-            f"Assigned {len(self.span_start_to_id)} span start IDs and {len(self.span_end_to_id)} span end IDs"
+            f"Assigned {len(self.span_start_to_id)} span start IDs, "
+            f"{len(self.span_end_to_id)} span end IDs, "
+            f"{len(self.status_error_to_id)} status error IDs, "
+            f"{len(self.perf_degradation_to_id)} performance degradation IDs"
         )
 
     def get_span_start_id(self, service_span_name: str) -> int:
@@ -96,9 +110,25 @@ class EventIDManager:
         """Get event ID for span end"""
         return self.span_end_to_id.get(service_span_name, self.SPAN_END_END)
 
-    def get_special_event_id(self, event_type: str) -> int:
-        """Get event ID for special events"""
-        return self.special_event_to_id.get(event_type, self.special_event_counter - 1)
+    def get_status_error_id(self, service_span_name: str) -> int:
+        """Get event ID for status error specific to a service_span_name"""
+        if service_span_name not in self.status_error_to_id:
+            if self.status_error_counter <= self.STATUS_ERROR_END:
+                self.status_error_to_id[service_span_name] = self.status_error_counter
+                self.status_error_counter += 1
+            else:
+                return self.STATUS_ERROR_END  # Fallback ID if range exhausted
+        return self.status_error_to_id[service_span_name]
+
+    def get_perf_degradation_id(self, service_span_name: str) -> int:
+        """Get event ID for performance degradation specific to a service_span_name"""
+        if service_span_name not in self.perf_degradation_to_id:
+            if self.perf_degradation_counter <= self.PERF_DEGRADATION_END:
+                self.perf_degradation_to_id[service_span_name] = self.perf_degradation_counter
+                self.perf_degradation_counter += 1
+            else:
+                return self.PERF_DEGRADATION_END  # Fallback ID if range exhausted
+        return self.perf_degradation_to_id[service_span_name]
 
     def get_log_event_id(self, template_id: str) -> int:
         """Get event ID for log template"""
@@ -244,7 +274,7 @@ class EventEncoder:
 
             # Add status error event (if applicable)
             if span_data.get("attr.status_code") == "Error":
-                error_id = self.event_manager.get_special_event_id("status_error")
+                error_id = self.event_manager.get_status_error_id(service_span_name)
                 span_events.append(error_id)
 
             # Add performance degradation event (if applicable)
@@ -252,7 +282,7 @@ class EventEncoder:
             duration_ms = duration / 1_000_000.0  # Convert nanoseconds to milliseconds
             p90_threshold = self.performance_thresholds.get(service_span_name)
             if p90_threshold and duration_ms > p90_threshold:
-                perf_id = self.event_manager.get_special_event_id("perf_degradation")
+                perf_id = self.event_manager.get_perf_degradation_id(service_span_name)
                 span_events.append(perf_id)
 
             # End with span end (different ID from start)
