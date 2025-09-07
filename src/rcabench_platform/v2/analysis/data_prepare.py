@@ -123,6 +123,8 @@ class Item:
 
     @property
     def service_coverage(self) -> float:
+        if not self.service_names or len(self.service_names) == 0:
+            return 0.0
         return len(self.service_names_by_trace) / len(self.service_names)
 
 
@@ -260,6 +262,7 @@ def process_item(
     injection_mapping: DtoInjectionFieldMappingResp,
     injection_resources: HandlerResources,
     metrics: list[str],
+    simple: bool = False,
 ) -> Item | None:
     profiler = global_profiler
 
@@ -280,95 +283,99 @@ def process_item(
         trace_length: Counter[int] = Counter()
         duration: timedelta = timedelta(seconds=0)
         trace_count: int = 0
+        log_lines: dict[str, int] = {}
+        datapack_metric_values: dict[str, int] = {}
+        injection_metric_counts: dict[str, int] = {}
+        trace_service_length = Counter()
 
         assert injection.labels is not None
         tags = [label.value for label in injection.labels if label.key == "tag" and label.value]
         label_mapping = {label.key: label.value for label in injection.labels if label.key and label.value}
 
-        datapack_metric_values: dict[str, int] = {}
-        for metric in metrics:
-            value = 0
-            value_str = label_mapping.get(metric)
-            if value_str is not None:
-                try:
-                    value = int(value_str)
-                except ValueError:
-                    if value_str.lower() in ("inf", "infinity", "+inf"):
-                        value = 999999999
-                    elif value_str.lower() in ("-inf", "-infinity"):
-                        value = -999999999
-                    else:
-                        try:
-                            float_value = float(value_str)
-                            if float_value == float("inf") or float_value == float("-inf"):
-                                value = 999999999
-                            else:
-                                value = int(float_value)
-                        except ValueError:
-                            value = 0
+        if not simple:
+            for metric in metrics:
+                value = 0
+                value_str = label_mapping.get(metric)
+                if value_str is not None:
+                    try:
+                        value = int(value_str)
+                    except ValueError:
+                        if value_str.lower() in ("inf", "infinity", "+inf"):
+                            value = 999999999
+                        elif value_str.lower() in ("-inf", "-infinity"):
+                            value = -999999999
+                        else:
+                            try:
+                                float_value = float(value_str)
+                                if float_value == float("inf") or float_value == float("-inf"):
+                                    value = 999999999
+                                else:
+                                    value = int(float_value)
+                            except ValueError:
+                                value = 0
 
-            datapack_metric_values[metric] = value
+                datapack_metric_values[metric] = value
 
-        metric_df = pl.concat(
-            [
-                pl.scan_parquet(datapack_path / "normal_metrics.parquet"),
-                pl.scan_parquet(datapack_path / "abnormal_metrics.parquet"),
-                pl.scan_parquet(datapack_path / "normal_metrics_sum.parquet"),
-                pl.scan_parquet(datapack_path / "abnormal_metrics_sum.parquet"),
-            ]
-        )
-    with profiler.profile("scan_metric"):
-        service_names.update(set(metric_df.select("service_name").unique().collect().to_series().to_list()))
+            metric_df = pl.concat(
+                [
+                    pl.scan_parquet(datapack_path / "normal_metrics.parquet"),
+                    pl.scan_parquet(datapack_path / "abnormal_metrics.parquet"),
+                    pl.scan_parquet(datapack_path / "normal_metrics_sum.parquet"),
+                    pl.scan_parquet(datapack_path / "abnormal_metrics_sum.parquet"),
+                ]
+            )
+            with profiler.profile("scan_metric"):
+                service_names.update(set(metric_df.select("service_name").unique().collect().to_series().to_list()))
 
-        metric_count_df = metric_df.select("metric").collect()
-        injection_metric_counts: dict[str, int] = dict(
-            metric_count_df.group_by("metric").agg(pl.len().alias("count")).iter_rows()
-        )
-    with profiler.profile("scan_trace"):
-        trace_df = pl.concat(
-            [
-                pl.scan_parquet(datapack_path / "normal_traces.parquet"),
-                pl.scan_parquet(datapack_path / "abnormal_traces.parquet"),
-            ]
-        )
+                metric_count_df = metric_df.select("metric").collect()
+                injection_metric_counts: dict[str, int] = dict(
+                    metric_count_df.group_by("metric").agg(pl.len().alias("count")).iter_rows()
+                )
+            with profiler.profile("scan_trace"):
+                trace_df = pl.concat(
+                    [
+                        pl.scan_parquet(datapack_path / "normal_traces.parquet"),
+                        pl.scan_parquet(datapack_path / "abnormal_traces.parquet"),
+                    ]
+                )
 
-        trace_service_names = set(trace_df.select("service_name").unique().collect().to_series().to_list())
-        service_names_by_trace.update(trace_service_names)
-        service_names.update(trace_service_names)
+                trace_service_names = set(trace_df.select("service_name").unique().collect().to_series().to_list())
+                service_names_by_trace.update(trace_service_names)
+                service_names.update(trace_service_names)
 
-        trace_count = (
-            trace_df.filter((pl.col("parent_span_id") == "").or_(pl.col("parent_span_id").is_null()))
-            .select(pl.len())
-            .collect()
-            .item()
-        )
+                trace_count = (
+                    trace_df.filter((pl.col("parent_span_id") == "").or_(pl.col("parent_span_id").is_null()))
+                    .select(pl.len())
+                    .collect()
+                    .item()
+                )
 
-        trace_spans = trace_df.select(["trace_id", "span_id", "parent_span_id"]).collect()
-        depth_results = calculate_trace_length(trace_spans)
-        service_length = calculate_trace_service_count(trace_df)
+                trace_spans = trace_df.select(["trace_id", "span_id", "parent_span_id"]).collect()
+                depth_results = calculate_trace_length(trace_spans)
+                service_length = calculate_trace_service_count(trace_df)
 
-        trace_service_length = Counter(service_length)
-        trace_length = Counter(depth_results)
+                trace_service_length = Counter(service_length)
+                trace_length = Counter(depth_results)
 
-        min_time = trace_df.select(pl.col("time").min().alias("min_time")).collect().item()
-        max_time = trace_df.select(pl.col("time").max().alias("max_time")).collect().item()
-        duration = max_time - min_time
+                min_time = trace_df.select(pl.col("time").min().alias("min_time")).collect().item()
+                max_time = trace_df.select(pl.col("time").max().alias("max_time")).collect().item()
+                duration = max_time - min_time
 
-    with profiler.profile("scan_log"):
-        log_df = pl.concat(
-            [
-                pl.scan_parquet(datapack_path / "normal_logs.parquet"),
-                pl.scan_parquet(datapack_path / "abnormal_logs.parquet"),
-            ]
-        )
+            with profiler.profile("scan_log"):
+                log_df = pl.concat(
+                    [
+                        pl.scan_parquet(datapack_path / "normal_logs.parquet"),
+                        pl.scan_parquet(datapack_path / "abnormal_logs.parquet"),
+                    ]
+                )
 
-        log_service_counts = log_df.group_by("service_name").agg(pl.len().alias("count")).collect()
-        log_lines: dict[str, int] = {
-            row["service_name"]: row["count"] for row in log_service_counts.iter_rows(named=True)
-        }
-        log_service_names = set(log_df.select("service_name").unique().collect().to_series().to_list())
-        service_names.update(log_service_names)
-        service_names.remove("")
+                log_service_counts = log_df.group_by("service_name").agg(pl.len().alias("count")).collect()
+                log_lines: dict[str, int] = {
+                    row["service_name"]: row["count"] for row in log_service_counts.iter_rows(named=True)
+                }
+                log_service_names = set(log_df.select("service_name").unique().collect().to_series().to_list())
+                service_names.update(log_service_names)
+                service_names.remove("")
 
         anomaly_degree = "no"
         if "absolute_anomaly" in tags:
@@ -401,6 +408,7 @@ def batch_process_item(
     input_items: list[InputItem],
     metrics: list[str],
     namespace: str,
+    simple: bool = False,
 ) -> list[Item]:
     injection_mapping, injection_resources = get_resources(namespace)
 
@@ -413,6 +421,7 @@ def batch_process_item(
             injection_mapping,
             injection_resources,
             metrics,
+            simple,
         )
         for input_item in input_items
     ]
@@ -432,6 +441,7 @@ def build_items_with_cache(
     input_items: list[InputItem],
     metrics: list[str],
     namespace: str,
+    simple: bool = False,
 ) -> list[Item]:
     if not output_pkl_path.parent.exists():
         output_pkl_path.parent.mkdir(parents=True, exist_ok=True)
@@ -439,7 +449,7 @@ def build_items_with_cache(
     # if has_recent_file(output_pkl_path, seconds=3600):
     #     return load_pickle(path=output_pkl_path)
 
-    items = batch_process_item(input_items, metrics, namespace)
+    items = batch_process_item(input_items, metrics, namespace, simple)
 
     save_pickle(items, path=output_pkl_path)
 

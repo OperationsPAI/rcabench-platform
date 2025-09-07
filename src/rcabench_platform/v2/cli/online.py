@@ -470,7 +470,7 @@ def submit_unevaluated_execution(
 
     # Group unevaluated pairs by algorithm
     algo_datapack_map: dict[str, list[str]] = {}
-    for datapack_name, algorithm_name in unevaluated_pairs:
+    for algorithm_name, datapack_name in unevaluated_pairs:
         if algorithm_name not in algo_datapack_map:
             algo_datapack_map[algorithm_name] = []
         algo_datapack_map[algorithm_name].append(datapack_name)

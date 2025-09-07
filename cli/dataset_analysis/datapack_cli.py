@@ -10,7 +10,7 @@ from rcabench_platform.v2.analysis.aggregation import (
     aggregate,
 )
 from rcabench_platform.v2.analysis.algo_perf_vis import (
-    algo_failure_by_fault_type_bar,
+    algo_success_by_algo,
     algo_perf_by_fault_type,
     algo_perf_by_groups,
     dataset_anomaly_distribution,
@@ -46,7 +46,7 @@ load_dotenv()
 
 
 @app.command(name="visualize")
-def visualize(dataset_id: int, execution_tag: str | None = None) -> None:
+def visualize(dataset_id: int, simple: bool, execution_tag: str | None = None) -> None:
     items, _ = get_execution_item(ALGORITHMS, dataset_id=dataset_id, execution_tag=execution_tag)
     logger.info(f"get {len(items)} items for visualization")
     count_items = build_items_with_cache(
@@ -54,15 +54,16 @@ def visualize(dataset_id: int, execution_tag: str | None = None) -> None:
         input_items=items,
         metrics=METRICS,
         namespace=DEFAULT_NAMESPACE,
+        simple=simple,
     )
 
     df = aggregate(count_items)
-    save_parquet(df, path="temp/algo/aggregated_result.parquet")
+    save_parquet(df, path=f"temp/algo/aggregated_result_{simple}.parquet")
 
 
 @app.command()
 def analysis():
-    df = pl.read_parquet("temp/algo/aggregated_result.parquet")
+    df = pl.read_parquet("temp/algo/aggregated_result_False.parquet")
 
     aggregator = DuckDBAggregator(df)
 
@@ -75,29 +76,20 @@ def analysis():
 
     try:
         vis_hook(aggregator.dataset_overall(), "dataset_overall")
-        vis_hook(aggregator.dataset_fault_type(), "dataset_fault_type")
-
-        dataset_anomaly_distribution(aggregator.dataset_fault_type(), Path("temp/algo/rq4_generation_process.pdf"))
-
-        # vis_hook(aggregator.perf_overall(), "overall_perf")
-        # vis_hook(aggregator.perf_group_by_fault_category(), "fault_category", True)
-
+        vis_hook(aggregator.perf_overall(), "overall_perf")
         vis_hook(aggregator.perf_common_failures(1, 3), "common_failures")
-        # algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/fault_type.pdf"))
+        algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_fault_type.pdf"))
+        algo_success_by_algo(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_algo.pdf"))
+    finally:
+        aggregator.close()
 
-        failure_data = aggregator.perf_algo_failure_by_fault_type()
-        vis_hook(failure_data, "algo_failure_by_fault_type")
 
-        # Create bar chart visualization for failure patterns
-        algo_failure_by_fault_type_bar(failure_data, Path("temp/algo/rq5_failure_distribution_by_fault_type.pdf"))
-        # sdd1 = aggregator.perf_sdd_k(1)
-        # sdd3 = aggregator.perf_sdd_k(3)
-        # sdd5 = aggregator.perf_sdd_k(5)
-
-        # print_dataframe(sdd5)
-
-        # aggregator.print_schema()
-
+@app.command()
+def rq4():
+    df = pl.read_parquet("temp/algo/aggregated_result_true.parquet")
+    aggregator = DuckDBAggregator(df)
+    try:
+        dataset_anomaly_distribution(aggregator.dataset_fault_type(), Path("temp/algo/rq4_generation_process.pdf"))
     finally:
         aggregator.close()
 

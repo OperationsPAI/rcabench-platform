@@ -863,7 +863,7 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
 
 @app.command()
 @timeit()
-def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
+def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, Any]:
     dataset_path = Path("data") / "rcabench_dataset"
     assert dataset_path.exists(), f"Dataset path does not exist: {dataset_path}"
 
@@ -881,7 +881,7 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     assert cpu is not None, "Cannot determine CPU count"
     parallel = max(1, cpu // 4)
 
-    validation_tasks = [functools.partial(valid, dp) for dp in datapack_paths]
+    validation_tasks = [functools.partial(valid, dp, force) for dp in datapack_paths]
 
     # Run validation in parallel
     validation_results = fmap_processpool(validation_tasks, parallel=parallel, cpu_limit_each=1, ignore_exceptions=True)

@@ -55,9 +55,6 @@ def aggregate(items: list[Item]) -> pl.DataFrame:
     data_rows = []
 
     for item in items:
-        assert "SDD@1" in item.datapack_metric_values
-        assert "CPL" in item.datapack_metric_values
-        assert "RootServiceDegree" in item.datapack_metric_values
         row = {
             "injection_id": item._injection.id,
             "injection_name": item._injection.injection_name,
@@ -91,11 +88,11 @@ def aggregate(items: list[Item]) -> pl.DataFrame:
             "max_service_length": max(item.service_length.keys()) if item.service_length else 0,
             "min_trace_length": min(item.trace_length.keys()) if item.trace_length else 0,
             "min_service_length": min(item.service_length.keys()) if item.service_length else 0,
-            "SDD@1": item.datapack_metric_values.get("SDD@1"),
-            "SDD@3": item.datapack_metric_values.get("SDD@3"),
-            "SDD@5": item.datapack_metric_values.get("SDD@5"),
-            "CPL": item.datapack_metric_values.get("CPL"),
-            "RootServiceDegree": item.datapack_metric_values.get("RootServiceDegree"),
+            "SDD@1": item.datapack_metric_values.get("SDD@1", np.nan),
+            "SDD@3": item.datapack_metric_values.get("SDD@3", np.nan),
+            "SDD@5": item.datapack_metric_values.get("SDD@5", np.nan),
+            "CPL": item.datapack_metric_values.get("CPL", np.nan),
+            "RootServiceDegree": item.datapack_metric_values.get("RootServiceDegree", np.nan),
         }
 
         for metric_name, metric_value in item.datapack_metric_values.items():
@@ -723,94 +720,6 @@ class DuckDBAggregator:
         except Exception as e:
             logger.error(f"Failed to execute dataset fault type analysis: {e}")
             logger.debug(f"Query was: {query}")
-            return pl.DataFrame()
-
-    def perf_algo_failure_by_fault_type(self) -> pl.DataFrame:
-        """
-        Analyze algorithm failure patterns by fault type across different top@k metrics.
-
-        Returns:
-            pl.DataFrame: DataFrame with columns: algorithm, top@k, fault_type, count, total_count, ratio
-        """
-        algo_columns = self._get_algo_columns()
-
-        if not algo_columns:
-            logger.warning("No algorithm columns found")
-            return pl.DataFrame()
-
-        # Extract algorithm names
-        algorithms = self._extract_algorithm_names(algo_columns)
-
-        if not algorithms:
-            logger.warning("No valid algorithm names found")
-            return pl.DataFrame()
-
-        result_rows = []
-
-        # Analyze for each top@k metric (1, 3, 5)
-        for k in [1, 3, 5]:
-            for algo in algorithms:
-                algo_topk_col = f"algo_{algo}_top{k}"
-
-                if algo_topk_col not in algo_columns:
-                    continue
-
-                # Query for failures (top@k = 0 or NULL) grouped by fault_type
-                fail_query = f"""
-                SELECT 
-                    fault_type,
-                    COUNT(*) AS fail_count
-                FROM data
-                WHERE ({algo_topk_col} = 0 OR {algo_topk_col} IS NULL)
-                GROUP BY fault_type
-                ORDER BY fail_count DESC
-                """
-
-                # Query for total count by fault_type
-                total_query = f"""
-                SELECT 
-                    fault_type,
-                    COUNT(*) AS total_count
-                FROM data
-                WHERE {algo_topk_col} IS NOT NULL
-                GROUP BY fault_type
-                """
-
-                try:
-                    fail_result = self._custom_sql(fail_query)
-                    total_result = self._custom_sql(total_query)
-
-                    # Convert to dictionaries for easier lookup
-                    fail_dict = {row["fault_type"]: row["fail_count"] for row in fail_result.iter_rows(named=True)}
-                    total_dict = {row["fault_type"]: row["total_count"] for row in total_result.iter_rows(named=True)}
-
-                    # Combine results
-                    for fault_type in total_dict.keys():
-                        fail_count = fail_dict.get(fault_type, 0)
-                        total_count = total_dict[fault_type]
-                        ratio = fail_count / total_count if total_count > 0 else 0.0
-
-                        result_rows.append(
-                            {
-                                "algorithm": algo,
-                                "top@k": f"top@{k}",
-                                "fault_type": fault_type,
-                                "count": fail_count,
-                                "total_count": total_count,
-                                "ratio": round(ratio, 4),
-                            }
-                        )
-
-                except Exception as e:
-                    logger.error(f"Failed to analyze failures for algorithm {algo} at top@{k}: {e}")
-                    continue
-
-        if result_rows:
-            result_df = pl.DataFrame(result_rows)
-            # Sort by algorithm, top@k, and failure count (descending)
-            result_df = result_df.sort(["algorithm", "top@k", "count"], descending=[False, False, True])
-            return result_df
-        else:
             return pl.DataFrame()
 
     def dataset_overall(self) -> pl.DataFrame:

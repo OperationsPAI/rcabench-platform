@@ -7,6 +7,44 @@ import polars as pl
 
 from ..logging import logger
 
+# Algorithm name mapping for display
+ALGORITHM_NAME_MAPPING = {
+    "art": "Art",
+    "baro": "Baro",
+    "diagfusion": "DiagFusion",
+    "eadro": "Eadro",
+    "microdig": "MicroDig",
+    "microhecl": "MicroHECL",
+    "microrank": "MicroRank",
+    "microrca": "MicroRCA",
+    "shapleyiq": "ShapleyIQ",
+    "simplerca": "SimpleRCA",
+    "nezha": "Nezha",
+    "run": "RUN",
+}
+BASE_COLORS = [
+    "#dd9f94",
+    "#f5e8bd",
+    "#b0bda0",
+    "#b87264",
+    "#464666",
+    "#7da4a3",
+    "#b3b6be",
+    "#a0acc8",
+    "#b0bfa1",
+    "#db716e",
+    "#be958a",
+    "#e4ce90",
+    "#c98849",
+    "#785177",
+    "#56777e",
+    "#c5ccdb",
+]
+
+
+def get_display_algorithm_name(algorithm: str) -> str:
+    return ALGORITHM_NAME_MAPPING.get(algorithm.lower(), algorithm)
+
 
 def algo_perf_by_groups(
     df: pl.DataFrame,
@@ -20,7 +58,6 @@ def algo_perf_by_groups(
         logger.warning("No 'algorithm' column found in data")
         return
 
-    # Identify group columns (exclude algorithm and metric columns)
     metric_cols = ["top1", "mrr", "avg5"]
     group_cols = [col for col in df.columns if col not in ["algorithm", "time", "count"] + metric_cols]
     if not group_cols:
@@ -55,9 +92,7 @@ def algo_perf_by_groups(
         logger.warning("No group data found")
         return
 
-    # Set color mapping for metrics
-    colors = cm.get_cmap("Set1")(np.linspace(0, 1, len(available_metrics)))
-    metric_colors = {metric: colors[i] for i, metric in enumerate(available_metrics)}
+    metric_colors = {metric: BASE_COLORS[i % len(BASE_COLORS)] for i, metric in enumerate(available_metrics)}
 
     # Calculate subplot layout
     n_groups = len(groups)
@@ -139,7 +174,9 @@ def algo_perf_by_groups(
         ax.set_title(title_text, fontsize=11, fontweight="bold")
 
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(algorithms, fontsize=9, rotation=45, ha="right")
+        ax.set_xticklabels(
+            [get_display_algorithm_name(algo) for algo in algorithms], fontsize=9, rotation=45, ha="right"
+        )
         ax.grid(True, alpha=0.3, axis="y")
 
         # Set y-axis limits to accommodate labels
@@ -221,16 +258,15 @@ def algo_perf_by_fault_type(
         return
 
     # Set color mapping for metrics
-    colors = cm.get_cmap("Set1")(np.linspace(0, 1, len(available_metrics)))
-    metric_colors = {metric: colors[i] for i, metric in enumerate(available_metrics)}
+    metric_colors = {metric: BASE_COLORS[i % len(BASE_COLORS)] for i, metric in enumerate(available_metrics)}
 
     # Calculate subplot layout
     n_fault_types = len(fault_types)
-    cols = min(6, n_fault_types)  # Maximum 4 columns per row
+    cols = min(5, n_fault_types)  # Maximum 4 columns per row
     rows = (n_fault_types + cols - 1) // cols  # Ceiling division
 
     # Adjust figure size based on actual layout
-    adjusted_figsize = (cols * 5, rows * 4)
+    adjusted_figsize = (cols * 5, rows * 2)
 
     # Create figure with subplots
     fig, axes = plt.subplots(rows, cols, figsize=adjusted_figsize)
@@ -291,7 +327,9 @@ def algo_perf_by_fault_type(
         ax.set_title(title_text, fontsize=11, fontweight="bold")
 
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(algorithms, fontsize=9, rotation=45, ha="right")
+        ax.set_xticklabels(
+            [get_display_algorithm_name(algo) for algo in algorithms], fontsize=9, rotation=45, ha="right"
+        )
         ax.grid(True, alpha=0.3, axis="y")
 
         # Set y-axis limits to accommodate labels
@@ -336,7 +374,7 @@ def algo_perf_by_fault_type(
     plt.show()
 
 
-def algo_failure_by_fault_type_bar(
+def algo_success_by_algo(
     df: pl.DataFrame,
     output_file: Path | None = None,
 ) -> None:
@@ -344,10 +382,38 @@ def algo_failure_by_fault_type_bar(
         logger.warning("No data available to generate chart")
         return
 
-    required_cols = ["algorithm", "top@k", "fault_type", "count", "total_count", "ratio"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        logger.warning(f"Missing required columns: {missing_cols}")
+    # Check if input is wide format (from perf_group_by_fault_type) or long format
+    wide_format_cols = ["algorithm", "fault_type", "top1", "top3", "top5"]
+    long_format_cols = ["algorithm", "top@k", "fault_type", "success_rate"]
+
+    if all(col in df.columns for col in wide_format_cols):
+        # Convert wide format to long format
+        df = (
+            df.select(
+                [
+                    pl.col("algorithm"),
+                    pl.col("fault_type"),
+                    pl.col("top1").alias("top@1"),
+                    pl.col("top3").alias("top@3"),
+                    pl.col("top5").alias("top@5"),
+                ]
+            )
+            .unpivot(
+                index=["algorithm", "fault_type"],
+                on=["top@1", "top@3", "top@5"],
+                variable_name="top@k",
+                value_name="success_rate",
+            )
+            .filter(pl.col("success_rate").is_not_null())
+        )
+    elif all(col in df.columns for col in long_format_cols):
+        # Already in long format, use as is
+        pass
+    else:
+        logger.warning(
+            f"DataFrame must have either wide format columns {wide_format_cols} "
+            f"or long format columns {long_format_cols}"
+        )
         return
 
     topk_values = df["top@k"].unique().sort().to_list()
@@ -357,13 +423,13 @@ def algo_failure_by_fault_type_bar(
         logger.warning("No valid top@k or algorithm data found")
         return
 
-    # Two row layout with algorithms distributed across rows
+    # Layout configuration
     n_algos = len(algorithms)
-    n_cols = 4  # At most half the algorithms per row, minimum 3 columns
-    n_rows = 3
+    n_cols = min(4, n_algos)  # At most 4 columns
+    n_rows = (n_algos + n_cols - 1) // n_cols  # Ceiling division
 
     fig_width = 20
-    fig_height = 6
+    fig_height = 6 if n_rows <= 2 else 9
 
     # Create figure with subplots
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
@@ -388,7 +454,7 @@ def algo_failure_by_fault_type_bar(
                 # For HTTP-related faults, keep HTTP prefix
                 parts = fault_type.replace("HTTP", "").replace("Request", "Req").replace("Response", "Resp")
                 parts = parts.replace("Replace", "Repl").replace("Abort", "Abrt").replace("Delay", "Del")
-                abbrev = parts
+                abbrev = "HTTP" + parts
             elif "JVM" in fault_type:
                 # For JVM-related faults, keep JVM prefix
                 parts = fault_type.replace("JVM", "").replace("Memory", "Mem").replace("Latency", "Lat")
@@ -406,31 +472,32 @@ def algo_failure_by_fault_type_bar(
                 abbrev = fault_type.replace("Memory", "Mem")
             else:
                 abbrev = fault_type
-
             fault_type_abbrev[fault_type] = abbrev
         else:
             fault_type_abbrev[fault_type] = "N/A"
 
     topk_colors = {
-        "top@1": "#c67c7c",
-        "top@3": "#d4a574",
-        "top@5": "#7db57d",
+        "top@1": BASE_COLORS[0],
+        "top@3": BASE_COLORS[1],
+        "top@5": BASE_COLORS[2],
     }
 
-    topk_alphas = {
-        "top@1": 1,
-        "top@3": 1,
-        "top@5": 1,
-    }
+    # Calculate bar width and positions for overlapping bars
+    bar_width = 0.6
+    x_positions = np.arange(len(all_fault_types))
 
     for idx, algorithm in enumerate(algorithms):
         ax = axes[idx]
 
         fault_types_abbrev = [fault_type_abbrev[ft] for ft in all_fault_types]
-        x_positions = np.arange(len(all_fault_types))
 
-        for topk in topk_values:
-            failure_percentages = []
+        # Create overlapping bars for each top@k, drawing in order: top@5, top@3, top@1
+        # This ensures top@1 (smallest) is drawn on top
+        for topk in ["top@5", "top@3", "top@1"]:
+            if topk not in topk_values:
+                continue
+
+            success_rates = []
 
             for fault_type in all_fault_types:
                 subset = df.filter(
@@ -440,33 +507,31 @@ def algo_failure_by_fault_type_bar(
                 )
 
                 if subset.height > 0:
-                    # Calculate failure percentage
-                    ratio = subset["ratio"].to_list()[0]
-                    failure_percentage = ratio * 100  # Convert to percentage
-                    failure_percentages.append(failure_percentage)
+                    success_rate = subset["success_rate"].to_list()[0]
+                    success_rates.append(success_rate)
                 else:
-                    failure_percentages.append(0.0)
+                    success_rates.append(0.0)
 
             ax.bar(
                 x_positions,
-                failure_percentages,
-                width=0.6,
-                color=topk_colors.get(topk, "steelblue"),
-                alpha=topk_alphas.get(topk, 0.7),
+                success_rates,
+                width=bar_width,
+                color=topk_colors.get(topk, BASE_COLORS[0]),
+                alpha=0.8,
                 edgecolor="black",
                 linewidth=0.3,
                 label=topk.upper() if idx == 0 else "",
             )
 
-        ax.set_title(f"{algorithm}", fontsize=12, fontweight="bold")
+        ax.set_title(f"{get_display_algorithm_name(algorithm)}", fontsize=12, fontweight="bold")
 
         # Set x-axis
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(fault_types_abbrev, rotation=45, ha="right", fontsize=7)
+        ax.set_xticklabels(fault_types_abbrev, rotation=45, ha="right", fontsize=6)
 
         if idx % n_cols == 0:
-            ax.set_ylabel("Failure Rate (%)", fontsize=11)
-        ax.set_ylim(0, 100)
+            ax.set_ylabel("Success Rate", fontsize=11)
+        ax.set_ylim(0, 1)  # 0-1 range for success rates
 
         # Add grid for better readability
         ax.grid(True, alpha=0.3, axis="y")
@@ -483,7 +548,7 @@ def algo_failure_by_fault_type_bar(
             loc="upper center",
             bbox_to_anchor=(0.5, 0.95),
             ncol=len(topk_values),
-            fontsize=9,
+            fontsize=10,
         )
 
     # Adjust layout
@@ -516,12 +581,6 @@ def dataset_anomaly_distribution(
     df: pl.DataFrame,
     output_file: Path | None = None,
 ) -> None:
-    """Visualize anomaly distribution by fault type using grouped bars.
-
-    Expects a DataFrame like the output of `dataset_fault_type` with columns:
-    - fault_type, fault_category, no, absolute, may, total_count
-    """
-    # Basic validations
     if df.height == 0:
         logger.warning("No data available to generate chart")
         return
@@ -532,7 +591,6 @@ def dataset_anomaly_distribution(
         logger.warning(f"Missing required columns: {missing}")
         return
 
-    # Sort by total_count desc if available, otherwise keep as-is
     if "total_count" in df.columns:
         plot_df = df.sort("total_count", descending=True)
     else:
@@ -612,9 +670,9 @@ def dataset_anomaly_distribution(
     bar_w = group_width / 3
 
     colors = {
-        "no": "#6baed6",  # blue-ish
-        "may": "#fd8d3c",  # orange
-        "absolute": "#31a354",  # green
+        "no": BASE_COLORS[0],
+        "may": BASE_COLORS[1],
+        "absolute": BASE_COLORS[2],
     }
 
     # Helper to compute max for range decisions

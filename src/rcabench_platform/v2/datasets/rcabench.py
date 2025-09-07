@@ -246,7 +246,7 @@ def rcabench_split_train_test(
     return train_datapacks, test_datapacks
 
 
-def valid(path: Path) -> tuple[Path, bool]:
+def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
     path_obj = path
 
     if not path_obj.exists() or not path_obj.is_dir():
@@ -257,10 +257,11 @@ def valid(path: Path) -> tuple[Path, bool]:
     valid_cache = path_obj / ".valid"
     invalid_cache = path_obj / ".invalid"
 
-    if valid_cache.exists():
-        return path, True
-    elif invalid_cache.exists():
-        return path, False
+    if not force_refresh:
+        if valid_cache.exists():
+            return path, True
+        elif invalid_cache.exists():
+            return path, False
 
     required_files = [
         # Parquet files
