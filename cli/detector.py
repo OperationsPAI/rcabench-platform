@@ -893,8 +893,25 @@ def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, A
     with RCABenchClient() as client:
         injection_api = InjectionsApi(client)
 
+    black_list = [
+        "admin",
+        "voucher",
+        "avatar",
+        "ts-gateway-service",
+        "execute",
+        "ts-news-service",
+        "ts-notification-service",
+        "ts-ticket-office-service",
+        "ts-wait-order-service",
+        "ts-food-delivery-service",
+        "ts-delivery-service",
+    ]
     for datapack_path, is_valid in tqdm(validation_results):
-        tag = "valid" if is_valid else "invalid"
+        if any(bl in datapack_path.name for bl in black_list):
+            is_valid = False
+
+        add_tag = "valid" if is_valid else "invalid"
+        remove_tag = "invalid" if is_valid else "valid"
         if is_valid:
             valid_datapacks.append(datapack_path)
         else:
@@ -902,9 +919,7 @@ def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, A
         try:
             injection_api.api_v2_injections_name_tags_patch(
                 name=datapack_path.name,
-                manage=DtoInjectionV2LabelManageReq(
-                    add_tags=[tag],
-                ),
+                manage=DtoInjectionV2LabelManageReq(add_tags=[add_tag], remove_tags=[remove_tag]),
             )
         except Exception as e:
             logger.error(e)

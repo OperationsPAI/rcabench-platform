@@ -21,6 +21,7 @@ ALGORITHM_NAME_MAPPING = {
     "simplerca": "SimpleRCA",
     "nezha": "Nezha",
     "run": "RUN",
+    "causalrca": "CausalRCA",
 }
 BASE_COLORS = [
     "#dd9f94",

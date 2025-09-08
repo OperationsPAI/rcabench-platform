@@ -555,24 +555,28 @@ class DuckDBAggregator:
             logger.warning(f"Insufficient algorithms for analysis: found {len(topk_columns)}, need {min_algorithms}")
             return pl.DataFrame()
 
-        # Build failure conditions with proper validation
-        fail_conditions = []
+        # Build per-column failure indicators (0/1), treating NULL as failure as well
+        failure_terms: list[str] = []
         for col in topk_columns:
             # Validate column name contains only safe characters
             if not col.replace("_", "").replace("@", "").isalnum():
                 logger.warning(f"Skipping invalid column name: {col}")
                 continue
-            fail_conditions.append(f"({col} = 0)")
+            # CASE WHEN col = 0 OR col IS NULL THEN 1 ELSE 0 END
+            failure_terms.append(f"(CASE WHEN {col} = 0 OR {col} IS NULL THEN 1 ELSE 0 END)")
 
-        if not fail_conditions:
+        if not failure_terms:
             return pl.DataFrame()
 
-        where_clause = " AND ".join(fail_conditions)
+        failure_sum_expr = " + ".join(failure_terms)
 
         query = f"""
-        SELECT *
+        SELECT 
+            *,
+            ({failure_sum_expr}) AS failure_count,
+            {len(topk_columns)} AS algorithms_considered
         FROM data 
-        WHERE {where_clause}
+        WHERE ({failure_sum_expr}) >= {min_algorithms}
         ORDER BY fault_category, fault_type
         """
 

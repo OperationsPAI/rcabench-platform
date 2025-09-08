@@ -263,6 +263,12 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
         elif invalid_cache.exists():
             return path, False
 
+    # clean up old cache files
+    if valid_cache.exists():
+        valid_cache.unlink()
+    if invalid_cache.exists():
+        invalid_cache.unlink()
+
     required_files = [
         # Parquet files
         "abnormal_logs.parquet",

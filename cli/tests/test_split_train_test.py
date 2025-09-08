@@ -140,7 +140,7 @@ def get_datapack(tags: list[str] | None = None) -> list[str]:
 
 @app.command()
 def build_anomaly(date: str, name: str):
-    datapacks = get_datapack()
+    datapacks = get_datapack(["absolute_anomaly", "may_anomaly"])
     with RCABenchClient(base_url=get_config().base_url) as client:
         datasets_api = DatasetsApi(client)
 

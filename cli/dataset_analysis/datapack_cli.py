@@ -1,5 +1,4 @@
 #!/usr/bin/env -S uv run -s
-import json
 from pathlib import Path
 
 import polars as pl
@@ -10,9 +9,9 @@ from rcabench_platform.v2.analysis.aggregation import (
     aggregate,
 )
 from rcabench_platform.v2.analysis.algo_perf_vis import (
-    algo_success_by_algo,
     algo_perf_by_fault_type,
     algo_perf_by_groups,
+    algo_success_by_algo,
     dataset_anomaly_distribution,
 )
 from rcabench_platform.v2.analysis.data_prepare import (
@@ -37,8 +36,8 @@ ALGORITHMS = [
     "diagfusion",
     "art",
     "nezha",
+    "causalrca",
 ]
-DEGREES = ["absolute_anomaly"]  # , "may_anomaly", "no_anomaly"]
 METRICS = ["SDD@1", "SDD@3", "SDD@5", "CPL", "RootServiceDegree"]
 
 
@@ -77,7 +76,7 @@ def analysis():
     try:
         vis_hook(aggregator.dataset_overall(), "dataset_overall")
         vis_hook(aggregator.perf_overall(), "overall_perf")
-        vis_hook(aggregator.perf_common_failures(1, 3), "common_failures")
+        vis_hook(aggregator.perf_common_failures(5, 10), "common_failures")
         algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_fault_type.pdf"))
         algo_success_by_algo(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_algo.pdf"))
     finally:
