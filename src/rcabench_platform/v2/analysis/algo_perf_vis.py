@@ -267,7 +267,7 @@ def algo_perf_by_fault_type(
     rows = (n_fault_types + cols - 1) // cols  # Ceiling division
 
     # Adjust figure size based on actual layout
-    adjusted_figsize = (cols * 5, rows * 2)
+    adjusted_figsize = (cols * 5, rows * 3)
 
     # Create figure with subplots
     fig, axes = plt.subplots(rows, cols, figsize=adjusted_figsize)
@@ -655,29 +655,30 @@ def dataset_anomaly_distribution(
     counts_may = _col_values("may")
     counts_abs = _col_values("absolute")
 
+    # Combine no and may counts
+    counts_no_may = [counts_no[i] + counts_may[i] for i in range(n)]
+
     # Sort by total count (no + may + absolute) in descending order
-    totals = [counts_no[i] + counts_may[i] + counts_abs[i] for i in range(n)]
+    totals = [counts_no_may[i] + counts_abs[i] for i in range(n)]
     order = sorted(range(n), key=lambda i: totals[i], reverse=True)
 
     fault_types = [fault_types[i] for i in order]
     fault_types_abbrev = [fault_types_abbrev[i] for i in order]
-    counts_no = [counts_no[i] for i in order]
-    counts_may = [counts_may[i] for i in order]
+    counts_no_may = [counts_no_may[i] for i in order]
     counts_abs = [counts_abs[i] for i in order]
 
     # Layout and styling
     x = np.arange(n)
     group_width = 0.8
-    bar_w = group_width / 3
+    bar_w = group_width / 2  # Now we only have 2 bars instead of 3
 
     colors = {
-        "no": BASE_COLORS[0],
-        "may": BASE_COLORS[1],
+        "no_may": BASE_COLORS[0],
         "absolute": BASE_COLORS[2],
     }
 
     # Helper to compute max for range decisions
-    max_y = max(max(counts_no), max(counts_may), max(counts_abs)) if n > 0 else 0
+    max_y = max(max(counts_no_may), max(counts_abs)) if n > 0 else 0
 
     # Figure size adjusts with number of fault types
     base_width = max(8, n * 0.5)
@@ -686,8 +687,7 @@ def dataset_anomaly_distribution(
     compress_band = 20.0  # top band height on the axis for values > 100
 
     # Prepare possibly transformed heights for plotting
-    plot_no = counts_no
-    plot_may = counts_may
+    plot_no_may = counts_no_may
     plot_abs = counts_abs
 
     if max_y > 100:
@@ -700,34 +700,24 @@ def dataset_anomaly_distribution(
                 return v * low_scale
             return (100.0 - compress_band) + (v - 100.0) / high_span * compress_band
 
-        plot_no = [_transform(v) for v in counts_no]
-        plot_may = [_transform(v) for v in counts_may]
+        plot_no_may = [_transform(v) for v in counts_no_may]
         plot_abs = [_transform(v) for v in counts_abs]
 
     def _plot_bars(ax):
         ax.bar(
-            x - bar_w,
-            plot_no,
+            x - bar_w / 2,
+            plot_no_may,
             width=bar_w,
             label="No Anomaly",
-            color=colors["no"],
+            color=colors["no_may"],
             edgecolor="black",
             linewidth=0.4,
         )
         ax.bar(
-            x,
-            plot_may,
-            width=bar_w,
-            label="May Anomaly",
-            color=colors["may"],
-            edgecolor="black",
-            linewidth=0.4,
-        )
-        ax.bar(
-            x + bar_w,
+            x + bar_w / 2,
             plot_abs,
             width=bar_w,
-            label="Absolute Anomaly",
+            label="Anomaly",
             color=colors["absolute"],
             edgecolor="black",
             linewidth=0.4,
@@ -775,7 +765,7 @@ def dataset_anomaly_distribution(
     ax.set_yticks(np.array(tick_pos, dtype=float))
     ax.set_yticklabels([str(int(t)) for t in ticks])
 
-    ax.legend(ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.12), fontsize=10)
+    ax.legend(ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.12), fontsize=10)
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.85, bottom=0.22)

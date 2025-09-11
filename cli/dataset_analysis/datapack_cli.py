@@ -75,8 +75,10 @@ def analysis():
 
     try:
         vis_hook(aggregator.dataset_overall(), "dataset_overall")
-        vis_hook(aggregator.perf_overall(), "overall_perf")
+        vis_hook(aggregator.dataset_fault_type(), "dataset_fault_type")
+        vis_hook(aggregator.perf_overall(), "perf_overall")
         vis_hook(aggregator.perf_common_failures(5, 10), "common_failures")
+        vis_hook(aggregator.perf_group_by_fault_type(), "perf_by_fault_type")
         algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_fault_type.pdf"))
         algo_success_by_algo(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_algo.pdf"))
     finally:
@@ -88,6 +90,8 @@ def rq4():
     df = pl.read_parquet("temp/algo/aggregated_result_true.parquet")
     aggregator = DuckDBAggregator(df)
     try:
+        format_dataframe(aggregator.dataset_fault_type(), "csv", output_file="temp/algo/rq4_generation_process.csv")
+
         dataset_anomaly_distribution(aggregator.dataset_fault_type(), Path("temp/algo/rq4_generation_process.pdf"))
     finally:
         aggregator.close()

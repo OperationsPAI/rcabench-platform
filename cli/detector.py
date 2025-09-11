@@ -420,6 +420,27 @@ def get_percentile_config() -> list[tuple[str, str, Any]]:
     ]
 
 
+def has_significant_latency_issue(v: dict[str, Any], abnormal_tag: dict[str, Any]) -> bool:
+    """Check if there's a significant latency issue (> 10 seconds)."""
+    latency_threshold = 10.0  # 10 seconds threshold
+
+    # Check if any abnormal latency values exceed the threshold
+    if v.get("avg_duration", 0.0) > latency_threshold:
+        return True
+    if v.get("p90_duration", 0.0) > latency_threshold:
+        return True
+    if v.get("p95_duration", 0.0) > latency_threshold:
+        return True
+    if v.get("p99_duration", 0.0) > latency_threshold:
+        return True
+
+    # Also check if hard timeout was triggered (which is already > 10s)
+    if "hard_timeout" in abnormal_tag:
+        return True
+
+    return False
+
+
 def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None:
     """Handle endpoints that don't exist in normal data."""
     logger.warning(f"New endpoint found: {k} - checking against direct thresholds")
@@ -485,7 +506,7 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
     if abnormal_tag:
         state["metrics"].increment_anomaly()
 
-        # Categorize issues
+        # Categorize issues with 10s latency threshold
         latency_keys = [
             "avg_duration",
             "p90_duration",
@@ -493,10 +514,13 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
             "p99_duration",
             "hard_timeout",
         ]
-        has_latency_issue = any(key in abnormal_tag for key in latency_keys)
+        has_latency_issue_detected = any(key in abnormal_tag for key in latency_keys)
         has_success_rate_issue = "succ_rate" in abnormal_tag
 
-        state["metrics"].categorize_issue(has_latency_issue, has_success_rate_issue)
+        # Only count as latency issue if it exceeds 10s threshold
+        has_significant_latency = has_latency_issue_detected and has_significant_latency_issue(v, abnormal_tag)
+
+        state["metrics"].categorize_issue(has_significant_latency, has_success_rate_issue)
     else:
         # No issues detected
         state["metrics"].categorize_issue(False, False)
@@ -616,11 +640,15 @@ def analyze_single_endpoint(
     if abnormal_tag:
         state["metrics"].increment_anomaly()
 
-    # Categorize issues
+    # Categorize issues with 10s latency threshold
     latency_keys = [x[1] for x in percentiles]
-    has_latency_issue = any(key in abnormal_tag for key in latency_keys)
+    has_latency_issue_detected = any(key in abnormal_tag for key in latency_keys)
     has_success_rate_issue = "succ_rate" in abnormal_tag
-    state["metrics"].categorize_issue(has_latency_issue, has_success_rate_issue)
+
+    # Only count as latency issue if it exceeds 10s threshold
+    has_significant_latency = has_latency_issue_detected and has_significant_latency_issue(v, abnormal_tag)
+
+    state["metrics"].categorize_issue(has_significant_latency, has_success_rate_issue)
 
     # Add to conclusion data
     state["conclusion_data"].append(build_conclusion_row(k, v, normal_stat, abnormal_tag))
@@ -649,9 +677,30 @@ def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[DtoLab
         or metrics.issue_categories["both_latency_and_success_rate"] > 0
     )
 
+    # Check if any endpoint has latency > 10 seconds for may_anomaly threshold
+    has_significant_latency = False
+    latency_threshold = 10.0  # 10 seconds threshold
+
+    if has_any_issues:
+        for conclusion_row in state["conclusion_data"]:
+            # Check various latency metrics against the 10s threshold
+            abnormal_avg = conclusion_row.get("AbnormalAvgDuration", 0.0)
+            abnormal_p90 = conclusion_row.get("AbnormalP90", 0.0)
+            abnormal_p95 = conclusion_row.get("AbnormalP95", 0.0)
+            abnormal_p99 = conclusion_row.get("AbnormalP99", 0.0)
+
+            if (
+                abnormal_avg > latency_threshold
+                or abnormal_p90 > latency_threshold
+                or abnormal_p95 > latency_threshold
+                or abnormal_p99 > latency_threshold
+            ):
+                has_significant_latency = True
+                break
+
     if metrics.absolute_anomaly:
         tags.append("absolute_anomaly")
-    elif has_any_issues:
+    elif has_any_issues and has_significant_latency:
         tags.append("may_anomaly")
     else:
         tags.append("no_anomaly")
