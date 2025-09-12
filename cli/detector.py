@@ -773,7 +773,7 @@ def run(
         logger.warning("No anomalies detected, skipping file creation")
         return None
 
-    save_analysis_results(state, output_path)  # legacy, @Lincyaw delete it in the future
+    save_analysis_results(state, output_path)  # legacy, TODO: delete it in the future
 
     datapack_name = input_path.name
 

@@ -14,7 +14,7 @@ uv add rcabench-platform
 
 ### Install Latest Version from GitHub
 ```bash
-pip install git+https://github.com/LGU-SE-Internal/rcabench-platform.git
+pip install git+https://github.com/anonymous-org/rcabench-platform.git
 ```
 
 ## Usage
@@ -36,7 +36,7 @@ If you want to contribute to development, we recommend installing in development
 
 ```bash
 # Clone repository
-git clone https://github.com/LGU-SE-Internal/rcabench-platform.git
+git clone https://github.com/anonymous-org/rcabench-platform.git
 cd rcabench-platform
 
 # Development mode installation
