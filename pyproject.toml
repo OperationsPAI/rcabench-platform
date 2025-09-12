@@ -4,10 +4,10 @@ version = "0.3.33"
 description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
 authors = [ #
-    { name = "Nugine", email = "xuyangwang@link.cuhk.edu.cn" },
-    { name = "Lincyaw", email = "814750204@qq.com" },
-    { name = "rainystevn1", email = "rainystevn1@gmail.com" },
-    { name = "YifanYang6", email = "yifanyang6@link.cuhk.edu.cn" },
+    { name = "Anonymous Author 1", email = "author1@anonymous.org" },
+    { name = "Anonymous Author 2", email = "author2@anonymous.org" },
+    { name = "Anonymous Author 3", email = "author3@anonymous.org" },
+    { name = "Anonymous Author 4", email = "author4@anonymous.org" },
 ]
 requires-python = ">=3.10"
 dependencies = [ #

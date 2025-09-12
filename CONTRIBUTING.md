@@ -33,7 +33,7 @@ Recommended setup
 ### Download Source Code
 
 ```bash
-git clone git@github.com:LGU-SE-Internal/rcabench-platform.git
+git clone git@github.com:anonymous-org/rcabench-platform.git
 cd rcabench-platform
 ```
 

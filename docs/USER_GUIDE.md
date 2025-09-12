@@ -473,6 +473,6 @@ For more detailed information, refer to:
 ## Support
 
 For issues and questions:
-- Check the [GitHub Issues](https://github.com/LGU-SE-Internal/rcabench-platform/issues)
+- Check the [GitHub Issues](https://github.com/anonymous-org/rcabench-platform/issues)
 - Review the existing documentation in the `docs/` directory
-- See related projects: [rcabench](https://github.com/LGU-SE-Internal/rcabench), [rca-algo-contrib](https://github.com/LGU-SE-Internal/rca-algo-contrib)
+- See related projects: [rcabench](https://github.com/anonymous-org/rcabench), [rca-algo-contrib](https://github.com/anonymous-org/rca-algo-contrib)

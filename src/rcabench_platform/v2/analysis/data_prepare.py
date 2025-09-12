@@ -64,7 +64,7 @@ class Item:
     anomaly_degree: Literal["absolute", "may", "no"] = "no"
     workload: Literal["trainticket"] = "trainticket"
 
-    # Algo Metric statistics  TODO: @Lincyaw @rainysteven1 add execution time of the algo
+    # Algo Metric statistics  TODO: add execution time of the algo
     _algo_evals: dict[str, tuple[HandlerGroundtruth, list[DtoGranularityRecord]]] | None = None
     _algo_durations: dict[str, float] = field(default_factory=dict)
     algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
