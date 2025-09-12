@@ -32,7 +32,7 @@ _DEV_CONFIG = Config(
     data=_DEFAULT_DATA_ROOT,
     output=_DEFAULT_OUTPUT_ROOT,
     temp=_DEFAULT_TEMP_ROOT,
-    base_url="http://10.10.10.161:8082",
+    base_url="http://dev.example.org:8082",
 )
 
 _PROD_CONFIG = Config(
@@ -40,7 +40,7 @@ _PROD_CONFIG = Config(
     data=_DEFAULT_DATA_ROOT,
     output=_DEFAULT_OUTPUT_ROOT,
     temp=_DEFAULT_TEMP_ROOT,
-    base_url="http://10.10.10.220:32080",
+    base_url="http://prod.example.org:32080",
 )
 
 _CONFIG_CLASSES = {

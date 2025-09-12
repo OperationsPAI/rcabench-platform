@@ -71,7 +71,7 @@ docker compose down
 Mount JuiceFS to your machine:
 
 ```bash
-sudo juicefs mount redis://10.10.10.119:6379/1 /mnt/jfs -d --cache-size=1024
+sudo juicefs mount redis://redis.example.org:6379/1 /mnt/jfs -d --cache-size=1024
 ```
 
 See [infra/README.md](infra/README.md) for more details.
@@ -106,10 +106,10 @@ We follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0
 When you are developing a new feature, create a new branch from `main` and name it according to the following convention:
 
 ```
-{your github id}/feat/{feature-name}
+{user}/feat/{feature-name}
 ```
 
-This branch prefixed with your github id is **your own** working branch. You can force-push to it freely. Do anything you want in this branch. 
+This branch prefixed with your user id is **your own** working branch. You can force-push to it freely. Do anything you want in this branch. 
 
 When you are done with the feature, **create a pull request** to `main` and invite other developers to review your code. If the code is approved, it will be merged into `main`. Then you can start a new branch from `main` and continue your work.
 

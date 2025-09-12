@@ -108,8 +108,8 @@ def concat_normal_ranges():
     # Convert to pandas for easier plotting with matplotlib
     df_pandas = df.to_pandas()
 
-    # Convert UTC timestamps to Beijing time (UTC+8) for display
-    df_pandas["time"] = df_pandas["time"].dt.tz_convert("Asia/Shanghai")
+    # Convert UTC timestamps to local time (UTC+8) for display
+    df_pandas["time"] = df_pandas["time"].dt.tz_convert("UTC+8")
 
     del df
     # Plot duration over time
@@ -117,11 +117,11 @@ def concat_normal_ranges():
 
     # Format the plot
     plt.title(
-        "Maximum Duration Over Time (1-second aggregation) - Beijing Time (UTC+8)",
+        "Maximum Duration Over Time (1-second aggregation) - Local Time (UTC+8)",
         fontsize=14,
         fontweight="bold",
     )
-    plt.xlabel("Time (Beijing Time)", fontsize=12)
+    plt.xlabel("Time (Local Time)", fontsize=12)
     plt.ylabel("Duration (seconds)", fontsize=12)
     plt.yscale("log")  # Set y-axis to logarithmic scale
     plt.grid(True, alpha=0.3)
@@ -176,10 +176,10 @@ def visualize_span_latency(ns: str, start_time: str = "2025-07-18 11:00:00"):
     logger.info(f"Loaded {len(df)} trace records")
 
     if len(df) > 0:
-        beijing_timestamps = df["Timestamp"].dt.convert_time_zone("Asia/Shanghai")
-        min_time_beijing = beijing_timestamps.min()
-        max_time_beijing = beijing_timestamps.max()
-        logger.info(f"Time range (Beijing Time): {min_time_beijing} to {max_time_beijing}")
+        local_timestamps = df["Timestamp"].dt.convert_time_zone("UTC+8")
+        min_time_local = local_timestamps.min()
+        max_time_local = local_timestamps.max()
+        logger.info(f"Time range (Local Time): {min_time_local} to {max_time_local}")
 
     df = df.with_columns(
         [
@@ -265,7 +265,7 @@ def visualize_span_latency(ns: str, start_time: str = "2025-07-18 11:00:00"):
         ax.grid(True, alpha=0.3)
 
     axes[-1].set_xlabel("Time", fontsize=12)
-    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz="Asia/Shanghai"))
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz="UTC+8"))
     axes[-1].xaxis.set_major_locator(mdates.MinuteLocator(interval=interval_minutes))
 
     plt.setp(axes[-1].xaxis.get_majorticklabels(), rotation=45)

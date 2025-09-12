@@ -12,7 +12,7 @@ CONTEXTS: dict[str, Path] = {
     "detector": Path.cwd() / "docker/detector",
 }
 
-IMAGE_PREFIX = "10.10.10.240/library"
+IMAGE_PREFIX = "registry.example.org/library"
 
 
 def sh(cmd: list[str]) -> None:

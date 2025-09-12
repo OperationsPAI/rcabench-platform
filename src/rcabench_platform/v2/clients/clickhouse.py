@@ -8,7 +8,7 @@ ClickHouseClient: TypeAlias = clickhouse_connect.driver.client.Client
 
 
 def get_clickhouse_client() -> ClickHouseClient:
-    host = "10.10.10.58"
+    host = "clickhouse.example.org"
     username = "default"
     password = "password"
     database = "default"

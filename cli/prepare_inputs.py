@@ -387,7 +387,7 @@ def local_test():
 
 
 @app.command()
-def patch_injection(rcabench_url: str = "http://10.10.10.220:32080"):
+def patch_injection(rcabench_url: str = "http://prod.example.org:32080"):
     from rcabench.openapi import InjectionApi
 
     api = InjectionApi(get_rcabench_openapi_client(base_url=rcabench_url))

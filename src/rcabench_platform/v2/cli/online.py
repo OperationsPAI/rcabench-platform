@@ -361,12 +361,12 @@ def upload_algorithm_harbor(
             resp = api.api_v2_containers_post(
                 type="algorithm",
                 name=algorithm_name,
-                image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
+                image=f"registry.example.org/library/rca-algo-{algorithm_name}",
                 tag=tag,
                 command=command,
                 env_vars=env_vars_list,
                 build_source_type="harbor",
-                harbor_image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
+                harbor_image=f"registry.example.org/library/rca-algo-{algorithm_name}",
                 harbor_tag=tag,
             )
 
