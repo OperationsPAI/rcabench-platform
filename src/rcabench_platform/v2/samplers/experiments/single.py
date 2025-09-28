@@ -848,7 +848,7 @@ def _calculate_normal_only_performance(
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
 
     # Get total counts
-    total_traces = normal_traces_lf.select(pl.len()).collect().item()
+    total_traces = normal_traces_lf.select("trace_id").unique().select(pl.len()).collect().item()
     total_spans = normal_traces_lf.select(pl.len()).collect().item()
     sampled_count = len(sampled_df)
 
