@@ -88,7 +88,7 @@ def run_sampler_single(
         results_df = pl.DataFrame(results_data)
 
     # Calculate performance metrics
-    perf_metrics = calculate_sampler_performance(input_folder, results_df, sampling_rate, mode, runtime)
+    perf_metrics = calculate_sampler_performance(input_folder, results_df, sampling_rate, mode, runtime, dataset)
 
     # Add metadata to results
     output_df = results_df.with_columns(
@@ -124,6 +124,7 @@ def calculate_sampler_performance(
     sampling_rate: float,
     mode: SamplingMode,
     runtime: float | None,
+    dataset: str,
 ) -> dict:
     """
     Calculate performance metrics for sampler.
@@ -156,9 +157,24 @@ def calculate_sampler_performance(
         - intra_sample_dissimilarity: Average dissimilarity between sampled traces (diversity metric)
         - avg_anomaly_score: Average anomaly score per trace (error spans + performance + log score)
     """
-    # Load traces to get total counts
+    # Check if this is a normal-only dataset (like TracePicker)
     normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
-    abnormal_traces_lf = pl.scan_parquet(input_folder / "abnormal_traces.parquet")
+    abnormal_traces_path = input_folder / "abnormal_traces.parquet"
+
+    is_normal_only = False
+    if abnormal_traces_path.exists():
+        abnormal_count = pl.scan_parquet(abnormal_traces_path).select(pl.len()).collect().item()
+        is_normal_only = abnormal_count == 0
+    else:
+        is_normal_only = True
+
+    if is_normal_only:
+        logger.info("Detected normal-only dataset, adapting metrics calculation")
+        return _calculate_normal_only_performance(input_folder, sampled_df, sampling_rate, mode, runtime, dataset)
+
+    # Original logic for datasets with both normal and abnormal data
+    # Load traces to get total counts
+    abnormal_traces_lf = pl.scan_parquet(abnormal_traces_path)
 
     # Get total unique traces and total spans
     all_traces_lf = pl.concat([normal_traces_lf.select("trace_id"), abnormal_traces_lf.select("trace_id")]).unique()
@@ -219,10 +235,10 @@ def calculate_sampler_performance(
                 abnormal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
             ]
         ).collect()
-        path_coverage_metrics = calculate_path_coverage(all_traces_df, set())  # Empty sampled set
+        path_coverage_metrics = calculate_path_coverage(all_traces_df, set(), dataset)  # Empty sampled set
 
         # Calculate total deduplicated path types (removing parallel spans at same level)
-        path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, set())  # Empty sampled set
+        path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, set(), dataset)  # Empty sampled set
 
         # Calculate total event pairs
         all_traces_for_events_df = pl.concat(
@@ -272,6 +288,7 @@ def calculate_sampler_performance(
             logs_for_events_df,
             set(),
             input_folder,  # Empty sampled set
+            dataset,
         )
 
         # Calculate ground truth trace proportion (will be 0.0 for empty sample)
@@ -431,10 +448,10 @@ def calculate_sampler_performance(
     ).collect()
 
     # Always calculate path coverage to get total_path_types, even when no traces sampled
-    path_coverage_metrics = calculate_path_coverage(all_traces_df, sampled_trace_ids)
+    path_coverage_metrics = calculate_path_coverage(all_traces_df, sampled_trace_ids, dataset)
 
     # Calculate deduplicated path coverage (removes parallel spans at same level)
-    path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, sampled_trace_ids)
+    path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, sampled_trace_ids, dataset)
 
     # If no traces sampled, override sampled metrics but keep total metrics
     if sampled_count == 0:
@@ -490,7 +507,7 @@ def calculate_sampler_performance(
 
     # Always calculate event coverage to get total_event_pairs, even when no traces sampled
     event_coverage_metrics = calculate_event_coverage(
-        all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder
+        all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder, dataset
     )
 
     # Calculate span statistics
@@ -814,3 +831,191 @@ def calculate_gt_trace_proportion(
     except Exception as e:
         logger.warning(f"Error calculating GT trace proportion: {e}")
         return 0.0
+
+
+def _calculate_normal_only_performance(
+    input_folder: Path,
+    sampled_df: pl.DataFrame,
+    sampling_rate: float,
+    mode: SamplingMode,
+    runtime: float | None,
+    dataset: str,
+) -> dict:
+    """Calculate performance metrics for normal-only datasets (like TracePicker)."""
+    import math
+
+    # Load only normal traces
+    normal_traces_lf = pl.scan_parquet(input_folder / "normal_traces.parquet")
+
+    # Get total counts
+    total_traces = normal_traces_lf.select(pl.len()).collect().item()
+    total_spans = normal_traces_lf.select(pl.len()).collect().item()
+    sampled_count = len(sampled_df)
+
+    # Calculate actual sampling rate
+    actual_sampling_rate = sampled_count / total_traces if total_traces > 0 else 0.0
+
+    # Calculate controllability (RoD)
+    expected_count = int(total_traces * sampling_rate)
+    controllability = abs((sampled_count - expected_count) / expected_count) if expected_count > 0 else 0.0
+
+    if sampled_count == 0:
+        # Return minimal metrics for empty sample
+        return {
+            "sampled_count": 0,
+            "total_traces": total_traces,
+            "total_entry_types": 0,
+            "sampled_entry_types": 0,
+            "controllability": controllability,
+            "comprehensiveness": 0.0,
+            "proportion_anomaly": 0.0,  # N/A for normal-only
+            "proportion_rare": 0.0,
+            "proportion_common": 1.0,  # All traces are "common" in normal-only
+            "actual_sampling_rate": actual_sampling_rate,
+            "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
+            "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
+            "gt_trace_proportion": 0.0,  # N/A for normal-only
+            "balance_cv": 0.0,
+            # Path coverage metrics - calculate with empty sampled set
+            "total_path_types": 0,
+            "sampled_path_types": 0,
+            "path_coverage": 0.0,
+            "total_path_types_dedup": 0,
+            "sampled_path_types_dedup": 0,
+            "path_coverage_dedup": 0.0,
+            # Event coverage metrics - calculate with empty sampled set
+            "total_event_pairs": 0,
+            "sampled_event_pairs": 0,
+            "event_coverage": 0.0,
+            "total_unique_traces": 0,
+            "sampled_unique_traces": 0,
+            "unique_trace_coverage": 0.0,
+            "shannon_entropy": 0.0,
+            "benefit_cost_ratio": 0.0,
+            "intra_sample_dissimilarity": 0.0,
+            "avg_anomaly_score": 0.0,  # N/A for normal-only
+            "total_span_count": total_spans,
+            "sampled_span_count": 0,
+            "total_unique_span_names": 0,
+            "sampled_unique_span_names": 0,
+            "span_coverage": 0.0,
+        }
+
+    # Calculate metrics for normal-only data with samples
+    sampled_trace_ids = set(sampled_df["trace_id"].to_list())
+
+    # Load trace data for analysis
+    all_traces_df = normal_traces_lf.select(
+        ["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]
+    ).collect()
+
+    # Calculate entry types for comprehensiveness
+    # For TracePicker datasets, we don't have loadgenerator, so we use any root spans
+    entry_traces_df = all_traces_df.filter(pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+
+    # For TracePicker, we'll use the operation name directly as entry_span
+    # since there's no loadgenerator pattern to extract from
+    if len(entry_traces_df) > 0:
+        trace_entries_df = entry_traces_df.group_by("trace_id").agg(pl.first("span_name").alias("entry_span"))
+
+        entry_span_counts = trace_entries_df.group_by("entry_span").agg(pl.len().alias("count"))
+        total_entry_types = len(entry_span_counts)
+
+        # Calculate sampled entry types
+        sampled_entries_df = trace_entries_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+        sampled_entry_types = len(sampled_entries_df["entry_span"].unique())
+        comprehensiveness = sampled_entry_types / total_entry_types if total_entry_types > 0 else 0.0
+
+        # Calculate rare trace proportion (< 5% frequency)
+        entry_span_proportions = entry_span_counts.with_columns((pl.col("count") / total_traces).alias("proportion"))
+        rare_spans = entry_span_proportions.filter(pl.col("proportion") < 0.05)["entry_span"].to_list()
+        rare_sampled = sampled_entries_df.filter(pl.col("entry_span").is_in(rare_spans))
+        proportion_rare = len(rare_sampled) / sampled_count if sampled_count > 0 else 0.0
+
+        # Balance CV calculation for normal-only
+        sampled_entry_counts = sampled_entries_df.group_by("entry_span").agg(pl.len().alias("count"))
+        counts = sampled_entry_counts["count"].to_list()
+
+        if len(counts) <= 1:
+            balance_cv = 0.0
+        else:
+            n_mean = sum(counts) / len(counts)
+            variance = sum((n_i - n_mean) ** 2 for n_i in counts) / len(counts)
+            balance_cv = math.sqrt(variance) / n_mean if n_mean > 0 else 0.0
+    else:
+        total_entry_types = 0
+        sampled_entry_types = 0
+        comprehensiveness = 0.0
+        proportion_rare = 0.0
+        balance_cv = 0.0
+
+    # Calculate path coverage
+    path_coverage_metrics = calculate_path_coverage(all_traces_df, sampled_trace_ids, dataset)
+    path_coverage_dedup_metrics = calculate_path_coverage_dedup(all_traces_df, sampled_trace_ids, dataset)
+
+    # Calculate event coverage (normal traces only, no logs)
+    all_traces_for_events_df = normal_traces_lf.select(
+        ["trace_id", "span_id", "parent_span_id", "service_name", "span_name", "time", "duration", "attr.status_code"]
+    ).collect()
+
+    event_coverage_metrics = calculate_event_coverage(
+        all_traces_for_events_df, None, sampled_trace_ids, input_folder, dataset
+    )
+
+    # Calculate span statistics
+    total_span_count = len(all_traces_for_events_df)
+    sampled_span_count = len(all_traces_for_events_df.filter(pl.col("trace_id").is_in(sampled_trace_ids)))
+
+    all_unique_spans = all_traces_for_events_df.select(
+        pl.concat_str(["service_name", "span_name"], separator="_").alias("span_name")
+    ).unique()
+    total_unique_span_names = len(all_unique_spans)
+
+    sampled_unique_spans = (
+        all_traces_for_events_df.filter(pl.col("trace_id").is_in(sampled_trace_ids))
+        .select(pl.concat_str(["service_name", "span_name"], separator="_").alias("span_name"))
+        .unique()
+    )
+    sampled_unique_span_names = len(sampled_unique_spans)
+    span_coverage = sampled_unique_span_names / total_unique_span_names if total_unique_span_names > 0 else 0.0
+
+    return {
+        "sampled_count": sampled_count,
+        "total_traces": total_traces,
+        "total_entry_types": total_entry_types,
+        "sampled_entry_types": sampled_entry_types,
+        "controllability": controllability,
+        "comprehensiveness": comprehensiveness,
+        "proportion_anomaly": 0.0,  # N/A for normal-only datasets
+        "proportion_rare": proportion_rare,
+        "proportion_common": 1.0 - proportion_rare,  # Rest are common
+        "actual_sampling_rate": actual_sampling_rate,
+        "runtime_per_span_ms": runtime * 1e3 / total_spans if runtime and total_spans > 0 else 0.0,
+        "runtime_per_trace_ms": runtime * 1e3 / total_traces if runtime and total_traces > 0 else 0.0,
+        "gt_trace_proportion": 0.0,  # N/A for normal-only datasets
+        "balance_cv": balance_cv,
+        # Path coverage metrics
+        "total_path_types": path_coverage_metrics["total_path_types"],
+        "sampled_path_types": path_coverage_metrics["sampled_path_types"],
+        "path_coverage": path_coverage_metrics["path_coverage"],
+        "total_path_types_dedup": path_coverage_dedup_metrics["total_path_types_dedup"],
+        "sampled_path_types_dedup": path_coverage_dedup_metrics["sampled_path_types_dedup"],
+        "path_coverage_dedup": path_coverage_dedup_metrics["path_coverage_dedup"],
+        # Event coverage metrics
+        "total_event_pairs": event_coverage_metrics["total_event_pairs"],
+        "sampled_event_pairs": event_coverage_metrics["sampled_event_pairs"],
+        "event_coverage": event_coverage_metrics["event_coverage"],
+        "total_unique_traces": event_coverage_metrics["total_unique_traces"],
+        "sampled_unique_traces": event_coverage_metrics["sampled_unique_traces"],
+        "unique_trace_coverage": event_coverage_metrics["unique_trace_coverage"],
+        "shannon_entropy": event_coverage_metrics["shannon_entropy"],
+        "benefit_cost_ratio": event_coverage_metrics["benefit_cost_ratio"],
+        "intra_sample_dissimilarity": event_coverage_metrics["intra_sample_dissimilarity"],
+        "avg_anomaly_score": 0.0,  # N/A for normal-only datasets (no errors expected)
+        # Span count metrics
+        "total_span_count": total_span_count,
+        "sampled_span_count": sampled_span_count,
+        "total_unique_span_names": total_unique_span_names,
+        "sampled_unique_span_names": sampled_unique_span_names,
+        "span_coverage": span_coverage,
+    }

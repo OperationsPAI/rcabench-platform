@@ -206,7 +206,7 @@ class EventEncoder:
             logger.warning(f"Failed to load performance thresholds: {e}")
 
     def encode_trace_events(
-        self, trace_spans_df: pl.DataFrame, trace_logs_df: pl.DataFrame | None = None
+        self, trace_spans_df: pl.DataFrame, trace_logs_df: pl.DataFrame | None = None, dataset_name: str = ""
     ) -> set[tuple[int, int]]:
         """Encode a single trace into event ID sequence respecting span hierarchy"""
 
@@ -222,8 +222,14 @@ class EventEncoder:
             service_name = row["service_name"]
 
             # Check for root span during iteration
-            if service_name == "loadgenerator" and (not parent_id or parent_id == ""):
-                has_root_span = True
+            if dataset_name.startswith("rcabench"):
+                # For rcabench datasets, require loadgenerator root span
+                if service_name == "loadgenerator" and (not parent_id or parent_id == ""):
+                    has_root_span = True
+            else:
+                # For other datasets, any span without parent is considered root
+                if not parent_id or parent_id == "":
+                    has_root_span = True
 
             spans_data[span_id] = row
 
@@ -321,7 +327,11 @@ class EventEncoder:
 
 @timeit(log_args=False)
 def calculate_event_coverage(
-    traces_df: pl.DataFrame, logs_df: pl.DataFrame | None, sampled_trace_ids: set[str], input_folder
+    traces_df: pl.DataFrame,
+    logs_df: pl.DataFrame | None,
+    sampled_trace_ids: set[str],
+    input_folder,
+    dataset_name: str = "",
 ) -> dict[str, float]:
     """
     Calculate event coverage metrics for sampled traces.
@@ -331,6 +341,7 @@ def calculate_event_coverage(
         logs_df: All logs data (optional)
         sampled_trace_ids: Set of sampled trace IDs
         input_folder: Path to input folder for loading metrics_sli
+        dataset_name: Name of the dataset (used to determine root span logic)
 
     Returns:
         Dictionary containing event coverage metrics including Shannon entropy and benefit-cost ratio
@@ -391,7 +402,7 @@ def calculate_event_coverage(
         trace_logs = log_groups.get((trace_id,), pl.DataFrame())
 
         # Encode events for this trace and get event pairs directly
-        event_pairs = encoder.encode_trace_events(trace_df, trace_logs)
+        event_pairs = encoder.encode_trace_events(trace_df, trace_logs, dataset_name)
 
         # Add to all pairs
         all_event_pairs.update(event_pairs)
@@ -413,14 +424,21 @@ def calculate_event_coverage(
             sampled_event_pairs.update(event_pairs)
 
             # Calculate anomaly score for this sampled trace
-            # Find root span (loadgenerator with null parent) - use existing data
+            # Find root span - use dataset-aware logic
             root_span = None
             for span_data in trace_df.iter_rows(named=True):
-                if span_data["service_name"] == "loadgenerator" and (
-                    not span_data.get("parent_span_id") or span_data.get("parent_span_id") == ""
-                ):
-                    root_span = span_data
-                    break
+                if dataset_name.startswith("rcabench"):
+                    # For rcabench datasets, require loadgenerator root span
+                    if span_data["service_name"] == "loadgenerator" and (
+                        not span_data.get("parent_span_id") or span_data.get("parent_span_id") == ""
+                    ):
+                        root_span = span_data
+                        break
+                else:
+                    # For other datasets, any span without parent is considered root
+                    if not span_data.get("parent_span_id") or span_data.get("parent_span_id") == "":
+                        root_span = span_data
+                        break
 
             if root_span:
                 root_name = root_span["span_name"]

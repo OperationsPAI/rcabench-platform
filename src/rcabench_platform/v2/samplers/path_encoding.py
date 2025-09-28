@@ -12,12 +12,13 @@ import polars as pl
 from ..logging import logger
 
 
-def build_trace_path_encoding(trace_df: pl.DataFrame) -> str:
+def build_trace_path_encoding(trace_df: pl.DataFrame, dataset_name: str = "") -> str:
     """
     Build path encoding for a single trace using BFS with sorted nodes at same depth.
 
     Args:
         trace_df: DataFrame containing spans for a single trace
+        dataset_name: Name of the dataset (for determining root span selection logic)
 
     Returns:
         String representation of the execution path
@@ -25,16 +26,28 @@ def build_trace_path_encoding(trace_df: pl.DataFrame) -> str:
     if len(trace_df) == 0:
         return ""
 
-    # Verify root span is loadgenerator (similar to event encoding)
-    root_spans_df = trace_df.filter(
-        (pl.col("service_name") == "loadgenerator")
-        & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
-    )
+    # Determine root span selection logic based on dataset
+    use_loadgenerator = dataset_name.startswith("rcabench")
 
-    # If no valid loadgenerator root span found, skip this trace
-    if root_spans_df.height == 0:
-        logger.debug("No loadgenerator root span found, skipping trace")
-        return ""
+    if use_loadgenerator:
+        # For rcabench datasets, use loadgenerator root spans (entry points to the trace)
+        root_spans_df = trace_df.filter(
+            (pl.col("service_name") == "loadgenerator")
+            & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+        )
+
+        # If no valid loadgenerator root span found, skip this trace
+        if root_spans_df.height == 0:
+            logger.debug("No loadgenerator root span found, skipping trace")
+            return ""
+    else:
+        # For non-rcabench datasets (like TracePicker), use any root spans
+        root_spans_df = trace_df.filter(pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+
+        # If no valid root span found, skip this trace
+        if root_spans_df.height == 0:
+            logger.debug("No root span found, skipping trace")
+            return ""
 
     # Build parent-child relationships
     spans_data = {
@@ -115,7 +128,9 @@ def build_trace_path_encoding(trace_df: pl.DataFrame) -> str:
     return " -> ".join(path_elements)
 
 
-def calculate_path_coverage(traces_df: pl.DataFrame, sampled_trace_ids: set[str]) -> dict[str, float]:
+def calculate_path_coverage(
+    traces_df: pl.DataFrame, sampled_trace_ids: set[str], dataset_name: str = ""
+) -> dict[str, float]:
     """
     Calculate path coverage metrics for sampled traces.
 
@@ -139,7 +154,7 @@ def calculate_path_coverage(traces_df: pl.DataFrame, sampled_trace_ids: set[str]
         if not trace_id:
             continue
 
-        path_encoding = build_trace_path_encoding(trace_df)
+        path_encoding = build_trace_path_encoding(trace_df, dataset_name)
         if path_encoding:
             all_paths.add(path_encoding)
 
@@ -160,7 +175,7 @@ def calculate_path_coverage(traces_df: pl.DataFrame, sampled_trace_ids: set[str]
     }
 
 
-def build_trace_path_encoding_dedup(trace_df: pl.DataFrame) -> str:
+def build_trace_path_encoding_dedup(trace_df: pl.DataFrame, dataset_name: str = "") -> str:
     """
     Build path encoding for a single trace using BFS with sorted nodes at same depth,
     removing duplicate spans at the same level to handle parallel calls.
@@ -174,16 +189,28 @@ def build_trace_path_encoding_dedup(trace_df: pl.DataFrame) -> str:
     if len(trace_df) == 0:
         return ""
 
-    # Verify root span is loadgenerator (similar to event encoding)
-    root_spans_df = trace_df.filter(
-        (pl.col("service_name") == "loadgenerator")
-        & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
-    )
+    # Determine root span selection logic based on dataset
+    use_loadgenerator = dataset_name.startswith("rcabench")
 
-    # If no valid loadgenerator root span found, skip this trace
-    if root_spans_df.height == 0:
-        logger.debug("No root span found, skipping trace")
-        return ""
+    if use_loadgenerator:
+        # For rcabench datasets, use loadgenerator root spans (entry points to the trace)
+        root_spans_df = trace_df.filter(
+            (pl.col("service_name") == "loadgenerator")
+            & (pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+        )
+
+        # If no valid loadgenerator root span found, skip this trace
+        if root_spans_df.height == 0:
+            logger.debug("No loadgenerator root span found, skipping trace")
+            return ""
+    else:
+        # For non-rcabench datasets (like TracePicker), use any root spans
+        root_spans_df = trace_df.filter(pl.col("parent_span_id").is_null() | (pl.col("parent_span_id") == ""))
+
+        # If no valid root span found, skip this trace
+        if root_spans_df.height == 0:
+            logger.debug("No root span found, skipping trace")
+            return ""
 
     # Build parent-child relationships
     spans_data = {
@@ -290,7 +317,9 @@ def build_trace_path_encoding_dedup(trace_df: pl.DataFrame) -> str:
     return " -> ".join(path_elements)
 
 
-def calculate_path_coverage_dedup(traces_df: pl.DataFrame, sampled_trace_ids: set[str]) -> dict[str, float]:
+def calculate_path_coverage_dedup(
+    traces_df: pl.DataFrame, sampled_trace_ids: set[str], dataset_name: str = ""
+) -> dict[str, float]:
     """
     Calculate path coverage metrics for sampled traces using deduplicated path encoding.
     This removes duplicate spans at the same level to handle parallel calls.
@@ -315,7 +344,7 @@ def calculate_path_coverage_dedup(traces_df: pl.DataFrame, sampled_trace_ids: se
         if not trace_id:
             continue
 
-        path_encoding = build_trace_path_encoding_dedup(trace_df)
+        path_encoding = build_trace_path_encoding_dedup(trace_df, dataset_name)
         if path_encoding:
             all_paths_dedup.add(path_encoding)
 
