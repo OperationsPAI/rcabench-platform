@@ -26,6 +26,6 @@ The `analysis` extra includes additional dependencies like `graphviz` and `matpl
 
 ## Related Projects
 
-+ [rcabench](https://github.com/LGU-SE-Internal/rcabench)
-+ [rca-algo-contrib](https://github.com/LGU-SE-Internal/rca-algo-contrib)
-+ [rca-algo-random](https://github.com/LGU-SE-Internal/rca-algo-random)
++ [rcabench](https://github.com/anonymous/rcabench)
++ [rca-algo-contrib](https://github.com/anonymous/rca-algo-contrib)
++ [rca-algo-random](https://github.com/anonymous/rca-algo-random)

@@ -59,7 +59,7 @@ This image serves as the base for other images and **should be built first**.
 
 The image for collecting telemetry data from ClickHouse.
 
-It is used by [rcabench](https://github.com/LGU-SE-Internal/rcabench) services.
+It is used by [rcabench](https://github.com/anonymous/rcabench) services.
 
 Build and push:
 
@@ -72,7 +72,7 @@ Build and push:
 
 The image for detecting SLI anomalies in rcabench data.
 
-It is used by [rcabench](https://github.com/LGU-SE-Internal/rcabench) services.
+It is used by [rcabench](https://github.com/anonymous/rcabench) services.
 
 Build and push:
 

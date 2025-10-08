@@ -7,7 +7,7 @@ This document describes the workflows of this project.
 Besides our own data, we also support converting data from other projects.
 
 Currently, we have the following data sources:
-+ [rcabench](https://github.com/LGU-SE-Internal/rcabench) (our own)
++ [rcabench](https://github.com/anonymous/rcabench) (our own)
 + [RCAEval](https://github.com/phamquiluan/RCAEval)
 
 As the [development guide](../CONTRIBUTING.md#link-datasets) describes, the data sources and converted datasets are stored in the shared file system, e.g., `/mnt/jfs`.
@@ -130,7 +130,7 @@ Currently, we have the following algorithms:
 + [nsigma](../src/rcabench_platform/v2/algorithms/rcaeval/nsigma.py)
 
 Algorithms can also be implemented in standalone repositories. Here is an example:
-+ <https://github.com/LGU-SE-Internal/rca-algo-random>
++ <https://github.com/anonymous/rca-algo-random>
 
 ### How to add a new builtin algorithm
 
@@ -220,7 +220,7 @@ Edit the SDG notebook to visualize datapacks:
 
 ## Online Mode
 
-The online mode uses [rcabench](https://github.com/LGU-SE-Internal/rcabench) services to run workflows on remote servers.
+The online mode uses [rcabench](https://github.com/anonymous/rcabench) services to run workflows on remote servers.
 
 ### query injection
 

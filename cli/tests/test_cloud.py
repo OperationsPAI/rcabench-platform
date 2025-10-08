@@ -47,7 +47,7 @@ def get_storage(*, name: str, direction: Literal["upload", "download"]) -> Stora
         return HuggingFaceStorage(
             local_root=local_root,
             hf_client=get_hf_client(),
-            repo_id="Nugine/rcabench-platform-private-test",
+            repo_id="anonymous/rcabench-platform-test",
             concurrent_download=8,
             concurrent_upload=4,
         )
