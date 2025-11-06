@@ -1,15 +1,17 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, auto
 from pathlib import Path
 
+from ...compat import StrEnum
 
-class SamplingMode(Enum):
+
+class SamplingMode(StrEnum):
     """Sampling mode enumeration."""
 
-    ONLINE = "online"  # Flexible sampling: uses sampling rate as guideline but algorithm can adjust
-    OFFLINE = "offline"  # Strict sampling: limited by exact sampling rate
+    ONLINE = auto()  # Flexible sampling: uses sampling rate as guideline but algorithm can adjust
+    OFFLINE = auto()  # Strict sampling: limited by exact sampling rate
 
 
 @dataclass(kw_only=True, frozen=True, slots=True)
