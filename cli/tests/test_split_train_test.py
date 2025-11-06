@@ -107,21 +107,40 @@ def cleanup():
             logger.info(resp)
 
 
-def get_datapack(tag: str = "absolute_anomaly") -> list[str]:
-    with RCABenchClient(base_url=get_config().base_url) as client:
-        injection_api = InjectionsApi(client)
-        resp = injection_api.api_v2_injections_get(tags=[tag], page=1, size=10000)
-        assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
-        return [
-            item.injection_name
-            for item in resp.data.items
-            if item.injection_name is not None and valid(Path("data") / "rcabench_dataset" / item.injection_name)
-        ]
+def get_datapack(tags: list[str] | None = None) -> list[str]:
+    if tags is None:
+        with RCABenchClient(base_url=get_config().base_url) as client:
+            injection_api = InjectionsApi(client)
+            resp = injection_api.api_v2_injections_get(tags=None, page=1, size=10000)
+            assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+            logger.info(f"found {len(resp.data.items)} injections")
+            return [
+                item.injection_name
+                for item in resp.data.items
+                if item.injection_name is not None and valid(Path("data") / "rcabench_dataset" / item.injection_name)
+            ]
+
+    res = []
+    for tag in tags:
+        with RCABenchClient(base_url=get_config().base_url) as client:
+            injection_api = InjectionsApi(client)
+            resp = injection_api.api_v2_injections_get(tags=[tag], page=1, size=10000)
+            assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+            logger.info(f"found {len(resp.data.items)} injections for tag {tag}")
+            validated = [
+                item.injection_name
+                for item in resp.data.items
+                if item.injection_name is not None and valid(Path("data") / "rcabench_dataset" / item.injection_name)
+            ]
+            logger.info(f"found {len(validated)} valid injections for tag {tag}")
+            res.extend(validated)
+
+    return res
 
 
 @app.command()
-def build_anomaly(date: str, anomaly_type: str):
-    datapacks = get_datapack(anomaly_type)
+def build_anomaly(date: str, name: str):
+    datapacks = get_datapack(["absolute_anomaly"])
     with RCABenchClient(base_url=get_config().base_url) as client:
         datasets_api = DatasetsApi(client)
 
@@ -129,8 +148,8 @@ def build_anomaly(date: str, anomaly_type: str):
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="all",
-        version=f"all-{anomaly_type}-{date}",
-        description=f"all the {anomaly_type} dataset until {date} for study",
+        version=f"all-{name}-{date}",
+        description=f"all the {name} dataset until {date} for study",
         datapacks=datapacks,
     )
 
@@ -145,7 +164,7 @@ def build_anomaly(date: str, anomaly_type: str):
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="train",
-        version=f"study-{anomaly_type}-train{date}",
+        version=f"study-{name}-train{date}",
         description="training dataset for study",
         datapacks=train_datapacks,
     )
@@ -154,7 +173,7 @@ def build_anomaly(date: str, anomaly_type: str):
         datasets_api=datasets_api,
         name="pair-diag",
         dataset_type="test",
-        version=f"study-{anomaly_type}-test{date}",
+        version=f"study-{name}-test{date}",
         description="test dataset for study",
         datapacks=test_datapacks,
     )

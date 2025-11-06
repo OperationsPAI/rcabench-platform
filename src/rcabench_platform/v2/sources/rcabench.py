@@ -320,9 +320,21 @@ def convert_logs(src: Path) -> pl.DataFrame:
     if unique_messages.height > 0:
         logger.info(f"Processing {unique_messages.height} unique log messages for template extraction")
 
-        # Process messages with Drain3
-        config_path = Path("data/rcabench_dataset/drain_template/drain_ts.ini")
-        persistence_path = Path("data/rcabench_dataset/drain_template/drain_ts.bin")
+        # Determine template paths with fallback logic
+        import os
+
+        # Try environment variable INPUT_PATH first
+        input_path = os.getenv("INPUT_PATH")
+        if input_path:
+            template_base = Path(input_path).parent / "drain_template"
+        else:
+            # Fallback: use src file's parent's parent directory
+            template_base = src.parent.parent / "drain_template"
+
+        config_path = template_base / "drain_ts.ini"
+        persistence_path = template_base / "drain_ts.bin"
+
+        logger.info(f"Using template paths: config={config_path}, persistence={persistence_path}")
 
         template_miner = create_template_miner(config_path, persistence_path)
 

@@ -4,7 +4,7 @@ from typing import Any
 import polars as pl
 import streamlit as st
 
-from .utils import format_timestamp, search_logs, truncate_string
+from .utils import format_timestamp, truncate_string
 
 
 class LogsSearcher:

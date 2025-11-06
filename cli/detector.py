@@ -420,6 +420,27 @@ def get_percentile_config() -> list[tuple[str, str, Any]]:
     ]
 
 
+def has_significant_latency_issue(v: dict[str, Any], abnormal_tag: dict[str, Any]) -> bool:
+    """Check if there's a significant latency issue (> 10 seconds)."""
+    latency_threshold = 10.0  # 10 seconds threshold
+
+    # Check if any abnormal latency values exceed the threshold
+    if v.get("avg_duration", 0.0) > latency_threshold:
+        return True
+    if v.get("p90_duration", 0.0) > latency_threshold:
+        return True
+    if v.get("p95_duration", 0.0) > latency_threshold:
+        return True
+    if v.get("p99_duration", 0.0) > latency_threshold:
+        return True
+
+    # Also check if hard timeout was triggered (which is already > 10s)
+    if "hard_timeout" in abnormal_tag:
+        return True
+
+    return False
+
+
 def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None:
     """Handle endpoints that don't exist in normal data."""
     logger.warning(f"New endpoint found: {k} - checking against direct thresholds")
@@ -485,7 +506,7 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
     if abnormal_tag:
         state["metrics"].increment_anomaly()
 
-        # Categorize issues
+        # Categorize issues with 10s latency threshold
         latency_keys = [
             "avg_duration",
             "p90_duration",
@@ -493,10 +514,13 @@ def handle_new_endpoint(k: str, v: dict[str, Any], state: AnalysisState) -> None
             "p99_duration",
             "hard_timeout",
         ]
-        has_latency_issue = any(key in abnormal_tag for key in latency_keys)
+        has_latency_issue_detected = any(key in abnormal_tag for key in latency_keys)
         has_success_rate_issue = "succ_rate" in abnormal_tag
 
-        state["metrics"].categorize_issue(has_latency_issue, has_success_rate_issue)
+        # Only count as latency issue if it exceeds 10s threshold
+        has_significant_latency = has_latency_issue_detected and has_significant_latency_issue(v, abnormal_tag)
+
+        state["metrics"].categorize_issue(has_significant_latency, has_success_rate_issue)
     else:
         # No issues detected
         state["metrics"].categorize_issue(False, False)
@@ -616,11 +640,15 @@ def analyze_single_endpoint(
     if abnormal_tag:
         state["metrics"].increment_anomaly()
 
-    # Categorize issues
+    # Categorize issues with 10s latency threshold
     latency_keys = [x[1] for x in percentiles]
-    has_latency_issue = any(key in abnormal_tag for key in latency_keys)
+    has_latency_issue_detected = any(key in abnormal_tag for key in latency_keys)
     has_success_rate_issue = "succ_rate" in abnormal_tag
-    state["metrics"].categorize_issue(has_latency_issue, has_success_rate_issue)
+
+    # Only count as latency issue if it exceeds 10s threshold
+    has_significant_latency = has_latency_issue_detected and has_significant_latency_issue(v, abnormal_tag)
+
+    state["metrics"].categorize_issue(has_significant_latency, has_success_rate_issue)
 
     # Add to conclusion data
     state["conclusion_data"].append(build_conclusion_row(k, v, normal_stat, abnormal_tag))
@@ -649,9 +677,30 @@ def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[DtoLab
         or metrics.issue_categories["both_latency_and_success_rate"] > 0
     )
 
+    # Check if any endpoint has latency > 10 seconds for may_anomaly threshold
+    has_significant_latency = False
+    latency_threshold = 10.0  # 10 seconds threshold
+
+    if has_any_issues:
+        for conclusion_row in state["conclusion_data"]:
+            # Check various latency metrics against the 10s threshold
+            abnormal_avg = conclusion_row.get("AbnormalAvgDuration", 0.0)
+            abnormal_p90 = conclusion_row.get("AbnormalP90", 0.0)
+            abnormal_p95 = conclusion_row.get("AbnormalP95", 0.0)
+            abnormal_p99 = conclusion_row.get("AbnormalP99", 0.0)
+
+            if (
+                abnormal_avg > latency_threshold
+                or abnormal_p90 > latency_threshold
+                or abnormal_p95 > latency_threshold
+                or abnormal_p99 > latency_threshold
+            ):
+                has_significant_latency = True
+                break
+
     if metrics.absolute_anomaly:
         tags.append("absolute_anomaly")
-    elif has_any_issues:
+    elif has_any_issues and has_significant_latency:
         tags.append("may_anomaly")
     else:
         tags.append("no_anomaly")
@@ -863,12 +912,12 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
 
 @app.command()
 @timeit()
-def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
+def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, Any]:
     dataset_path = Path("data") / "rcabench_dataset"
     assert dataset_path.exists(), f"Dataset path does not exist: {dataset_path}"
 
     # Get all datapack directories
-    datapack_paths = [p for p in dataset_path.iterdir() if p.is_dir()]
+    datapack_paths = [p for p in dataset_path.iterdir() if p.is_dir() and not p.name.startswith("drain")]
     total_datapacks = len(datapack_paths)
 
     if total_datapacks == 0:
@@ -881,7 +930,7 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     assert cpu is not None, "Cannot determine CPU count"
     parallel = max(1, cpu // 4)
 
-    validation_tasks = [functools.partial(valid, dp) for dp in datapack_paths]
+    validation_tasks = [functools.partial(valid, dp, force) for dp in datapack_paths]
 
     # Run validation in parallel
     validation_results = fmap_processpool(validation_tasks, parallel=parallel, cpu_limit_each=1, ignore_exceptions=True)
@@ -893,18 +942,36 @@ def validate_datapacks(delete_invalid: bool = False) -> dict[str, Any]:
     with RCABenchClient() as client:
         injection_api = InjectionsApi(client)
 
+    black_list = [
+        "admin",
+        "voucher",
+        "avatar",
+        "ts-gateway-service",
+        "execute",
+        "ts-news-service",
+        "ts-notification-service",
+        "ts-ticket-office-service",
+        "ts-wait-order-service",
+        "ts-food-delivery-service",
+        "ts-delivery-service",
+    ]
     for datapack_path, is_valid in tqdm(validation_results):
-        tag = "valid" if is_valid else "invalid"
+        if any(bl in datapack_path.name for bl in black_list):
+            is_valid = False
+
+        add_tag = "valid" if is_valid else "invalid"
+        remove_tag = "invalid" if is_valid else "valid"
         if is_valid:
             valid_datapacks.append(datapack_path)
         else:
             invalid_datapacks.append(datapack_path)
-        injection_api.api_v2_injections_name_tags_patch(
-            name=datapack_path.name,
-            manage=DtoInjectionV2LabelManageReq(
-                add_tags=[tag],
-            ),
-        )
+        try:
+            injection_api.api_v2_injections_name_tags_patch(
+                name=datapack_path.name,
+                manage=DtoInjectionV2LabelManageReq(add_tags=[add_tag], remove_tags=[remove_tag]),
+            )
+        except Exception as e:
+            logger.error(e)
 
     # Summary statistics
     valid_count = len(valid_datapacks)
@@ -974,8 +1041,8 @@ def patch_detection():
     cpu = os.cpu_count()
     assert cpu is not None, "Cannot determine CPU count"
 
-    parallel = cpu // 4
-    results = fmap_processpool(tasks, parallel=parallel, cpu_limit_each=4, ignore_exceptions=False)
+    parallel = cpu // 2
+    results = fmap_processpool(tasks, parallel=parallel, cpu_limit_each=2, ignore_exceptions=True)
 
     # Create temp directory if it doesn't exist
     temp_dir = Path("temp")

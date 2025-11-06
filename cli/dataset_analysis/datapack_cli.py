@@ -1,5 +1,4 @@
 #!/usr/bin/env -S uv run -s
-import json
 from pathlib import Path
 
 import polars as pl
@@ -9,7 +8,12 @@ from rcabench_platform.v2.analysis.aggregation import (
     DuckDBAggregator,
     aggregate,
 )
-from rcabench_platform.v2.analysis.algo_perf_vis import algo_perf_by_groups, algo_perf_scatter_by_fault_category
+from rcabench_platform.v2.analysis.algo_perf_vis import (
+    algo_perf_by_fault_type,
+    algo_perf_by_groups,
+    algo_success_by_algo,
+    dataset_anomaly_distribution,
+)
 from rcabench_platform.v2.analysis.data_prepare import (
     build_items_with_cache,
     get_execution_item,
@@ -32,8 +36,8 @@ ALGORITHMS = [
     "diagfusion",
     "art",
     "nezha",
+    "causalrca",
 ]
-DEGREES = ["absolute_anomaly"]  # , "may_anomaly", "no_anomaly"]
 METRICS = ["SDD@1", "SDD@3", "SDD@5", "CPL", "RootServiceDegree"]
 
 
@@ -41,78 +45,54 @@ load_dotenv()
 
 
 @app.command(name="visualize")
-def visualize(dataset_id: int, execution_tag: str | None = None) -> None:
+def visualize(dataset_id: int, simple: bool, execution_tag: str | None = None) -> None:
     items, _ = get_execution_item(ALGORITHMS, dataset_id=dataset_id, execution_tag=execution_tag)
-
+    logger.info(f"get {len(items)} items for visualization")
     count_items = build_items_with_cache(
         output_pkl_path=Path("temp/dataset_analysis/datapacks") / "injections" / "items.pkl",
         input_items=items,
         metrics=METRICS,
         namespace=DEFAULT_NAMESPACE,
+        simple=simple,
     )
 
     df = aggregate(count_items)
-    save_parquet(df, path="temp/algo/aggregated_result.parquet")
+    save_parquet(df, path=f"temp/algo/aggregated_result_{simple}.parquet")
 
 
 @app.command()
 def analysis():
-    df = pl.read_parquet("temp/algo/aggregated_result.parquet")
+    df = pl.read_parquet("temp/algo/aggregated_result_False.parquet")
 
     aggregator = DuckDBAggregator(df)
 
-    def vis_hook(df, name):
+    def vis_hook(df, name, fig=False):
         format_dataframe(df, "html", output_file=f"temp/algo/{name}.html")
-        algo_perf_by_groups(df, output_file=Path(f"temp/algo/{name}.png"))
+        format_dataframe(df, "csv", output_file=f"temp/algo/{name}.csv")
+        format_dataframe(df, "latex", output_file=f"temp/algo/{name}.tex")
+        if fig:
+            algo_perf_by_groups(df, output_file=Path(f"temp/algo/{name}.png"))
 
     try:
-        print_dataframe(aggregator.algorithm_performance_summary())
-        vis_hook(aggregator.algorithm_performance_summary(), "performance_all")
-        vis_hook(aggregator.fault_category(), "fault_category_analysis")
-        vis_hook(aggregator.fault_type(), "fault_type_analysis")
+        vis_hook(aggregator.dataset_overall(), "dataset_overall")
+        vis_hook(aggregator.dataset_fault_type(), "dataset_fault_type")
+        vis_hook(aggregator.perf_overall(), "perf_overall")
+        vis_hook(aggregator.perf_common_failures(5, 10), "common_failures")
+        vis_hook(aggregator.perf_group_by_fault_type(), "perf_by_fault_type")
+        algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_fault_type.pdf"))
+        algo_success_by_algo(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_algo.pdf"))
+    finally:
+        aggregator.close()
 
-        sdd1 = aggregator.sdd_k(1)
-        sdd3 = aggregator.sdd_k(3)
-        sdd5 = aggregator.sdd_k(5)
 
-        print_dataframe(sdd1)
-        print_dataframe(sdd3)
-        print_dataframe(sdd5)
+@app.command()
+def rq4():
+    df = pl.read_parquet("temp/algo/aggregated_result_true.parquet")
+    aggregator = DuckDBAggregator(df)
+    try:
+        format_dataframe(aggregator.dataset_fault_type(), "csv", output_file="temp/algo/rq4_generation_process.csv")
 
-        # print_dataframe(aggregator.algorithm_performance_breakdown("baro"))
-        algo = "microrank"
-        format_dataframe(
-            aggregator.algorithm_success_failure_stats(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_success_failure_stats.html",
-        )
-        format_dataframe(
-            aggregator.algorithm_failure_characteristics(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_failure_characteristics.html",
-        )
-        format_dataframe(
-            aggregator.algorithm_comparative_analysis(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_comparative_analysis.html",
-        )
-        format_dataframe(
-            aggregator.algorithm_detailed_performance_matrix(algo),
-            output_format="html",
-            output_file="temp/algo/algorithm_detailed_performance_matrix.html",
-        )
-
-        fcasdd_df = aggregator.fault_category_and_sdd_analysis(1)
-        format_dataframe(
-            fcasdd_df,
-            "html",
-            output_file="temp/algo/fault_category_and_sdd_analysis.html",
-        )
-
-        # batch_visualization(datapack_paths, False)
-
-        # aggregator.print_schema()
-
+        dataset_anomaly_distribution(aggregator.dataset_fault_type(), Path("temp/algo/rq4_generation_process.pdf"))
     finally:
         aggregator.close()
 

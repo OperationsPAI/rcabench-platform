@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
+import pandas as pd
 import typer
 from rcabench.openapi import AlgorithmsApi, DtoGranularityResultEnhancedRequest, DtoGranularityResultItem
 
@@ -54,6 +55,18 @@ def run(
     duration = datetime.now() - start_time
 
     result_rows = [{"level": ans.level, "result": ans.name, "rank": ans.rank, "confidence": 0} for ans in answers]
+
+    # Check if submission is enabled
+    submission_enabled = os.environ.get("RCABENCH_SUBMITION", "true").lower() != "false"
+
+    if not submission_enabled:
+        logger.info("Submission disabled by RCABENCH_SUBMITION environment variable")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        result_file = output_path / f"{algorithm}_result_{timestamp}.csv"
+        result_df = pd.DataFrame(result_rows)
+        save_csv(result_df, path=result_file)
+        logger.info(f"Results saved to {result_file}")
+        return
 
     algorithm_id_str = os.environ.get("ALGORITHM_ID")
     execution_id_str = os.environ.get("EXECUTION_ID")

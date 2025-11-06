@@ -21,7 +21,7 @@ class TracesVisualizer:
                 df.select(pl.col(service_col))
                 .filter(pl.col(service_col).is_not_null())
                 .unique()
-                .sort(service_col)
+                .sort(pl.col(service_col).str.to_lowercase())
                 .to_series()
                 .to_list()
             )
@@ -85,6 +85,9 @@ class TracesVisualizer:
                         pl.col("duration_ms").median().alias("median_duration_ms"),
                         pl.col("duration_ms").min().alias("min_duration_ms"),
                         pl.col("duration_ms").max().alias("max_duration_ms"),
+                        pl.col("duration_ms").quantile(0.9, interpolation="linear").alias("p90_duration_ms"),
+                        pl.col("duration_ms").quantile(0.95, interpolation="linear").alias("p95_duration_ms"),
+                        pl.col("duration_ms").quantile(0.99, interpolation="linear").alias("p99_duration_ms"),
                         pl.col("is_error").sum().alias("error_count"),
                         pl.col("is_error").mean().alias("error_rate"),
                     ]
@@ -116,6 +119,9 @@ class TracesVisualizer:
                     "Total Calls": f"{row['total_calls']:,}",
                     "Avg Duration (ms)": f"{row['avg_duration_ms']:.2f}" if row["avg_duration_ms"] else "0.00",
                     "Median Duration (ms)": f"{row['median_duration_ms']:.2f}" if row["median_duration_ms"] else "0.00",
+                    "P90 Duration (ms)": f"{row['p90_duration_ms']:.2f}" if row["p90_duration_ms"] else "0.00",
+                    "P95 Duration (ms)": f"{row['p95_duration_ms']:.2f}" if row["p95_duration_ms"] else "0.00",
+                    "P99 Duration (ms)": f"{row['p99_duration_ms']:.2f}" if row["p99_duration_ms"] else "0.00",
                     "Min Duration (ms)": f"{row['min_duration_ms']:.2f}" if row["min_duration_ms"] else "0.00",
                     "Max Duration (ms)": f"{row['max_duration_ms']:.2f}" if row["max_duration_ms"] else "0.00",
                     "Error Count": f"{row['error_count']:,}",

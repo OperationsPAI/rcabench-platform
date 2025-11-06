@@ -246,7 +246,7 @@ def rcabench_split_train_test(
     return train_datapacks, test_datapacks
 
 
-def valid(path: Path) -> tuple[Path, bool]:
+def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
     path_obj = path
 
     if not path_obj.exists() or not path_obj.is_dir():
@@ -257,10 +257,17 @@ def valid(path: Path) -> tuple[Path, bool]:
     valid_cache = path_obj / ".valid"
     invalid_cache = path_obj / ".invalid"
 
+    if not force_refresh:
+        if valid_cache.exists():
+            return path, True
+        elif invalid_cache.exists():
+            return path, False
+
+    # clean up old cache files
     if valid_cache.exists():
-        return path, True
-    elif invalid_cache.exists():
-        return path, False
+        valid_cache.unlink()
+    if invalid_cache.exists():
+        invalid_cache.unlink()
 
     required_files = [
         # Parquet files
@@ -382,6 +389,9 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
         self.files: dict[str, Any] = self._load_datapack_files()
 
     def _get_datapack_folder(self) -> Path | None:
+        in_p = Path(os.environ.get("INPUT_PATH", ""))
+        if in_p.exists() and in_p.is_dir() and (in_p / "converted").exists():
+            return in_p / "converted"
         return Path("data") / "rcabench_dataset" / self.datapack / "converted"
 
     def _load_datapack_files(self) -> dict[str, Any]:
