@@ -40,8 +40,21 @@ def single(
     clear: bool = False,
     skip_finished: bool = True,
     submit_result: bool = False,
+    sampler: str | None = None,
+    sampling_rate: float | None = None,
+    sampling_mode: str | None = None,
 ):
-    run_single(algorithm, dataset, datapack, clear=clear, skip_finished=skip_finished, submit_result=submit_result)
+    run_single(
+        algorithm,
+        dataset,
+        datapack,
+        clear=clear,
+        skip_finished=skip_finished,
+        submit_result=submit_result,
+        sampler=sampler,
+        sampling_rate=sampling_rate,
+        sampling_mode=sampling_mode,
+    )
 
 
 @app.command()
@@ -55,6 +68,10 @@ def batch(
     use_cpus: int | None = None,
     submit_result: bool = False,
     ignore_exceptions: bool = True,
+    include_sampled: bool = False,
+    samplers: Annotated[list[str] | None, typer.Option("-s", "--sampler")] = None,
+    sampling_rates: Annotated[list[float] | None, typer.Option("-r", "--sampling-rate")] = None,
+    sampling_modes: Annotated[list[str] | None, typer.Option("-m", "--sampling-mode")] = None,
 ):
     run_batch(
         algorithms,
@@ -65,10 +82,14 @@ def batch(
         use_cpus=use_cpus,
         submit_result=submit_result,
         ignore_exceptions=ignore_exceptions,
+        include_sampled=include_sampled,
+        samplers=samplers,
+        sampling_rates=sampling_rates,
+        sampling_modes=sampling_modes,
     )
 
 
 @app.command()
 @timeit()
-def perf_report(dataset: str, warn_missing: bool = False):
-    generate_perf_report(dataset, warn_missing=warn_missing)
+def perf_report(dataset: str, warn_missing: bool = False, include_sampled: bool = False):
+    generate_perf_report(dataset, warn_missing=warn_missing, include_sampled=include_sampled)

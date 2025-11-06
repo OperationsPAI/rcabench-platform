@@ -20,6 +20,8 @@ from ..config import get_config
 from ..datasets.spec import get_datapack_folder, get_datapack_labels
 from ..evaluation.ranking import calc_all_perf
 from ..logging import logger, timeit
+from ..samplers.experiments.spec import get_sampler_output_folder
+from ..samplers.spec import SamplingMode
 from ..utils.fs import running_mark
 from ..utils.serde import save_parquet
 from .spec import get_output_folder
@@ -34,11 +36,27 @@ def run_single(
     clear: bool = False,
     skip_finished: bool = True,
     submit_result: bool = False,
+    sampler: str | None = None,
+    sampling_rate: float | None = None,
+    sampling_mode: str | None = None,
 ):
     alg = global_algorithm_registry()[algorithm]()
 
-    input_folder = get_datapack_folder(dataset, datapack)
-    output_folder = get_output_folder(dataset, datapack, algorithm)
+    # 基础的input_folder和output_folder
+    base_input_folder = get_datapack_folder(dataset, datapack)
+
+    # 如果指定了sampler，则使用sampled子目录作为input_folder
+    if sampler is not None:
+        assert sampling_rate is not None, "sampling_rate must be provided when using sampler"
+        assert sampling_mode is not None, "sampling_mode must be provided when using sampler"
+        mode = SamplingMode(sampling_mode)
+        input_folder = get_sampler_output_folder(dataset, datapack, sampler, sampling_rate, mode)
+        # output_folder也需要包含sampler信息以区分不同的运行
+        algorithm_suffix = f"{algorithm}_sampled_{sampler}_{sampling_rate}_{sampling_mode}"
+        output_folder = get_output_folder(dataset, datapack, algorithm_suffix)
+    else:
+        input_folder = base_input_folder
+        output_folder = get_output_folder(dataset, datapack, algorithm)
 
     with running_mark(output_folder, clear=clear):
         finished = output_folder / ".finished"
@@ -97,6 +115,9 @@ def run_single(
         pl.lit(runtime, dtype=pl.Float64).alias("runtime.seconds"),
         pl.lit(exception_type, dtype=pl.String).alias("exception.type"),
         pl.lit(exception_message, dtype=pl.String).alias("exception.message"),
+        pl.lit(sampler, dtype=pl.String).alias("sampler.name"),
+        pl.lit(sampling_rate, dtype=pl.Float64).alias("sampler.rate"),
+        pl.lit(sampling_mode, dtype=pl.String).alias("sampler.mode"),
     )
 
     if output_df["hit"].any():

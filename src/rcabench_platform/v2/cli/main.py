@@ -22,13 +22,14 @@ def _():
 
 
 def main(*, enable_builtin_algorithms: bool = True) -> None:
-    from . import container, eval, online, sdg, self_, tools
+    from . import container, eval, online, sample, sdg, self_, tools
 
     app.add_typer(self_.app, name="self")
     app.add_typer(tools.app, name="tools")
     app.add_typer(online.app, name="online")
     app.add_typer(sdg.app, name="sdg")
     app.add_typer(eval.app, name="eval")
+    app.add_typer(sample.app, name="sample")
     app.add_typer(container.app, name="container")
     if enable_builtin_algorithms:
         register_builtin_algorithms()
