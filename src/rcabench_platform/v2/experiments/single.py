@@ -115,10 +115,15 @@ def run_single(
         pl.lit(runtime, dtype=pl.Float64).alias("runtime.seconds"),
         pl.lit(exception_type, dtype=pl.String).alias("exception.type"),
         pl.lit(exception_message, dtype=pl.String).alias("exception.message"),
-        pl.lit(sampler, dtype=pl.String).alias("sampler.name"),
-        pl.lit(sampling_rate, dtype=pl.Float64).alias("sampler.rate"),
-        pl.lit(sampling_mode, dtype=pl.String).alias("sampler.mode"),
     )
+
+    # Only add sampler columns if sampler was actually used
+    if sampler is not None:
+        output_df = output_df.with_columns(
+            pl.lit(sampler, dtype=pl.String).alias("sampler.name"),
+            pl.lit(sampling_rate, dtype=pl.Float64).alias("sampler.rate"),
+            pl.lit(sampling_mode, dtype=pl.String).alias("sampler.mode"),
+        )
 
     if output_df["hit"].any():
         for row in output_df.filter(pl.col("hit")).iter_rows(named=True):
