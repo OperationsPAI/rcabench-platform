@@ -45,7 +45,7 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
         dataframes = []
         for path in valid_output_paths:
             df = pl.read_parquet(path)
-            
+
             # Add sampler columns with None if they don't exist
             if "sampler.name" not in df.columns:
                 df = df.with_columns(
@@ -53,9 +53,9 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
                     pl.lit(None, dtype=pl.Float64).alias("sampler.rate"),
                     pl.lit(None, dtype=pl.String).alias("sampler.mode"),
                 )
-            
+
             dataframes.append(df)
-        
+
         # Concatenate all dataframes
         output_df = pl.concat(dataframes, rechunk=True)
     else:
