@@ -40,7 +40,27 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
     assert len(valid_output_paths) > 0, f"No output files found for dataset `{dataset}`. "
 
     logger.debug(f"loading {len(valid_output_paths)} output files")
-    output_df = pl.read_parquet(valid_output_paths, rechunk=True)
+    if include_sampled:
+        # When include_sampled is True, unify schema by adding missing sampler columns
+        dataframes = []
+        for path in valid_output_paths:
+            df = pl.read_parquet(path)
+            
+            # Add sampler columns with None if they don't exist
+            if "sampler.name" not in df.columns:
+                df = df.with_columns(
+                    pl.lit(None, dtype=pl.String).alias("sampler.name"),
+                    pl.lit(None, dtype=pl.Float64).alias("sampler.rate"),
+                    pl.lit(None, dtype=pl.String).alias("sampler.mode"),
+                )
+            
+            dataframes.append(df)
+        
+        # Concatenate all dataframes
+        output_df = pl.concat(dataframes, rechunk=True)
+    else:
+        # When include_sampled is False, read normally (all files should have same schema)
+        output_df = pl.read_parquet(valid_output_paths, rechunk=True)
 
     output_meta_folder = get_output_meta_folder(dataset)
     save_parquet(output_df, path=output_meta_folder / "output.parquet")
