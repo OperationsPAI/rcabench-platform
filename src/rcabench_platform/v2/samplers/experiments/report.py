@@ -264,12 +264,6 @@ def generate_sampler_perf_report(
             save_parquet(dataset_agg_df, path=dataset_output_folder / "aggregated_perf.parquet")
             logger.info(f"Saved {dataset} sampler reports to: {dataset_output_folder}")
 
-    # Also save combined reports to the main folder for cross-dataset analysis
-    main_output_folder = config.output / "sampler_reports"
-    main_output_folder.mkdir(parents=True, exist_ok=True)
-    save_parquet(combined_perf_df, path=main_output_folder / "detailed_perf.parquet")
-    save_parquet(agg_perf_df, path=main_output_folder / "aggregated_perf.parquet")
-
     # Print summary table
     display_df = agg_perf_df.select(
         [
@@ -304,7 +298,6 @@ def generate_sampler_perf_report(
     print_dataframe(display_df)
 
     logger.info(f"Dataset-specific results saved to: {config.output / 'sampler_reports'}")
-    logger.info(f"Combined results saved to: {main_output_folder}")
 
 
 def _scan_available_configurations(datasets: list[str]) -> tuple[list[str], list[float], list[SamplingMode]]:
