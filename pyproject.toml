@@ -41,6 +41,7 @@ dependencies = [ #
     "vegafusion>=2.0.2",
     "duckdb>=1.3.2",
     "duckdb>=1.3.2",
+    "statsmodels>=0.14.5",
 ]
 
 [project.scripts]

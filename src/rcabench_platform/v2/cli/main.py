@@ -43,11 +43,15 @@ def register_builtin_algorithms():
     from ..algorithms.rcaeval.nsigma import NSigma
     from ..algorithms.traceback.A7 import TraceBackA7
     from ..algorithms.traceback.A8 import TraceBackA8
+    from ..algorithms.traceback.A9 import TraceBackA9
+    from ..algorithms.traceback.A10 import TraceBackA10
 
     getters = {
         "random": Random,
         "traceback-A7": TraceBackA7,
         "traceback-A8": TraceBackA8,
+        "traceback-A9": TraceBackA9,
+        "traceback-A10": TraceBackA10,
         "baro": Baro,
         "nsigma": NSigma,
     }

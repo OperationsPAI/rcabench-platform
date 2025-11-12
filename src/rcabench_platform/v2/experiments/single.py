@@ -27,7 +27,7 @@ from ..utils.serde import save_parquet
 from .spec import get_output_folder
 
 
-@timeit(log_level="INFO")
+@timeit(log_level="INFO", log_args=False)
 def run_single(
     algorithm: str,
     dataset: str,
