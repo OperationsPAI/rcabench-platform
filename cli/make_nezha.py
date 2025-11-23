@@ -331,7 +331,7 @@ class MultiDateDatasetLoader(DatasetLoader):
 @app.command(help="Convert Nezha dataset to RCABench format")
 @timeit()
 def run(
-    source_dir: str = "data/nezha",
+    source_dir: str = "data/nezha/rca_data",
     ob_dates: list[str] = typer.Option([], help="ob系统的所有日期,2022-08-22 2022-08-23"),
     tt_dates: list[str] = typer.Option([], help="tt系统的所有日期,2023-01-29 2023-01-30"),
 ):
