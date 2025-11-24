@@ -394,9 +394,20 @@ def build_conclusion_row(
 def setup_paths_and_validation(in_p: Path | None, ou_p: Path | None) -> tuple[Path, Path]:
     """Setup and validate input/output paths and trace files."""
     if in_p is None:
-        in_p = Path(os.environ.get("INPUT_PATH", ""))
+        input_path_str = os.environ.get("INPUT_PATH", "")
+        if not input_path_str:
+            raise ValueError(
+                "INPUT_PATH environment variable is not set. Please set INPUT_PATH to the datapack directory path."
+            )
+        in_p = Path(input_path_str)
+
     if ou_p is None:
-        ou_p = Path(os.environ.get("OUTPUT_PATH", ""))
+        output_path_str = os.environ.get("OUTPUT_PATH", "")
+        if not output_path_str:
+            raise ValueError(
+                "OUTPUT_PATH environment variable is not set. Please set OUTPUT_PATH to the output directory path."
+            )
+        ou_p = Path(output_path_str)
 
     input_path = Path(in_p)
     assert input_path.exists(), f"Input path does not exist: {input_path}"
@@ -735,7 +746,13 @@ def run(
 ) -> AnalysisResult | None:
     start_time = datetime.now()
     input_path, output_path = setup_paths_and_validation(in_p, ou_p)
-    if not valid(input_path)[1]:
+    path_result, is_valid = valid(input_path)
+    if not is_valid:
+        logger.error(
+            f"Input path validation failed: {input_path}. "
+            f"Please check if all required files exist and are valid. "
+            f"Run with DEBUG=true for detailed validation logs."
+        )
         return None
 
     if online:
@@ -793,10 +810,10 @@ def run(
         "dataset_metrics": {},
     }
 
-    with RCABenchClient() as client:
-        executions_api = ExecutionsApi(client)
+    if online:
+        with RCABenchClient() as client:
+            executions_api = ExecutionsApi(client)
 
-        if online:
             duration = datetime.now() - start_time
             resp = executions_api.upload_detection_results(
                 execution_id=execution_id,
@@ -823,12 +840,11 @@ def run(
             )
             logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
 
-        # Create tags and labels from analysis state
-        tags, labels = create_tags_and_labels(state)
+            # Create tags and labels from analysis state
+            tags, labels = create_tags_and_labels(state)
 
-        # Update injection labels using the new API
-        # Note: Tags are stored as labels with a special prefix
-        if online:
+            # Update injection labels using the new API
+            # Note: Tags are stored as labels with a special prefix
             try:
                 # Get injection ID from injection.json
                 injection_file = input_path / "injection.json"
@@ -855,9 +871,9 @@ def run(
             except Exception as e:
                 logger.error(f"Failed to update injection labels: {e}")
 
-        calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name))
-        res = calculator.calculate_and_report()
-        result["dataset_metrics"] = res
+            calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name))
+            res = calculator.calculate_and_report()
+            result["dataset_metrics"] = res
 
     return result
 

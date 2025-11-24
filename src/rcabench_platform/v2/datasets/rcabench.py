@@ -250,7 +250,7 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
     path_obj = path
 
     if not path_obj.exists() or not path_obj.is_dir():
-        logger.debug("Path does not exist or is not a directory: {}", path)
+        logger.warning("Validation failed: Path does not exist or is not a directory: {}", path)
         return path, False
 
     # Check cache files first
@@ -261,6 +261,7 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
         if valid_cache.exists():
             return path, True
         elif invalid_cache.exists():
+            logger.warning("Validation failed: Found .invalid cache file in {}", path)
             return path, False
 
     # clean up old cache files
@@ -293,13 +294,13 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
         file_path = path_obj / filename
 
         if not file_path.exists():
-            logger.debug("Missing required file: {}", file_path)
+            logger.warning("Validation failed: Missing required file: {}", file_path)
             invalid_f = path_obj / ".invalid"
             invalid_f.touch()
             return path, False
 
         if file_path.stat().st_size == 0:
-            logger.debug("Empty file: {}", file_path)
+            logger.warning("Validation failed: Empty file: {}", file_path)
             invalid_f = path_obj / ".invalid"
             invalid_f.touch()
             return path, False
@@ -309,7 +310,7 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
                 with open(file_path, encoding="utf-8") as f:
                     json.load(f)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                logger.debug("Invalid JSON file {}: {}", file_path, e)
+                logger.warning("Validation failed: Invalid JSON file {}: {}", file_path, e)
                 invalid_f = path_obj / ".invalid"
                 invalid_f.touch()
                 return path, False
@@ -320,13 +321,13 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
                 row_count = df.height
 
                 if row_count == 0:
-                    logger.debug("Parquet file has no data rows: {}", file_path)
+                    logger.warning("Validation failed: Parquet file has no data rows: {}", file_path)
                     invalid_f = path_obj / ".invalid"
                     invalid_f.touch()
                     return path, False
 
             except Exception as e:
-                logger.debug("Failed to read Parquet file {}: {}", file_path, e)
+                logger.warning("Validation failed: Failed to read Parquet file {}: {}", file_path, e)
                 invalid_f = path_obj / ".invalid"
                 invalid_f.touch()
                 return path, False
