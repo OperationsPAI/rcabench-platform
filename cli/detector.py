@@ -904,7 +904,7 @@ def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
 
     with open(injection_file) as f:
         injection = json.load(f)
-        injection_name = injection.get("injection_name")
+        injection_name = injection.get("name")
         assert injection_name and isinstance(injection_name, str), (
             f"Invalid injection_name in {injection_file}: {injection_name}"
         )
