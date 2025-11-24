@@ -5,13 +5,13 @@ from pathlib import Path
 
 import polars as pl
 from rcabench.openapi import (
-    AlgorithmApi,
-    AlgorithmsApi,
-    DtoAlgorithmSearchRequest,
-    DtoGranularityResultEnhancedRequest,
-    DtoGranularityResultItem,
-    DtoInjectionV2SearchReq,
+    ContainersApi,
+    ExecutionsApi,
+    GranularityResultItem,
     InjectionsApi,
+    SearchContainerReq,
+    SearchInjectionReq,
+    UploadGranularityResultReq,
 )
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
@@ -141,53 +141,61 @@ def run_single(
     if submit_result:
         assert runtime is not None
         with RCABenchClient(base_url=get_config().base_url) as client:
-            algorithms_api = AlgorithmsApi(client)
+            containers_api = ContainersApi(client)
+            executions_api = ExecutionsApi(client)
             injections_api = InjectionsApi(client)
-            injections = injections_api.api_v2_injections_search_post(
-                search=DtoInjectionV2SearchReq(
+
+            # Search for injection by datapack name
+            injections = injections_api.search_injections(
+                search=SearchInjectionReq(
                     search=f"{datapack}",
                     page=1,
                     size=1,
                 ),
             )
             assert injections.data is not None and injections.data.items is not None
+            if len(injections.data.items) == 0:
+                logger.warning(f"No injection found for datapack: {datapack}")
+                return
             datapack_id = injections.data.items[0].id
 
-            algorithms = algorithms_api.api_v2_algorithms_search_post(
-                request=DtoAlgorithmSearchRequest(
-                    name=algorithm,
+            # Search for container/algorithm by name
+            containers = containers_api.search_containers(
+                request=SearchContainerReq(
+                    search=algorithm,
                     page=1,
                     size=10,
                 ),
             )
-            assert algorithms.code is not None
-            if algorithms.code > 210:
+            assert containers.code is not None
+            if containers.code > 210:
                 logger.error(
-                    f"Error in algorithms search API call for {algorithm}: {algorithms.code}, {algorithms.message}"
+                    f"Error in container search API call for {algorithm}: {containers.code}, {containers.message}"
                 )
                 return
-            assert algorithms.data is not None
-            assert algorithms.data.items is not None
+            assert containers.data is not None
+            assert containers.data.items is not None
 
             # Find algorithm by name
             algorithm_id = None
-            for algo in algorithms.data.items:
+            for algo in containers.data.items:
                 if algo.name == algorithm:
                     algorithm_id = algo.id
                     break
 
             if algorithm_id is None:
-                logger.warning(f"Algorithm '{algorithm}' not found in available algorithms")
+                logger.warning(f"Algorithm '{algorithm}' not found in available containers")
                 return
             assert algorithm_id is not None
+            assert datapack_id is not None
 
-            resp = algorithms_api.api_v2_algorithms_algorithm_id_results_post(
-                algorithm_id=algorithm_id,
-                request=DtoGranularityResultEnhancedRequest(
+            resp = executions_api.upload_localization_results(
+                execution_id=algorithm_id,
+                request=UploadGranularityResultReq(
                     duration=runtime,
                     datapack_id=datapack_id,
                     results=[
-                        DtoGranularityResultItem(
+                        GranularityResultItem(
                             confidence=0,
                             level=ans["level"],
                             rank=ans["rank"],

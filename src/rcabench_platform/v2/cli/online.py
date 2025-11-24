@@ -6,18 +6,16 @@ import polars as pl
 import tomli
 import typer
 from rcabench.openapi import (
-    AlgorithmsApi,
     ContainersApi,
     DatasetsApi,
-    DtoAlgorithmExecutionRequest,
-    DtoAlgorithmItem,
-    DtoBatchAlgorithmExecutionRequest,
-    DtoDatasetV2SearchReq,
-    DtoExecutionLabels,
-    DtoInjectionV2SearchReq,
+    ExecutionsApi,
     InjectionsApi,
+    LabelItem,
+    SearchInjectionReq,
+    SubmitExecutionItem,
+    SubmitExecutionReq,
+    TracesApi,
 )
-from rcabench.rcabench import RCABenchSDK
 
 from rcabench_platform.v2.analysis.data_prepare import get_execution_item
 
@@ -54,8 +52,8 @@ def kube_info(namespace: str = "ts1", save_path: Path | None = None):
 def query_injection(name: str, page: int = 1, size: int = 5, base_url: str | None = None):
     with RCABenchClient(base_url=base_url) as client:
         api = InjectionsApi(client)
-        resp = api.api_v2_injections_search_post(
-            search=DtoInjectionV2SearchReq(
+        resp = api.search_injections(
+            search=SearchInjectionReq(
                 search=name,
                 page=page,
                 size=size,
@@ -74,7 +72,7 @@ def query_injection(name: str, page: int = 1, size: int = 5, base_url: str | Non
 def list_injections():
     with RCABenchClient() as client:
         api = InjectionsApi(client)
-        resp = api.api_v2_injections_get()
+        resp = api.list_injections()
         assert resp.data is not None
     assert resp.data.items is not None
     ans = [item.model_dump() for item in resp.data.items]
@@ -88,7 +86,7 @@ def list_injections():
 def list_datasets():
     with RCABenchClient() as client:
         api = DatasetsApi(client)
-        resp = api.api_v2_datasets_search_post(search=DtoDatasetV2SearchReq(search=""))
+        resp = api.list_datasets()
         assert resp.data is not None
     assert resp.data.items is not None
 
@@ -105,19 +103,19 @@ def list_datasets():
 def get_dataset(id: int):
     with RCABenchClient() as client:
         api = DatasetsApi(client)
-        resp = api.api_v2_datasets_id_get(id=id, include_injections=True)
+        resp = api.get_dataset_by_id(dataset_id=id, include_injections=True)
         assert resp.data is not None
 
     assert resp.data.injections is not None
-    return [i.injection_name for i in resp.data.injections]
+    return [i.name for i in resp.data.injections]
 
 
 @app.command()
 @timeit()
 def list_algorithms(base_url: str | None = None):
     with RCABenchClient(base_url=base_url) as client:
-        api = AlgorithmsApi(client)
-        resp = api.api_v2_algorithms_get()
+        api = ContainersApi(client)
+        resp = api.list_containers()
         assert resp.data is not None
 
         assert resp.data.items is not None
@@ -389,10 +387,11 @@ def trace(trace_id: str, base_url: str | None = None, timeout: int = 600):
     base_url = base_url or os.getenv("RCABENCH_BASE_URL")
     assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
 
-    sdk = RCABenchSDK(base_url=base_url)
-    res = sdk.trace.stream_trace_events(trace_id=trace_id, timeout=timeout)
-    for event in res:
-        logger.info(event.model_dump_json(indent=2))
+    with RCABenchClient(base_url=base_url) as client:
+        api = TracesApi(client)
+        res = api.stream_trace_events(trace_id=trace_id, timeout=timeout)
+        for event in res:
+            logger.info(event.model_dump_json(indent=2))
 
 
 @app.command()

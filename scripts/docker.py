@@ -40,8 +40,9 @@ def get_project_version() -> str:
 
 @app.command()
 @timeit()
-def build(image_name: str):
-    assert_clean()
+def build(image_name: str, skip_clean_check: bool = False):
+    if not skip_clean_check:
+        assert_clean()
 
     directory = CONTEXTS[image_name]
     os.chdir(directory)
@@ -103,8 +104,12 @@ def push(image_name: str):
 @app.command()
 @timeit()
 def update_all():
-    for image_name in CONTEXTS:
-        build(image_name)
+    # Only check clean state once before starting
+    assert_clean()
+
+    for i, image_name in enumerate(CONTEXTS):
+        # Skip clean check for all builds since we already checked once
+        build(image_name, skip_clean_check=True)
 
     for image_name in CONTEXTS:
         push(image_name)

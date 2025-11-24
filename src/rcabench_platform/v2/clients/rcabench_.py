@@ -4,33 +4,20 @@ import polars as pl
 from rcabench.openapi import (
     ApiClient,
     AuthenticationApi,
+    BatchEvaluateDatapackReq,
+    BatchEvaluateDatapackResp,
+    BatchEvaluateDatasetResp,
     Configuration,
+    ContainerRef,
     DatasetsApi,
-    DtoAlgorithmDatapackReq,
-    DtoAlgorithmDatapackResp,
-    DtoAlgorithmDatasetReq,
-    DtoAlgorithmDatasetResp,
-    DtoDatapackEvaluationBatchReq,
-    DtoDatasetEvaluationBatchReq,
-    DtoGranularityRecord,
-    DtoInjectionV2Response,
-    DtoInjectionV2SearchReq,
-    EvaluationApi,
+    EvaluateDatapackSpec,
+    EvaluationsApi,
+    InjectionResp,
     InjectionsApi,
-    ProjectsApi,
+    LoginReq,
 )
-from rcabench.openapi.models.dto_login_request import DtoLoginRequest
-from rcabench.rcabench import RCABenchSDK
 
 from ..config import get_config
-from ..logging import logger
-
-
-def get_rcabench_sdk(*, base_url: str | None = None) -> RCABenchSDK:
-    if base_url is None:
-        base_url = get_config().base_url
-
-    return RCABenchSDK(base_url=base_url)
 
 
 def get_rcabench_openapi_client(*, base_url: str | None = None) -> ApiClient:
@@ -117,8 +104,8 @@ class RCABenchClient:
             auth_api = AuthenticationApi(api_client)
             assert self.username is not None
             assert self.password is not None
-            login_request = DtoLoginRequest(username=self.username, password=self.password)
-            response = auth_api.api_v2_auth_login_post(login_request)
+            login_request = LoginReq(username=self.username, password=self.password)
+            response = auth_api.login(login_request)
             assert response.data is not None
 
             # Store session information in class-level cache
@@ -154,16 +141,21 @@ class RCABenchClient:
 
 def get_evaluation_by_datapack(
     algorithm: str, datapack: str, tag: str | None = None, base_url: str | None = None
-) -> list[DtoAlgorithmDatapackResp]:
+) -> BatchEvaluateDatapackResp:
     base_url = base_url or os.getenv("RCABENCH_BASE_URL")
     assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
     assert tag, "Tag must be specified."
 
     with RCABenchClient(base_url=base_url) as client:
-        api = EvaluationApi(client)
-        resp = api.api_v2_evaluations_datapacks_post(
-            request=DtoDatapackEvaluationBatchReq(
-                items=[DtoAlgorithmDatapackReq(algorithm=algorithm, datapack=datapack, tag=tag)]
+        api = EvaluationsApi(client)
+        resp = api.evaluate_algorithm_on_datapacks(
+            request=BatchEvaluateDatapackReq(
+                specs=[
+                    EvaluateDatapackSpec(
+                        algorithm=ContainerRef(name=algorithm, version=tag),
+                        datapack=datapack,
+                    )
+                ]
             )
         )
 
@@ -178,20 +170,18 @@ def get_evaluation_by_dataset(
     dataset_version: str | None = None,
     tag: str | None = None,
     base_url: str | None = None,
-) -> list[DtoAlgorithmDatasetResp]:
+) -> BatchEvaluateDatasetResp:
     base_url = base_url or os.getenv("RCABENCH_BASE_URL")
     assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
 
     with RCABenchClient(base_url=base_url) as client:
-        api = EvaluationApi(client)
-        resp = api.api_v2_evaluations_datasets_post(
-            request=DtoDatasetEvaluationBatchReq(
-                items=[
-                    DtoAlgorithmDatasetReq(
-                        algorithm=algorithm,
-                        dataset=dataset,
-                        dataset_version=dataset_version,
-                        tag=tag,
+        api = EvaluationsApi(client)
+        resp = api.evaluate_algorithm_on_datasets(
+            request=BatchEvaluateDatapackReq(
+                specs=[
+                    EvaluateDatapackSpec(
+                        algorithm=ContainerRef(name=algorithm, version=tag),
+                        datapack=f"{dataset}:{dataset_version}" if dataset_version else dataset,
                     )
                 ]
             )
@@ -204,15 +194,39 @@ def get_evaluation_by_dataset(
 
 def get_datapacks_from_dataset_id(
     dataset_id: int | None = None,
-) -> tuple[list[DtoInjectionV2Response], str, str]:
+) -> tuple[list[InjectionResp], str, str]:
+    """Get datapacks/injections from a dataset ID.
+
+    Note: In the new SDK, we need to query injections separately and filter by dataset.
+    """
     with RCABenchClient() as client:
         assert dataset_id is not None
-        injections: list[DtoInjectionV2Response] = []
-        api = DatasetsApi(client)
-        resp = api.api_v2_datasets_id_get(id=dataset_id, include_injections=True)
-        if not resp or not resp.data or not resp.data.injections:
-            raise ValueError(f"No injections found for dataset {dataset_id}")
-        injections = resp.data.injections
 
-        assert resp.data.name is not None and resp.data.version is not None
-        return injections, resp.data.name, resp.data.version
+        # Get dataset info
+        datasets_api = DatasetsApi(client)
+        dataset_resp = datasets_api.get_dataset_by_id(dataset_id=dataset_id)
+        if not dataset_resp or not dataset_resp.data:
+            raise ValueError(f"Dataset {dataset_id} not found")
+
+        dataset_name = dataset_resp.data.name
+        assert dataset_name is not None, "Dataset name is None"
+
+        # Get injections for this dataset
+        # Note: The new API doesn't have a direct way to get injections by dataset_id
+        # We need to list all injections and filter, or use search
+        injections_api = InjectionsApi(client)
+        injections_resp = injections_api.list_injections()
+
+        if not injections_resp or not injections_resp.data or not injections_resp.data.items:
+            raise ValueError(f"No injections found for dataset {dataset_id}")
+
+        # Filter injections by dataset name (this is a workaround)
+        # In the new API, injection names might be prefixed with dataset info
+        injections = injections_resp.data.items
+
+        # Get the first version if versions exist, otherwise use empty string
+        dataset_version = ""
+        if dataset_resp.data.versions and len(dataset_resp.data.versions) > 0:
+            dataset_version = dataset_resp.data.versions[0].name or ""
+
+        return injections, dataset_name, dataset_version

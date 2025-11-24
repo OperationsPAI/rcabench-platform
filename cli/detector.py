@@ -9,13 +9,12 @@ from typing import Any, Literal, TypedDict
 import numpy as np
 import polars as pl
 from rcabench.openapi import (
-    AlgorithmsApi,
-    DtoDetectorResultItem,
-    DtoDetectorResultRequest,
-    DtoInjectionV2CustomLabelManageReq,
-    DtoInjectionV2LabelManageReq,
-    DtoLabelItem,
+    DetectorResultItem,
+    ExecutionsApi,
     InjectionsApi,
+    LabelItem,
+    ManageInjectionLabelReq,
+    UploadDetectorResultReq,
 )
 from tqdm import tqdm
 
@@ -654,7 +653,7 @@ def analyze_single_endpoint(
     state["conclusion_data"].append(build_conclusion_row(k, v, normal_stat, abnormal_tag))
 
 
-def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[DtoLabelItem]]:
+def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[LabelItem]]:
     """Create tags and labels from analysis state."""
     tags = []
     labels = []
@@ -662,13 +661,13 @@ def create_tags_and_labels(state: AnalysisState) -> tuple[list[str], list[DtoLab
 
     # Add datapack label
     if metrics.anomaly_count > 0:
-        labels.append(DtoLabelItem(key="anomaly_count", value=str(metrics.anomaly_count)))
+        labels.append(LabelItem(key="anomaly_count", value=str(metrics.anomaly_count)))
     if metrics.skipped_endpoints > 0:
-        labels.append(DtoLabelItem(key="skipped_endpoints", value=str(metrics.skipped_endpoints)))
+        labels.append(LabelItem(key="skipped_endpoints", value=str(metrics.skipped_endpoints)))
 
     for category, count in metrics.issue_categories.items():
         if count > 0:
-            labels.append(DtoLabelItem(key=f"issue_{category}", value=str(count)))
+            labels.append(LabelItem(key=f"issue_{category}", value=str(count)))
 
     # Determine anomaly severity based on issue presence
     has_any_issues = (
@@ -744,8 +743,11 @@ def run(
         execution_id_str = os.environ.get("EXECUTION_ID")
         assert algorithm_id_str is not None, "ALGORITHM_ID is not set"
         assert execution_id_str is not None, "EXECUTION_ID is not set"
-        algorithm_id = int(algorithm_id_str)
+        # algorithm_id is not used in the new SDK workflow
+        # algorithm_id = int(algorithm_id_str)
         execution_id = int(execution_id_str)
+    else:
+        execution_id = 0  # Not used when online=False
 
     datapack_name = input_path.name
     normal_trace = input_path / "normal_traces.parquet"
@@ -792,18 +794,16 @@ def run(
     }
 
     with RCABenchClient() as client:
-        algo_api = AlgorithmsApi(client)
-        injection_api = InjectionsApi(client)
+        executions_api = ExecutionsApi(client)
 
         if online:
             duration = datetime.now() - start_time
-            resp = algo_api.api_v2_algorithms_algorithm_id_executions_execution_id_detectors_post(
-                algorithm_id=algorithm_id,  # type: ignore
-                execution_id=execution_id,  # type: ignore
-                request=DtoDetectorResultRequest(
+            resp = executions_api.upload_detection_results(
+                execution_id=execution_id,
+                request=UploadDetectorResultReq(
                     duration=duration.total_seconds(),
                     results=[
-                        DtoDetectorResultItem(
+                        DetectorResultItem(
                             issues=i["Issues"],
                             span_name=i["SpanName"],
                             abnormal_avg_duration=i["AbnormalAvgDuration"],
@@ -826,23 +826,34 @@ def run(
         # Create tags and labels from analysis state
         tags, labels = create_tags_and_labels(state)
 
-        resp = injection_api.api_v2_injections_name_tags_patch(
-            name=datapack_name,
-            manage=DtoInjectionV2LabelManageReq(
-                add_tags=tags,
-                remove_tags=[],
-            ),
-        )
-        logger.info(f"Add analysis tags: response code: {resp.code}, message: {resp.message}")
+        # Update injection labels using the new API
+        # Note: Tags are stored as labels with a special prefix
+        if online:
+            try:
+                # Get injection ID from injection.json
+                injection_file = input_path / "injection.json"
+                if injection_file.exists():
+                    with open(injection_file) as f:
+                        injection_data = json.load(f)
+                        injection_id = injection_data.get("id")
 
-        resp = injection_api.api_v2_injections_name_labels_patch(
-            name=datapack_name,
-            manage=DtoInjectionV2CustomLabelManageReq(
-                add_labels=labels,
-                remove_labels=[],
-            ),
-        )
-        logger.info(f"Add analysis labels: response code: {resp.code}, message: {resp.message}")
+                        if injection_id:
+                            injections_api = InjectionsApi(client)
+
+                            # Convert tags to labels (tags are stored as labels with tag: prefix)
+                            tag_labels = [LabelItem(key=f"tag:{tag}", value="true") for tag in tags]
+                            all_labels = labels + tag_labels
+
+                            resp = injections_api.update_injection_labels(
+                                id=injection_id, manage=ManageInjectionLabelReq(add_labels=all_labels)
+                            )
+                            logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
+                        else:
+                            logger.warning(f"No injection ID found in {injection_file}")
+                else:
+                    logger.warning(f"injection.json not found at {injection_file}")
+            except Exception as e:
+                logger.error(f"Failed to update injection labels: {e}")
 
         calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name))
         res = calculator.calculate_and_report()
@@ -939,9 +950,6 @@ def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, A
     valid_datapacks = []
     invalid_datapacks: list[Path] = []
 
-    with RCABenchClient() as client:
-        injection_api = InjectionsApi(client)
-
     black_list = [
         "admin",
         "voucher",
@@ -955,23 +963,46 @@ def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, A
         "ts-food-delivery-service",
         "ts-delivery-service",
     ]
-    for datapack_path, is_valid in tqdm(validation_results):
-        if any(bl in datapack_path.name for bl in black_list):
-            is_valid = False
+    # Update labels with RCABench API
+    with RCABenchClient() as client:
+        injections_api = InjectionsApi(client)
 
-        add_tag = "valid" if is_valid else "invalid"
-        remove_tag = "invalid" if is_valid else "valid"
-        if is_valid:
-            valid_datapacks.append(datapack_path)
-        else:
-            invalid_datapacks.append(datapack_path)
-        try:
-            injection_api.api_v2_injections_name_tags_patch(
-                name=datapack_path.name,
-                manage=DtoInjectionV2LabelManageReq(add_tags=[add_tag], remove_tags=[remove_tag]),
-            )
-        except Exception as e:
-            logger.error(e)
+        for datapack_path, is_valid in tqdm(validation_results):
+            if any(bl in datapack_path.name for bl in black_list):
+                is_valid = False
+
+            add_tag = "valid" if is_valid else "invalid"
+            remove_tag = "invalid" if is_valid else "valid"
+
+            if is_valid:
+                valid_datapacks.append(datapack_path)
+            else:
+                invalid_datapacks.append(datapack_path)
+
+            try:
+                # Update injection labels via API
+                injection_file = datapack_path / "injection.json"
+                if injection_file.exists():
+                    with open(injection_file) as f:
+                        injection_data = json.load(f)
+                        injection_id = injection_data.get("id")
+
+                        if injection_id:
+                            # Add new tag and remove old tag
+                            injections_api.update_injection_labels(
+                                id=injection_id,
+                                manage=ManageInjectionLabelReq(
+                                    add_labels=[LabelItem(key=f"tag:{add_tag}", value="true")],
+                                    remove_labels=[f"tag:{remove_tag}"],
+                                ),
+                            )
+                            logger.debug(f"Updated tags for {datapack_path.name}: {add_tag}")
+                        else:
+                            logger.warning(f"No injection ID found for {datapack_path.name}")
+                else:
+                    logger.warning(f"No injection.json found for {datapack_path.name}")
+            except Exception as e:
+                logger.error(f"Failed to update labels for {datapack_path.name}: {e}")
 
     # Summary statistics
     valid_count = len(valid_datapacks)

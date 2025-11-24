@@ -3,9 +3,9 @@ import statistics
 
 import networkx as nx
 from rcabench.openapi import (
-    DtoInjectionV2CustomLabelManageReq,
-    DtoLabelItem,
     InjectionsApi,
+    LabelItem,
+    ManageInjectionLabelReq,
 )
 
 from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
@@ -288,16 +288,31 @@ class DatasetMetricsCalculator:
 
         with RCABenchClient() as client:
             api = InjectionsApi(client)
-            api.api_v2_injections_name_labels_patch(
-                name=self.loader.get_datapack(),
-                manage=DtoInjectionV2CustomLabelManageReq(
-                    add_labels=[
-                        DtoLabelItem(key="SDD@1", value=str(results["SDD@1"][0])),
-                        DtoLabelItem(key="SDD@3", value=str(results["SDD@3"][0])),
-                        DtoLabelItem(key="SDD@5", value=str(results["SDD@5"][0])),
-                        DtoLabelItem(key="CPL", value=str(results["CPL"])),
-                        DtoLabelItem(key="RootServiceDegree", value=str(results["RootServiceDegree"])),
-                    ]
-                ),
-            )
+            datapack_name = self.loader.get_datapack()
+
+            # Search for injection by name to get ID
+            from rcabench.openapi import SearchInjectionReq
+
+            search_resp = api.search_injections(search=SearchInjectionReq(name=datapack_name))
+
+            if search_resp.data and len(search_resp.data.items) > 0:
+                injection_id = search_resp.data.items[0].id
+
+                # Update labels with metric results
+                api.update_injection_labels(
+                    id=injection_id,
+                    manage=ManageInjectionLabelReq(
+                        add_labels=[
+                            LabelItem(key="SDD@1", value=str(results["SDD@1"][0])),
+                            LabelItem(key="SDD@3", value=str(results["SDD@3"][0])),
+                            LabelItem(key="SDD@5", value=str(results["SDD@5"][0])),
+                            LabelItem(key="CPL", value=str(results["CPL"])),
+                            LabelItem(key="RootServiceDegree", value=str(results["RootServiceDegree"])),
+                        ]
+                    ),
+                )
+                logger.info(f"Updated metrics labels for {datapack_name}")
+            else:
+                logger.warning(f"Could not find injection for datapack {datapack_name}")
+
         return results
