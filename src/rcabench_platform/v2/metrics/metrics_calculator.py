@@ -293,13 +293,15 @@ class DatasetMetricsCalculator:
             # Search for injection by name to get ID
             from rcabench.openapi import SearchInjectionReq
 
-            search_resp = api.search_injections(search=SearchInjectionReq(name=datapack_name))
+            search_resp = api.search_injections(search=SearchInjectionReq(name_pattern=datapack_name))
 
-            if search_resp.data and len(search_resp.data.items) > 0:
+            if search_resp.data and search_resp.data.items:
                 injection_id = search_resp.data.items[0].id
 
+                assert injection_id is not None
+
                 # Update labels with metric results
-                api.update_injection_labels(
+                api.manage_injection_labels(
                     id=injection_id,
                     manage=ManageInjectionLabelReq(
                         add_labels=[

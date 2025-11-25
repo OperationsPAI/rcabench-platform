@@ -16,7 +16,7 @@ from rcabench_platform.v2.clients.clickhouse import (
     query_parquet_stream,
 )
 from rcabench_platform.v2.clients.k8s import download_kube_info
-from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
 from rcabench_platform.v2.config import get_config
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
@@ -236,19 +236,14 @@ def query_injection(
     from rcabench.openapi import InjectionsApi, SearchInjectionReq
 
     try:
-        with RCABenchClient(base_url=rcabench_url) as client:
-            api = InjectionsApi(client)
-            # Search by name
-            search_req = SearchInjectionReq(search=name, page=1, size=10)
-            resp = api.search_injections(search=search_req)
-            if resp.data and resp.data.items and len(resp.data.items) > 0:
-                # Find exact match by name
-                for item in resp.data.items:
-                    if item.name == name and item.id is not None:
-                        # Get detailed information using the ID
-                        detail_resp = api.get_injection_by_id(id=item.id)
-                        if detail_resp.data:
-                            return detail_resp.data
+        client = get_rcabench_client(base_url=rcabench_url)
+        api = InjectionsApi(client)
+        search_req = SearchInjectionReq(name_pattern=name)
+        resp = api.search_injections(search=search_req)
+        if resp.data and resp.data.items and len(resp.data.items) > 0:
+            for item in resp.data.items:
+                if item.name == name and item.id is not None:
+                    return item
             return None
     except Exception:
         traceback.print_exc()
@@ -402,35 +397,33 @@ def local_test():
 @app.command()
 def patch_injection(
     rcabench_url: str = "http://10.10.10.220:32080",
-    username: str | None = None,
-    password: str | None = None,
 ):
     from rcabench.openapi import InjectionsApi
 
-    with RCABenchClient(base_url=rcabench_url, username=username, password=password) as client:
-        api = InjectionsApi(client)
-        resp = api.list_injections()
-        assert resp.data is not None, "No cases found in the response"
-        assert resp.data.items is not None, "No items found in the response"
+    client = get_rcabench_client(base_url=rcabench_url)
+    api = InjectionsApi(client)
+    resp = api.list_injections()
+    assert resp.data is not None, "No cases found in the response"
+    assert resp.data.items is not None, "No items found in the response"
 
-        case_names = list(set([item.name for item in resp.data.items if item.name is not None]))
-        for dataset_name in case_names:
-            injection = query_injection(rcabench_url, dataset_name)
-            if injection:
-                dataset_path = Path("/mnt/jfs/rcabench_dataset") / dataset_name
-                save_json(injection.model_dump(), path=dataset_path / "injection.json")
-                save_json(
-                    injection.model_dump(),
-                    path=dataset_path / "converted" / "injection.json",
-                )
+    case_names = list(set([item.name for item in resp.data.items if item.name is not None]))
+    for dataset_name in case_names:
+        injection = query_injection(rcabench_url, dataset_name)
+        if injection:
+            dataset_path = Path("/mnt/jfs/rcabench_dataset") / dataset_name
+            save_json(injection.model_dump(), path=dataset_path / "injection.json")
+            save_json(
+                injection.model_dump(),
+                path=dataset_path / "converted" / "injection.json",
+            )
 
-                platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / dataset_name
-                if platform_path.exists():
-                    json_path = platform_path / "injection.json"
-                    save_json(injection.model_dump(), path=json_path)
-                    os.chown(json_path, 1000, 1000)
-            else:
-                logger.warning(f"No injection details found for dataset: {dataset_name}")
+            platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / dataset_name
+            if platform_path.exists():
+                json_path = platform_path / "injection.json"
+                save_json(injection.model_dump(), path=json_path)
+                os.chown(json_path, 1000, 1000)
+        else:
+            logger.warning(f"No injection details found for dataset: {dataset_name}")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import traceback
 import typer
 
 from ..clients.clickhouse import get_clickhouse_client
-from ..clients.rcabench_ import get_rcabench_openapi_client
+from ..clients.rcabench_ import get_rcabench_client
 from ..config import get_config
 from ..logging import logger, timeit
 
@@ -21,10 +21,11 @@ def ping_clickhouse() -> None:
 @app.command()
 @timeit()
 def ping_rcabench() -> None:
-    from rcabench.openapi import AlgorithmApi
+    from rcabench.openapi import SystemApi
 
-    api = AlgorithmApi(get_rcabench_openapi_client())
-    resp = api.api_v1_algorithms_get()
+    client = get_rcabench_client()
+    api = SystemApi(client)
+    resp = api.get_system_health()
     assert resp.data is not None
 
     logger.info("rcabench is reachable")

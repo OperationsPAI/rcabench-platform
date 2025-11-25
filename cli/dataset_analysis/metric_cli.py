@@ -8,12 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-from rcabench.openapi import (
-    InjectionsApi,
-)
+from rcabench.openapi import InjectionsApi, LabelItem, SearchInjectionReq
 
 from rcabench_platform.v2.cli.main import app
-from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
 from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader
 from rcabench_platform.v2.datasets.rcaeval import RCAEvalAnalyzerLoader
 from rcabench_platform.v2.logging import logger
@@ -101,15 +99,16 @@ def batch_metrics(dataset: str, online: bool):
         return
 
     if dataset == "rcabench" and online:
-        datapacks = []
-        with RCABenchClient() as client:
-            injection_api = InjectionsApi(client)
-            res = injection_api.api_v2_injections_get(tags=["absolute_anomaly"], size=1000000, page=1)
-            assert res.data is not None and res.data.items is not None, (
-                "No injections found with absolute anomaly degree"
-            )
-            datapacks = [i.injection_name for i in res.data.items if i.injection_name is not None]
-            logger.info(f"Total retrieved: {len(datapacks)} valid datapacks")
+        client = get_rcabench_client()
+
+        injection_api = InjectionsApi(client)
+        res = injection_api.search_injections(
+            search=SearchInjectionReq(labels=[LabelItem(key="tag", value="anomaly_degree")])
+        )
+        assert res.data is not None and res.data.items is not None, "No injections found with absolute anomaly degree"
+
+        datapacks = [i.name for i in res.data.items if i.name is not None]
+        logger.info(f"Total retrieved: {len(datapacks)} valid datapacks")
     else:
         datapacks = [f.name for f in folder.iterdir() if f.is_dir()]
 

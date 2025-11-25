@@ -16,7 +16,6 @@ from rcabench.openapi import (
     LabelItem,
     ParameterSpec,
     SearchInjectionReq,
-    SubmitExecutionItem,
     SubmitExecutionReq,
     TracesApi,
 )
@@ -24,7 +23,7 @@ from rcabench.openapi import (
 from rcabench_platform.v2.analysis.data_prepare import get_execution_item
 
 from ..clients.k8s import download_kube_info
-from ..clients.rcabench_ import RCABenchClient
+from ..clients.rcabench_ import get_rcabench_client
 from ..config import get_config
 from ..logging import logger, timeit
 from ..metrics.algo_metrics import get_algorithms_metrics_across_datasets
@@ -53,17 +52,15 @@ def kube_info(namespace: str = "ts1", save_path: Path | None = None):
 
 @app.command()
 @timeit()
-def query_injection(name: str, page: int = 1, size: int = 5, base_url: str | None = None):
-    with RCABenchClient(base_url=base_url) as client:
-        api = InjectionsApi(client)
-        resp = api.search_injections(
-            search=SearchInjectionReq(
-                search=name,
-                page=page,
-                size=size,
-            )
+def query_injection(name: str, base_url: str | None = None):
+    client = get_rcabench_client(base_url=base_url)
+    api = InjectionsApi(client)
+    resp = api.search_injections(
+        search=SearchInjectionReq(
+            name_pattern=name,
         )
-    assert resp.data is not None
+    )
+    assert resp.code is not None and resp.code < 300 and resp.data is not None, "No injection found"
 
     ans = resp.data.model_dump()
     # Convert dict to DataFrame for display
@@ -73,12 +70,12 @@ def query_injection(name: str, page: int = 1, size: int = 5, base_url: str | Non
 
 @app.command()
 @timeit()
-def list_injections():
-    with RCABenchClient() as client:
-        api = InjectionsApi(client)
-        resp = api.list_injections()
-        assert resp.data is not None
-    assert resp.data.items is not None
+def list_injections(base_url: str | None = None):
+    client = get_rcabench_client(base_url=base_url)
+    api = InjectionsApi(client)
+    resp = api.list_injections()
+    assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+
     ans = [item.model_dump() for item in resp.data.items]
     # Convert list of dicts to DataFrame for display
     df = pl.DataFrame(ans)
@@ -87,12 +84,11 @@ def list_injections():
 
 @app.command()
 @timeit()
-def list_datasets():
-    with RCABenchClient() as client:
-        api = DatasetsApi(client)
-        resp = api.list_datasets()
-        assert resp.data is not None
-    assert resp.data.items is not None
+def list_datasets(base_url: str | None = None):
+    client = get_rcabench_client(base_url=base_url)
+    api = DatasetsApi(client)
+    resp = api.list_datasets()
+    assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
 
     data = []
     for item in resp.data.items:
@@ -104,11 +100,11 @@ def list_datasets():
 
 @app.command()
 @timeit()
-def get_dataset(id: int):
-    with RCABenchClient() as client:
-        api = DatasetsApi(client)
-        resp = api.get_dataset_by_id(dataset_id=id)
-        assert resp.data is not None
+def get_dataset(id: int,base_url: str | None = None):
+    client = get_rcabench_client(base_url=base_url)
+    api = DatasetsApi(client)
+    resp = api.get_dataset_by_id(dataset_id=id)
+    assert resp.data is not None
 
     # Return dataset versions if available
     if resp.data.versions:
@@ -119,16 +115,16 @@ def get_dataset(id: int):
 @app.command()
 @timeit()
 def list_algorithms(base_url: str | None = None):
-    with RCABenchClient(base_url=base_url) as client:
-        api = ContainersApi(client)
-        resp = api.list_containers()
-        assert resp.data is not None
+    client = get_rcabench_client(base_url=base_url)
+    api = ContainersApi(client)
+    resp = api.list_containers()
+    assert resp.data is not None
 
-        assert resp.data.items is not None
-        ans = [item.model_dump() for item in resp.data.items]
-        # Convert list of dicts to DataFrame for display
-        df = pl.DataFrame(ans)
-        print_dataframe(df)
+    assert resp.data.items is not None
+    ans = [item.model_dump() for item in resp.data.items]
+    # Convert list of dicts to DataFrame for display
+    df = pl.DataFrame(ans)
+    print_dataframe(df)
 
 
 class AlgoSpec(TypedDict):
@@ -137,7 +133,7 @@ class AlgoSpec(TypedDict):
     tag: str | None
 
 
-def parse_algorithm_spec(algo_string: str) -> AlgoSpec:
+def parse_algorithm_spec(algo_string: str,base_url: str | None = None) -> AlgoSpec:
     """
     Parse algorithm specification string.
 
@@ -154,8 +150,8 @@ def parse_algorithm_spec(algo_string: str) -> AlgoSpec:
     algo_string = algo_string.strip()
 
     def get_default_tag(algorithm_name: str) -> str | None:
-        with RCABenchClient() as client:
-            try:
+        client = get_rcabench_client(base_url=base_url)
+        try:
                 from rcabench.openapi import ContainerType
 
                 api = ContainersApi(client)
@@ -172,7 +168,7 @@ def parse_algorithm_spec(algo_string: str) -> AlgoSpec:
                                 logger.info(f"found latest tag: {algorithm_name}:{latest.name}")
                                 return latest.name
                 return None
-            except Exception:
+        except Exception:
                 return None
 
     is_docker_image = "/" in algo_string

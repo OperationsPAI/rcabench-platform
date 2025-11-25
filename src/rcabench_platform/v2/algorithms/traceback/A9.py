@@ -327,7 +327,6 @@ def test_granger_causality(series_y: np.ndarray, series_x: np.ndarray, max_lag: 
 
 
 def get_relation_anomaly_score(
-    sdg: SDG,
     u: PlaceNode,
     v: PlaceNode,
     window_size: int = 10,
@@ -523,28 +522,17 @@ def _compute_edge_relation_score(
     results = []
 
     try:
-        # Reconstruct minimal SDG context needed for computation
         # We only need the two nodes involved in this edge
         u = nodes_by_id[edge.src_id]
         v = nodes_by_id[edge.dst_id]
 
-        # Create a minimal SDG-like object that has just what we need
-        class MinimalSDG:
-            def __init__(self, nodes):
-                self._nodes = nodes
-
-            def get_node_by_id(self, node_id):
-                return self._nodes[node_id]
-
-        mini_sdg = MinimalSDG(nodes_by_id)
-
         # Direction 1: u -> v
-        score_u_to_v = get_relation_anomaly_score(mini_sdg, u, v, use_granger=use_granger)
+        score_u_to_v = get_relation_anomaly_score(u, v, use_granger=use_granger)
         if score_u_to_v >= min_relation_score:
             results.append((u.id, v.id, score_u_to_v))
 
         # Direction 2: v -> u
-        score_v_to_u = get_relation_anomaly_score(mini_sdg, v, u, use_granger=use_granger)
+        score_v_to_u = get_relation_anomaly_score(v, u, use_granger=use_granger)
         if score_v_to_u >= min_relation_score:
             results.append((v.id, u.id, score_v_to_u))
 

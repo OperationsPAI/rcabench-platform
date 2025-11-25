@@ -30,7 +30,6 @@ dependencies = [ #
     "polars>=1.31.0",
     "pyarrow>=20.0.0",
     "python-dotenv>=1.1.1",
-    "rcabench>=1.1.45",
     "requests>=2.32.4",
     "scikit-learn>=1.7.0",
     "scipy>=1.15.0",
@@ -42,6 +41,8 @@ dependencies = [ #
     "duckdb>=1.3.2",
     "duckdb>=1.3.2",
     "statsmodels>=0.14.5",
+    "pydantic>=2.12.4",
+    "rcabench @ file:///home/nn/workspace/AegisLab/sdk/python",
 ]
 
 [project.scripts]
@@ -109,6 +110,10 @@ exclude = [ #
     "vendor/",
     "output/",
 ]
+
+[tool.uv]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
 
 [tool.marimo.runtime]
 output_max_bytes = 50_000_000

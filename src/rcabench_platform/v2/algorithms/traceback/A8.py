@@ -790,7 +790,7 @@ def find_root_cause_candidates(acg: nx.MultiDiGraph, sdg: SDG) -> list[PlaceNode
         v = q.get()
 
         expanded = False
-        for u, _ in acg.in_edges(v):
+        for u, _ in acg.in_edges(v):  # type: ignore
             dp[u] += dp[v]
             degrees[u] -= 1
             if degrees[u] == 0:

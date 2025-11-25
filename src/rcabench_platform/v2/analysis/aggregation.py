@@ -57,7 +57,7 @@ def aggregate(items: list[Item]) -> pl.DataFrame:
     for item in items:
         row = {
             "injection_id": item._injection.id,
-            "injection_name": item._injection.injection_name,
+            "injection_name": item._injection.name,
             "fault_type": item.fault_type,
             "fault_category": FAULT_TYPE_MAPPING.get(item.fault_type, "Unknown"),
             "injected_service": item.injected_service,

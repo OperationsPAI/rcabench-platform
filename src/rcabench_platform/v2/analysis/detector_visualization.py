@@ -1,25 +1,24 @@
 import functools
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import polars as pl
-from rcabench.openapi import (
-    DtoDatapackDetectorReq,
-    DtoDetectorRecord,
-    EvaluationApi,
-)
+from rcabench.openapi import BatchEvaluateDatapackReq, ContainerRef, EvaluateDatapackSpec, EvaluationsApi
 
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 from ..cli.main import logger
-from ..clients.rcabench_ import RCABenchClient
+from ..clients.rcabench_ import get_rcabench_client
 from ..datasets.rcabench import valid
 from ..datasets.train_ticket import extract_path
 from ..utils.display import get_timestamp
+
+DETECTOR_NAME = "detector"
 
 
 class VisDetector:
@@ -233,22 +232,42 @@ class VisDetector:
         logger.info(f"Visualization saved to {self.output_file}")
 
     def vis_call(self, skip_existing: bool = True) -> None:
-        with RCABenchClient() as client:
-            eval_api = EvaluationsApi(client)
-            resp = eval_api.api_v2_evaluations_datapacks_detector_post(
-                request=UploadDetectorResultReq(
-                    datapacks=[self.datapack.name],
-                )
+        client = get_rcabench_client()
+        api = EvaluationsApi(client)
+        resp = api.evaluate_algorithm_on_datapacks(
+            request=BatchEvaluateDatapackReq(
+                specs=[
+                    EvaluateDatapackSpec(
+                        algorithm=ContainerRef(name=DETECTOR_NAME),
+                        datapack=self.datapack.name,
+                    )
+                ]
             )
-            assert resp.code and resp.code < 300
-            assert resp.data is not None and resp.data.items is not None, "No detector results found"
-            data: list[DtoDetectorRecord] = [i.results for i in resp.data.items if i.results is not None][0]
+        )
+
+        assert resp.code and resp.code < 300 and resp.data is not None, "No detector results found"
+        assert resp.data.success_items is not None and len(resp.data.success_items) > 0, (
+            "No successful detector results found"
+        )
+        detector_result = resp.data.success_items[0]
+
+        assert detector_result.execution_refs is not None and len(detector_result.execution_refs) > 0, (
+            "No execution references found in detector results"
+        )
+        execution_refs = sorted(
+            detector_result.execution_refs,
+            key=lambda x: datetime.fromisoformat(x.executed_at) if x.executed_at else datetime.min,
+            reverse=True,
+        )
+        execution_ref = execution_refs[0]
+
+        data = execution_ref.detector_results
 
         if data is None or len(data) == 0:
             logger.warning(f"No detector results found for {self.datapack.name}, skipping visualization")
             return
 
-        self.issue_data = [i for i in data if i.issue is not None and i.issue != "{}"]
+        self.issue_data = [i for i in data if i.issues is not None and i.issues != "{}"]
         if len(self.issue_data) == 0:
             logger.info(f"No issues found in {self.datapack.name}, skipping visualization")
             return

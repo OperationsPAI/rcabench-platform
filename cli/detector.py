@@ -19,7 +19,7 @@ from rcabench.openapi import (
 from tqdm import tqdm
 
 from rcabench_platform.v2.cli.main import app
-from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
 from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader, valid
 from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger, timeit
@@ -811,69 +811,69 @@ def run(
     }
 
     if online:
-        with RCABenchClient() as client:
-            executions_api = ExecutionsApi(client)
+        client = get_rcabench_client()
+        executions_api = ExecutionsApi(client)
 
-            duration = datetime.now() - start_time
-            resp = executions_api.upload_detection_results(
-                execution_id=execution_id,
-                request=UploadDetectorResultReq(
-                    duration=duration.total_seconds(),
-                    results=[
-                        DetectorResultItem(
-                            issues=i["Issues"],
-                            span_name=i["SpanName"],
-                            abnormal_avg_duration=i["AbnormalAvgDuration"],
-                            abnormal_p90=i["AbnormalP90"],
-                            abnormal_p95=i["AbnormalP95"],
-                            abnormal_p99=i["AbnormalP99"],
-                            abnormal_succ_rate=i["AbnormalSuccRate"],
-                            normal_avg_duration=i["NormalAvgDuration"],
-                            normal_p90=i["NormalP90"],
-                            normal_p95=i["NormalP95"],
-                            normal_p99=i["NormalP99"],
-                            normal_succ_rate=i["NormalSuccRate"],
+        duration = datetime.now() - start_time
+        resp = executions_api.upload_detection_results(
+            execution_id=execution_id,
+            request=UploadDetectorResultReq(
+                duration=duration.total_seconds(),
+                results=[
+                    DetectorResultItem(
+                        issues=i["Issues"],
+                        span_name=i["SpanName"],
+                        abnormal_avg_duration=i["AbnormalAvgDuration"],
+                        abnormal_p90=i["AbnormalP90"],
+                        abnormal_p95=i["AbnormalP95"],
+                        abnormal_p99=i["AbnormalP99"],
+                        abnormal_succ_rate=i["AbnormalSuccRate"],
+                        normal_avg_duration=i["NormalAvgDuration"],
+                        normal_p90=i["NormalP90"],
+                        normal_p95=i["NormalP95"],
+                        normal_p99=i["NormalP99"],
+                        normal_succ_rate=i["NormalSuccRate"],
+                    )
+                    for i in state["conclusion_data"]
+                ],
+            ),
+        )
+        logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
+
+        # Create tags and labels from analysis state
+        tags, labels = create_tags_and_labels(state)
+
+        # Update injection labels using the new API
+        # Note: Tags are stored as labels with a special prefix
+        try:
+            # Get injection ID from injection.json
+            injection_file = input_path / "injection.json"
+            if injection_file.exists():
+                with open(injection_file) as f:
+                    injection_data = json.load(f)
+                    injection_id = injection_data.get("id")
+
+                    if injection_id:
+                        injections_api = InjectionsApi(client)
+
+                        # Convert tags to labels (tags are stored as labels with tag: prefix)
+                        tag_labels = [LabelItem(key=f"tag:{tag}", value="true") for tag in tags]
+                        all_labels = labels + tag_labels
+
+                        resp = injections_api.manage_injection_labels(
+                            id=injection_id, manage=ManageInjectionLabelReq(add_labels=all_labels)
                         )
-                        for i in state["conclusion_data"]
-                    ],
-                ),
-            )
-            logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
+                        logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
+                    else:
+                        logger.warning(f"No injection ID found in {injection_file}")
+            else:
+                logger.warning(f"injection.json not found at {injection_file}")
+        except Exception as e:
+            logger.error(f"Failed to update injection labels: {e}")
 
-            # Create tags and labels from analysis state
-            tags, labels = create_tags_and_labels(state)
-
-            # Update injection labels using the new API
-            # Note: Tags are stored as labels with a special prefix
-            try:
-                # Get injection ID from injection.json
-                injection_file = input_path / "injection.json"
-                if injection_file.exists():
-                    with open(injection_file) as f:
-                        injection_data = json.load(f)
-                        injection_id = injection_data.get("id")
-
-                        if injection_id:
-                            injections_api = InjectionsApi(client)
-
-                            # Convert tags to labels (tags are stored as labels with tag: prefix)
-                            tag_labels = [LabelItem(key=f"tag:{tag}", value="true") for tag in tags]
-                            all_labels = labels + tag_labels
-
-                            resp = injections_api.update_injection_labels(
-                                id=injection_id, manage=ManageInjectionLabelReq(add_labels=all_labels)
-                            )
-                            logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
-                        else:
-                            logger.warning(f"No injection ID found in {injection_file}")
-                else:
-                    logger.warning(f"injection.json not found at {injection_file}")
-            except Exception as e:
-                logger.error(f"Failed to update injection labels: {e}")
-
-            calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name))
-            res = calculator.calculate_and_report()
-            result["dataset_metrics"] = res
+        calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name))
+        res = calculator.calculate_and_report()
+        result["dataset_metrics"] = res
 
     return result
 
@@ -980,45 +980,45 @@ def validate_datapacks(force: bool, delete_invalid: bool = False) -> dict[str, A
         "ts-delivery-service",
     ]
     # Update labels with RCABench API
-    with RCABenchClient() as client:
-        injections_api = InjectionsApi(client)
+    client = get_rcabench_client()
+    injections_api = InjectionsApi(client)
 
-        for datapack_path, is_valid in tqdm(validation_results):
-            if any(bl in datapack_path.name for bl in black_list):
-                is_valid = False
+    for datapack_path, is_valid in tqdm(validation_results):
+        if any(bl in datapack_path.name for bl in black_list):
+            is_valid = False
 
-            add_tag = "valid" if is_valid else "invalid"
-            remove_tag = "invalid" if is_valid else "valid"
+        add_tag = "valid" if is_valid else "invalid"
+        remove_tag = "invalid" if is_valid else "valid"
 
-            if is_valid:
-                valid_datapacks.append(datapack_path)
+        if is_valid:
+            valid_datapacks.append(datapack_path)
+        else:
+            invalid_datapacks.append(datapack_path)
+
+        try:
+            # Update injection labels via API
+            injection_file = datapack_path / "injection.json"
+            if injection_file.exists():
+                with open(injection_file) as f:
+                    injection_data = json.load(f)
+                    injection_id = injection_data.get("id")
+
+                    if injection_id:
+                        # Add new tag and remove old tag
+                        injections_api.manage_injection_labels(
+                            id=injection_id,
+                            manage=ManageInjectionLabelReq(
+                                add_labels=[LabelItem(key=f"tag:{add_tag}", value="true")],
+                                remove_labels=[f"tag:{remove_tag}"],
+                            ),
+                        )
+                        logger.debug(f"Updated tags for {datapack_path.name}: {add_tag}")
+                    else:
+                        logger.warning(f"No injection ID found for {datapack_path.name}")
             else:
-                invalid_datapacks.append(datapack_path)
-
-            try:
-                # Update injection labels via API
-                injection_file = datapack_path / "injection.json"
-                if injection_file.exists():
-                    with open(injection_file) as f:
-                        injection_data = json.load(f)
-                        injection_id = injection_data.get("id")
-
-                        if injection_id:
-                            # Add new tag and remove old tag
-                            injections_api.update_injection_labels(
-                                id=injection_id,
-                                manage=ManageInjectionLabelReq(
-                                    add_labels=[LabelItem(key=f"tag:{add_tag}", value="true")],
-                                    remove_labels=[f"tag:{remove_tag}"],
-                                ),
-                            )
-                            logger.debug(f"Updated tags for {datapack_path.name}: {add_tag}")
-                        else:
-                            logger.warning(f"No injection ID found for {datapack_path.name}")
-                else:
-                    logger.warning(f"No injection.json found for {datapack_path.name}")
-            except Exception as e:
-                logger.error(f"Failed to update labels for {datapack_path.name}: {e}")
+                logger.warning(f"No injection.json found for {datapack_path.name}")
+        except Exception as e:
+            logger.error(f"Failed to update labels for {datapack_path.name}: {e}")
 
     # Summary statistics
     valid_count = len(valid_datapacks)

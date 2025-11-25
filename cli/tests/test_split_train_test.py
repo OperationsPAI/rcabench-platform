@@ -1,24 +1,44 @@
 #!/usr/bin/env -S uv run -s
 from pathlib import Path
 
-from rcabench.openapi import DatasetsApi, DtoDatasetV2CreateReq, DtoInjectionRef, InjectionsApi
+from rcabench.openapi import (
+    CreateDatasetReq,
+    CreateDatasetVersionReq,
+    DatasetsApi,
+    InjectionsApi,
+    LabelItem,
+    SearchDatasetReq,
+    SearchInjectionReq,
+)
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.clients.rcabench_ import RCABenchClient
+from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
 from rcabench_platform.v2.config import get_config
 from rcabench_platform.v2.datasets.rcabench import rcabench_split_train_test, valid
 from rcabench_platform.v2.datasets.spec import delete_dataset, get_datapack_list
 
+DATASET_NAME = "pair-diag"
+
 
 def get_previous_datapacks(datasets_api: DatasetsApi) -> list[str]:
-    resp = datasets_api.api_v2_datasets_get(search="pair-diag")
+    resp = datasets_api.search_datasets(request=SearchDatasetReq(name_pattern=DATASET_NAME, include_versions=True))
     assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
     if len(resp.data.items) == 0:
         return []
     dataset = resp.data.items[0]
+    assert dataset.id is not None
 
-    if dataset.injections is not None:
-        previous_datapacks = [item.injection_name for item in dataset.injections if item.injection_name is not None]
+    if dataset.versions is not None:
+        version = dataset.versions[0]
+        assert version.id is not None
+
+        version_resp = datasets_api.get_dataset_version_by_id(dataset_id=dataset.id, version_id=version.id)
+        assert version_resp.code is not None and version_resp.code < 300 and version_resp.data is not None
+
+        datapacks = version_resp.data.datapacks
+        assert datapacks is not None
+
+        previous_datapacks = [datapack.name for datapack in datapacks if datapack.name is not None]
         assert len(previous_datapacks) > 0
         return previous_datapacks
     return []
@@ -36,23 +56,25 @@ def split_datapacks(datapacks: list, previous_datapacks: list[str]) -> tuple[lis
 def create_dataset(
     datasets_api: DatasetsApi, name: str, dataset_type: str, version: str, description: str, datapacks: list
 ) -> bool:
-    resp = datasets_api.api_v2_datasets_post(
-        dataset=DtoDatasetV2CreateReq(
+    resp = datasets_api.create_dataset(
+        request=CreateDatasetReq(
             name=name,
             type=dataset_type,
-            version=version,
             description=description,
-            data_source="train-ticket",
-            injection_refs=[DtoInjectionRef(name=name) for name in datapacks],
+            version=CreateDatasetVersionReq(
+                name=version,
+                datapacks=datapacks,
+            ),
         ),
     )
 
     logger.info(f"request dataset creation: code[{resp.code}], message[{resp.message}]")
-    if resp.code is not None and resp.code < 205:
-        assert resp.data is not None
-        logger.info(f"dataset created: id[{resp.data.id}], name[{resp.data.name}]")
-        return True
-    return False
+    if resp.code is None or resp.code == 201:
+        return False
+
+    assert resp.data is not None and resp.data.id is not None and resp.data.name is not None
+    logger.info(f"dataset created: id[{resp.data.id}], name[{resp.data.name}]")
+    return True
 
 
 @app.command()
@@ -60,89 +82,87 @@ def create_dataset(
 def run(stage: int):
     datapacks = get_datapack_list("rcabench")  # can be replaced by query with issues
 
-    with RCABenchClient(base_url=get_config().base_url) as client:
-        datasets_api = DatasetsApi(client)
+    client = get_rcabench_client()
+    datasets_api = DatasetsApi(client)
 
-        previous_datapacks = get_previous_datapacks(datasets_api)
+    previous_datapacks = get_previous_datapacks(datasets_api)
 
-        train_datapacks, test_datapacks = rcabench_split_train_test(
-            datapacks=datapacks,
-            train_ratio=0.8,
-            previous_datapacks=previous_datapacks,
-            datapack_limit=300,
-        )
+    train_datapacks, test_datapacks = rcabench_split_train_test(
+        datapacks=datapacks,
+        train_ratio=0.8,
+        previous_datapacks=previous_datapacks,
+        datapack_limit=300,
+    )
 
-        create_dataset(
-            datasets_api=datasets_api,
-            name="pair-diag",
-            dataset_type="train",
-            version=f"train-stage-{stage}",
-            description=f"training dataset for pair-diag-stage-{stage}, bootstrap dataset",
-            datapacks=train_datapacks,
-        )
+    create_dataset(
+        datasets_api=datasets_api,
+        name=DATASET_NAME,
+        dataset_type="train",
+        version=f"train-stage-{stage}",
+        description=f"training dataset for pair-diag-stage-{stage}, bootstrap dataset",
+        datapacks=train_datapacks,
+    )
 
-        create_dataset(
-            datasets_api=datasets_api,
-            name="pair-diag",
-            dataset_type="test",
-            version=f"test-stage-{stage}",
-            description=f"test dataset for pair-diag-stage-{stage}, bootstrap dataset",
-            datapacks=test_datapacks,
-        )
-
-
-@app.command()
-@timeit()
-def cleanup():
-    with RCABenchClient(base_url=get_config().base_url) as client:
-        datasets_api = DatasetsApi(client)
-        resp = datasets_api.api_v2_datasets_get(search="pair-diag")
-        assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
-        for dataset in resp.data.items:
-            if dataset.id is None:
-                continue
-            resp = datasets_api.api_v2_datasets_id_delete(
-                id=dataset.id,
-            )
-            logger.info(resp)
+    create_dataset(
+        datasets_api=datasets_api,
+        name=DATASET_NAME,
+        dataset_type="test",
+        version=f"test-stage-{stage}",
+        description=f"test dataset for pair-diag-stage-{stage}, bootstrap dataset",
+        datapacks=test_datapacks,
+    )
 
 
 def get_datapack(tags: list[str] | None = None) -> list[str]:
-    if tags is None:
-        with RCABenchClient(base_url=get_config().base_url) as client:
-            injection_api = InjectionsApi(client)
-            resp = injection_api.api_v2_injections_get(tags=None, page=1, size=10000)
-            assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
-            logger.info(f"found {len(resp.data.items)} injections")
-            return [
-                item.injection_name
-                for item in resp.data.items
-                if item.injection_name is not None and valid(Path("data") / "rcabench_dataset" / item.injection_name)
-            ]
+    client = get_rcabench_client()
+    api = InjectionsApi(client)
 
-    res = []
-    for tag in tags:
-        with RCABenchClient(base_url=get_config().base_url) as client:
-            injection_api = InjectionsApi(client)
-            resp = injection_api.api_v2_injections_get(tags=[tag], page=1, size=10000)
-            assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
-            logger.info(f"found {len(resp.data.items)} injections for tag {tag}")
-            validated = [
-                item.injection_name
-                for item in resp.data.items
-                if item.injection_name is not None and valid(Path("data") / "rcabench_dataset" / item.injection_name)
-            ]
-            logger.info(f"found {len(validated)} valid injections for tag {tag}")
-            res.extend(validated)
+    search_req = SearchInjectionReq()
+    if tags is not None and len(tags) > 0:
+        search_req.include_labels = True
+        search_req.labels = [LabelItem(key="tag", value=tag) for tag in tags]
+
+    resp = api.search_injections(search=SearchInjectionReq())
+    assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+    logger.info(f"found {len(resp.data.items)} injections")
+
+    res: list[str] = []
+    if tags is None:
+        res = [
+            item.name
+            for item in resp.data.items
+            if item.name is not None and valid(Path("data") / "rcabench_dataset" / item.name)
+        ]
+    else:
+        tag_set = set(tags)
+        tag_injections: dict[str, list[str]] = {tag: [] for tag in tags}
+
+        for item in resp.data.items:
+            if item.labels is None or item.name is None:
+                continue
+
+            item_name = item.name
+            item_path = Path("data") / "rcabench_dataset" / item_name
+            if not valid(item_path):
+                continue
+
+            for label in item.labels:
+                if label.key == "tag" and label.value in tag_set:
+                    tag_name = label.value
+                    tag_injections[tag_name].append(item_name)
+                    break
+
+        res = [injection for tag in tags for injection in tag_injections.get(tag, [])]
 
     return res
 
 
 @app.command()
 def build_anomaly(date: str, name: str):
+    client = get_rcabench_client()
+    datasets_api = DatasetsApi(client)
+
     datapacks = get_datapack(["absolute_anomaly"])
-    with RCABenchClient(base_url=get_config().base_url) as client:
-        datasets_api = DatasetsApi(client)
 
     create_dataset(
         datasets_api=datasets_api,

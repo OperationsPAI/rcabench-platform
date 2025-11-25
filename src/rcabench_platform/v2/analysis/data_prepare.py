@@ -2,36 +2,36 @@ import functools
 import os
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import polars as pl
 from rcabench.openapi import (
-    BatchEvaluateDatapackReq,
+    BatchEvaluateDatasetReq,
     ChaosGroundtruth,
     ChaosNode,
+    ChaosPair,
+    ChaosResourceField,
     ChaosResources,
-    DatasetsApi,
-    EvaluateDatapackItem,
+    ContainerRef,
+    DatasetRef,
+    EvaluateDatasetSpec,
     EvaluationsApi,
     GranularityResultItem,
     InjectionDetailResp,
-    InjectionResp,
     InjectionsApi,
-    ProjectsApi,
+    LabelItem,
     SearchInjectionReq,
 )
 
-from ..clients.rcabench_ import RCABenchClient, get_datapacks_from_dataset_id, get_evaluation_by_dataset
+from ..clients.rcabench_ import get_rcabench_client
 from ..datasets.spec import calculate_trace_length, calculate_trace_service_count
-from ..logging import logger
 from ..metrics.algo_metrics import AlgoMetricItem, calculate_metrics_for_level
 from ..utils.env import debug, getenv_int
 from ..utils.fmap import fmap_processpool
-from ..utils.fs import has_recent_file
 from ..utils.profiler import global_profiler, print_profiler_stats
-from ..utils.serde import load_pickle, save_pickle
+from ..utils.serde import save_pickle
 
 if debug():
     _DEFAULT_ITEMS_CACHE_TIME = 600
@@ -43,7 +43,7 @@ ITEMS_CACHE_TIME = getenv_int("ITEMS_CACHE_TIME", default=_DEFAULT_ITEMS_CACHE_T
 
 @dataclass
 class InputItem:
-    injection: InjectionResp
+    injection: InjectionDetailResp
     algo_durations: dict[str, float]  # algorithm -> execution_duration
     algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] | None = None
 
@@ -51,7 +51,7 @@ class InputItem:
 @dataclass
 class Item:
     # Required fields (no default values)
-    _injection: InjectionResp
+    _injection: InjectionDetailResp
     _node: ChaosNode
 
     # Optional fields with default values
@@ -61,7 +61,7 @@ class Item:
     anomaly_degree: Literal["absolute", "may", "no"] = "no"
     workload: Literal["trainticket"] = "trainticket"
 
-    # Algo Metric statistics  TODO: @Lincyaw @rainysteven1 add execution time of the algo
+    # Algo Metric statistics
     _algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] | None = None
     _algo_durations: dict[str, float] = field(default_factory=dict)
     algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
@@ -125,46 +125,142 @@ class Item:
         return len(self.service_names_by_trace) / len(self.service_names)
 
 
-def get_conf(namespace: str) -> ChaosNode:  # type: ignore
-    with RCABenchClient() as client:
-        injector = InjectionsApi(client)
-        resp = injector.api_v1_injections_conf_get(namespace=namespace)  # type: ignore
-        assert resp.data is not None
-        return resp.data  # type: ignore
+def get_execution_item(
+    algorithms: list[str],
+    dataset: str,
+    algorithm_versions: list[str] | None = None,
+    dataset_version: str | None = None,
+    execution_tag: str | None = None,
+) -> tuple[list[InputItem], dict[str, list[str]]]:
+    """
+    Retrieves and structures the latest execution and evaluation results for multiple
+    algorithms on a specified dataset.
 
+    Fetches evaluation data, identifies the latest execution for each algorithm on
+    each datapack, collects execution metadata (duration, groundtruth, predictions),
+    and maps this data to Injection metadata to produce a list of InputItem objects
+    for analysis.
 
-def get_resources(namespace: str) -> tuple[Any, ChaosResources]:  # type: ignore
-    with RCABenchClient() as client:
-        injector = InjectionsApi(client)
+    Args:
+        algorithms: List of algorithm names.
+        dataset: Target dataset name.
+        algorithm_versions: Optional, corresponding list of algorithm versions.
+        dataset_version: Optional, target dataset version.
+        execution_tag: Optional, tag for filtering execution results.
 
-        resp = injector.api_v1_injections_mapping_get()  # type: ignore
-        assert resp.data is not None
-        mapping_data = resp.data
+    Returns:
+        Tuple of (input_items, unrunned_algos):
+        - input_items: Structured list of InputItem objects, one per datapack/injection.
+        - unrunned_algos: Dictionary mapping algorithm names to lists of datapack names that failed to execute.
+    """
+    client = get_rcabench_client()
+    evaluations_api = EvaluationsApi(client)
+    injections_api = InjectionsApi(client)
 
-        resp = injector.api_v1_injections_ns_resources_get(namespace=namespace)  # type: ignore
-        assert resp.data is not None
-        resources_data = resp.data
+    if algorithm_versions is None:
+        av = [None] * len(algorithms)
+    else:
+        # Ensure algorithms and algorithm_versions have the same length
+        if len(algorithms) != len(algorithm_versions):
+            raise ValueError("The number of algorithms and algorithm versions must be the same")
+        av = algorithm_versions
 
-        return mapping_data, resources_data  # type: ignore
+    resp = evaluations_api.evaluate_algorithm_on_datasets(
+        request=BatchEvaluateDatasetReq(
+            specs=[
+                EvaluateDatasetSpec(
+                    algorithm=ContainerRef(name=algorithms[i], version=av[i]),
+                    dataset=DatasetRef(name=dataset, version=dataset_version),
+                    filter_labels=[LabelItem(key="tag", value=execution_tag)] if execution_tag else None,
+                )
+                for i in range(len(algorithms))
+            ]
+        )
+    )
+
+    assert resp.code is not None and resp.code < 300 and resp.data is not None
+    items = resp.data.success_items
+    assert items is not None and len(items) > 0
+
+    unrunned_algos: dict[str, list[str]] = {}
+
+    # Collect data grouped by datapack_name
+    # datapack_name -> { algorithm -> (execution_duration, groundtruth, predictions) }
+    datapack_algo_data: dict[str, dict[str, tuple[float, ChaosGroundtruth, list[GranularityResultItem]]]] = {}
+
+    for item in items:
+        assert item.algorithm is not None
+        if item.not_executed_datapacks:
+            if item.algorithm not in unrunned_algos:
+                unrunned_algos[item.algorithm] = []
+            else:
+                unrunned_algos[item.algorithm].extend(item.not_executed_datapacks)
+
+        if item.evalaute_refs is None or len(item.evalaute_refs) == 0:
+            continue
+
+        for eval_ref in item.evalaute_refs:
+            assert eval_ref.datapack is not None
+            assert eval_ref.groundtruth is not None
+            assert eval_ref.execution_refs is not None and len(eval_ref.execution_refs) > 0
+
+            execution_refs = sorted(
+                eval_ref.execution_refs,
+                key=lambda r: datetime.fromisoformat(r.executed_at) if r.executed_at else datetime.min,
+                reverse=True,
+            )
+            execution_ref = execution_refs[0]
+
+            assert execution_ref.execution_duration is not None
+            assert execution_ref.predictions is not None
+
+            datapack_name = eval_ref.datapack
+            if datapack_name not in datapack_algo_data:
+                datapack_algo_data[datapack_name] = {}
+
+            datapack_algo_data[datapack_name][item.algorithm] = (
+                execution_ref.execution_duration,
+                eval_ref.groundtruth,
+                execution_ref.predictions,
+            )
+
+    datapack_names = list(datapack_algo_data.keys())
+    resp = injections_api.search_injections(search=SearchInjectionReq(names=datapack_names))
+    assert resp.code is not None and resp.code < 300 and resp.data is not None and resp.data.items is not None
+    datapacks = resp.data.items
+
+    assert len(datapacks) == len(datapack_names), "Mismatch in number of datapacks retrieved"
+    datapack_mapping = {dp.name: dp for dp in datapacks if dp.name is not None}
+
+    # Build InputItem list
+    input_items: list[InputItem] = []
+    for datapack_name, algo_data in datapack_algo_data.items():
+        algo_durations: dict[str, float] = {}
+        algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] = {}
+
+        for algo, (duration, groundtruth, predictions) in algo_data.items():
+            algo_durations[algo] = duration
+            algo_evals[algo] = (groundtruth, predictions)
+
+        input_items.append(
+            InputItem(
+                injection=datapack_mapping[datapack_name],
+                algo_durations=algo_durations,
+                algo_evals=algo_evals,
+            )
+        )
+
+    return input_items, unrunned_algos
 
 
 def get_individual_service(
-    individual: ChaosNode,
-    injection_mapping: Any,
-    injection_resources: ChaosResources,
+    individual: ChaosNode, fault_type: str, fault_resource: list[str] | list[ChaosPair]
 ) -> tuple[str, bool]:
     fault_type_index = str(individual.value)
 
-    assert injection_mapping.fault_type is not None
-    assert injection_mapping.fault_resource is not None
     assert individual.children is not None
-
-    fault_type: str = injection_mapping.fault_type[fault_type_index]
-    fault_resource_meta: dict[str, Any] = injection_mapping.fault_resource[fault_type]
-    fault_resource_name: str = fault_resource_meta["name"]
-    fault_resource = injection_resources.to_dict().get(fault_resource_name)
-
     child_node = individual.children[fault_type_index]
+
     assert child_node.children is not None
     service_index = child_node.children["2"].value
 
@@ -173,101 +269,61 @@ def get_individual_service(
     assert service_index < len(fault_resource), (
         f"Service index {service_index} out of bounds for fault resource {len(fault_resource)}"
     )
-
-    service: str | dict[str, Any] = fault_resource[service_index]
+    service = fault_resource[service_index]
     if isinstance(service, str):
         return service, False
 
-    assert "source" in service and "target" in service, (
+    assert service.source is not None or service.target is not None, (
         f"Service source or target is None for fault {fault_type} with index {service_index}"
     )
-    return f"{service['source']}->{service['target']}", True
+    return f"{service.source}->{service.target}", True
 
 
-def get_execution_item(
-    algorithms: list[str],
-    dataset_id: int,
-    execution_tag: str | None = None,
-) -> tuple[list[InputItem], list[tuple[str, str]]]:
-    """
-    Retrieve execution items for given algorithms and dataset.
+def get_resources(namespace: str) -> tuple[dict[str, ChaosResourceField], ChaosResources]:
+    client = get_rcabench_client()
+    api = InjectionsApi(client)
 
-    Args:
-        algorithms: List of algorithm names to process
-        dataset_id: Dataset identifier
-        execution_tag: Tag for the execution
+    resp = api.get_injection_metadata(namespace)
+    assert resp.code is not None and resp.code < 300 and resp.data is not None
+    meta_data = resp.data
 
-    Returns:
-        Tuple of (input_items, run_status_map)
-    """
-    unrunned_algo: list[tuple[str, str]] = []
-    input_items: list[InputItem] = []
+    fault_resource_mapping = meta_data.fault_resource_map
+    assert fault_resource_mapping is not None
 
-    datapack_infos, dataset, dataset_version = get_datapacks_from_dataset_id(dataset_id)
+    ns_resources = meta_data.ns_resources
+    assert ns_resources is not None
 
-    logger.info(f"get {len(datapack_infos)} datapacks from dataset {dataset} version {dataset_version}")
-
-    algorithm_executions: dict[str, list[EvaluateDatapackItem]] = {}
-
-    all_possible_executions = {
-        (algo, dp.name)
-        for algo in algorithms
-        for dp in datapack_infos
-        if dp.name is not None  # type: ignore
-    }
-    executed_pairs: set[tuple[str, str]] = set()
-
-    for algorithm in algorithms:
-        evaluation = get_evaluation_by_dataset(algorithm, dataset, dataset_version, execution_tag)  # type: ignore
-
-        if evaluation and evaluation.success_items:  # type: ignore
-            for item in evaluation.success_items:  # type: ignore
-                if item.algorithm not in algorithm_executions:  # type: ignore
-                    algorithm_executions[item.algorithm] = []  # type: ignore
-                # Note: New API structure is different, this needs to be updated
-                # For now, just skip to avoid blocking container run
-                pass  # type: ignore
-
-    unrunned_algo = sorted(list(all_possible_executions - executed_pairs))
-
-    for datapack in datapack_infos:
-        algo_durations: dict[str, float] = {}
-        algo_evaluations: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] = {}
-
-        # Note: New API structure is different, this section needs updating
-        # For now, create empty items to avoid blocking container run
-        for algorithm, executions in algorithm_executions.items():
-            pass  # type: ignore
-
-        input_item = InputItem(injection=datapack, algo_durations=algo_durations, algo_evals=algo_evaluations)
-        input_items.append(input_item)
-
-    return input_items, unrunned_algo
+    return fault_resource_mapping, ns_resources
 
 
 def process_item(
     algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] | None,
     algo_durations: dict[str, float],
-    injection: InjectionResp,
-    injection_mapping: Any,
-    injection_resources: ChaosResources,
+    injection: InjectionDetailResp,
+    fault_resource_mapping: dict[str, ChaosResourceField],
+    ns_resources: ChaosResources,
     metrics: list[str],
     simple: bool = False,
 ) -> Item | None:
-    profiler = global_profiler
-
-    if not getattr(injection, "engine_config", None) or not getattr(injection, "name", None):  # type: ignore
+    if not injection.engine_config or not injection.name:
         return None
 
-    datapack_path = Path("data/rcabench_dataset") / injection.name / "converted"  # type: ignore
+    datapack_path = Path("data/rcabench_dataset") / injection.name / "converted"
+
+    profiler = global_profiler
     with profiler.profile("prepare"):
-        node = ChaosNode.from_json(str(injection.engine_config))  # type: ignore
-        assert node is not None, "Node must not be None"
-        fault = getattr(node, "value", None)  # type: ignore
-        assert fault is not None, "Node value must not be None"
-        assert injection_mapping.fault_type is not None, "Fault type mapping must not be None"
-        fault_type = injection_mapping.fault_type[str(fault)]
-        service, is_pair = get_individual_service(node, injection_mapping, injection_resources)  # type: ignore
+        node = ChaosNode.from_json(str(injection.engine_config))
+        assert node is not None
+
+        fault_type = injection.fault_type
+        assert fault_type is not None
+
+        fault_resource_name = fault_resource_mapping[fault_type].name
+        assert fault_resource_name is not None
+        fault_resource = ns_resources.to_dict().get(fault_resource_name)
+        assert fault_resource is not None and isinstance(fault_resource, list)
+
+        service, is_pair = get_individual_service(node, fault_type, fault_resource)
 
         service_names: set[str] = set()
         service_names_by_trace: set[str] = set()
@@ -401,7 +457,7 @@ def batch_process_item(
     namespace: str,
     simple: bool = False,
 ) -> list[Item]:
-    injection_mapping, injection_resources = get_resources(namespace)
+    fault_resource_mapping, ns_resources = get_resources(namespace)
 
     tasks = [
         functools.partial(
@@ -409,8 +465,8 @@ def batch_process_item(
             input_item.algo_evals,
             input_item.algo_durations,
             input_item.injection,
-            injection_mapping,
-            injection_resources,
+            fault_resource_mapping,
+            ns_resources,
             metrics,
             simple,
         )

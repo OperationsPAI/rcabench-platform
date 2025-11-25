@@ -2,10 +2,10 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import polars as pl
-from rcabench.openapi import HandlerNode
+from rcabench.openapi import ChaosNode
 
 from ..logging import logger
-from .data_prepare import Item, get_conf
+from .data_prepare import Item
 
 # Constants
 MIN_DEPTH_FOR_RANGE = 2
@@ -158,7 +158,7 @@ def _get_fault_target_distribution(df: pl.DataFrame, is_pair: bool) -> dict[str,
 
 class _NodeProcessor:
     @staticmethod
-    def __call__(node: HandlerNode, **kwargs) -> Any:
+    def __call__(node: ChaosNode, **kwargs) -> Any:
         raise NotImplementedError
 
     @staticmethod
@@ -168,7 +168,7 @@ class _NodeProcessor:
 
 class _RangeProcessor(_NodeProcessor):
     @staticmethod
-    def __call__(node: HandlerNode, **kwargs) -> int:
+    def __call__(node: ChaosNode, **kwargs) -> int:
         return node.range[1] - node.range[0] + 1 if node.range else 0
 
     @staticmethod
@@ -178,7 +178,7 @@ class _RangeProcessor(_NodeProcessor):
 
 class _CoverageProcessor(_NodeProcessor):
     @staticmethod
-    def __call__(node: HandlerNode, **kwargs) -> dict[str, bool]:
+    def __call__(node: ChaosNode, **kwargs) -> dict[str, bool]:
         return {f"{kwargs['key']}-{node.value}": True}
 
     @staticmethod
@@ -189,7 +189,7 @@ class _CoverageProcessor(_NodeProcessor):
         return combined
 
 
-def _traverse_node(node: HandlerNode, key: str, processor: _NodeProcessor) -> Any:
+def _traverse_node(node: ChaosNode, key: str, processor: _NodeProcessor) -> Any:
     int_key = int(key)
 
     if node.children is None:

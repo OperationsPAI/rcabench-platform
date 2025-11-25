@@ -245,7 +245,7 @@ class SDG:
             yield d["ref"]
 
     def in_edges(self, node_id: int) -> Iterable[DepEdge]:
-        for u, v, d in self._graph.in_edges(node_id, data=True):
+        for u, v, d in self._graph.in_edges(node_id, data=True):  # type: ignore
             yield d["ref"]
 
     def query_node_by_uniq_name(self, uniq_name: str) -> PlaceNode | None:

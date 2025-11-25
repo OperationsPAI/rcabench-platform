@@ -18,10 +18,10 @@ from rcabench_platform.v2.utils.serde import save_parquet
 def get_analysis_with_issues():
     from rcabench.openapi import InjectionsApi
 
-    from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
+    from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
 
-    api = InjectionsApi(get_rcabench_openapi_client())
-    resp = api.api_v1_injections_analysis_with_issues_get()
+    api = InjectionsApi(get_rcabench_client())
+    resp = api.list_successful_injections()
     assert resp.data is not None
 
     return resp.data
@@ -32,16 +32,16 @@ def get_analysis_with_issues():
 def run(db_only: bool = False, require_filtered: bool = False):
     with_issues_resp = get_analysis_with_issues()
 
-    rows = []
+    rows: list[dict[str, str | int]] = []
     for item in with_issues_resp:
-        assert item.injection_name
-        assert item.engine_config
-        assert item.engine_config.value is not None
+        assert item.datapack_id
+        assert item.datapack_name
+        assert item.fault_type
 
-        row = {
-            "injection_name": item.injection_name,
-            "fault_type": FAULT_TYPES[item.engine_config.value],
-            "dataset_id": item.dataset_id,
+        row: dict[str, str | int] = {
+            "datapack_id": item.datapack_id,
+            "datapack_name": item.datapack_name,
+            "fault_type": item.fault_type,
         }
         rows.append(row)
 

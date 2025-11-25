@@ -45,8 +45,13 @@ load_dotenv()
 
 
 @app.command(name="visualize")
-def visualize(dataset_id: int, simple: bool, execution_tag: str | None = None) -> None:
-    items, _ = get_execution_item(ALGORITHMS, dataset_id=dataset_id, execution_tag=execution_tag)
+def visualize(dataset: str, simple: bool, dataset_version: str | None = None, execution_tag: str | None = None) -> None:
+    items, _ = get_execution_item(
+        ALGORITHMS,
+        dataset,
+        dataset_version=dataset_version,
+        execution_tag=execution_tag,
+    )
     logger.info(f"get {len(items)} items for visualization")
     count_items = build_items_with_cache(
         output_pkl_path=Path("temp/dataset_analysis/datapacks") / "injections" / "items.pkl",

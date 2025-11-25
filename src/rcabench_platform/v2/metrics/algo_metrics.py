@@ -1,15 +1,24 @@
 import os
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypedDict
 
 import networkx as nx
 import polars as pl
-from rcabench.openapi import GranularityResultItem
+from rcabench.openapi import (
+    BatchEvaluateDatasetReq,
+    BatchEvaluateDatasetResp,
+    ContainerRef,
+    DatasetRef,
+    EvaluateDatasetSpec,
+    EvaluationsApi,
+    GranularityResultItem,
+    LabelItem,
+)
 
-from ..clients.rcabench_ import get_evaluation_by_dataset
+from ..clients.rcabench_ import get_rcabench_client
 from ..datasets.spec import build_service_graph
 from ..logging import logger
 
@@ -324,17 +333,51 @@ def calculate_efficiency_score(
         return 0.0
 
 
+def _get_evaluation_by_dataset(
+    algorithm: str,
+    dataset: str,
+    algorithm_version: str | None = None,
+    dataset_version: str | None = None,
+    filter_labels: dict[str, str] | None = None,
+    base_url: str | None = None,
+) -> BatchEvaluateDatasetResp:
+    base_url = base_url or os.getenv("RCABENCH_BASE_URL")
+    assert base_url is not None, "base_url or RCABENCH_BASE_URL is not set"
+
+    client = get_rcabench_client(base_url=base_url)
+    api = EvaluationsApi(client)
+    resp = api.evaluate_algorithm_on_datasets(
+        request=BatchEvaluateDatasetReq(
+            specs=[
+                EvaluateDatasetSpec(
+                    algorithm=ContainerRef(name=algorithm, version=algorithm_version),
+                    dataset=DatasetRef(name=dataset, version=dataset_version),
+                    filter_labels=[LabelItem(key=k, value=v) for k, v in (filter_labels or {}).items()],
+                )
+            ],
+        )
+    )
+
+    assert resp.code is not None and resp.code < 300, f"Failed to get evaluation: {resp.message}"
+    assert resp.data is not None
+    return resp.data
+
+
 def get_metrics_by_dataset(
     algorithm: str,
     dataset: str,
+    algorithm_version: str | None = None,
     dataset_version: str | None = None,
-    tag: str | None = None,
+    filter_labels: dict[str, str] | None = None,
     base_url: str | None = None,
 ) -> list[AlgoMetrics]:
-    evaluation = get_evaluation_by_dataset(algorithm, dataset, dataset_version, tag, base_url)
+    evaluation = _get_evaluation_by_dataset(
+        algorithm, dataset, algorithm_version, dataset_version, filter_labels, base_url
+    )
 
     assert evaluation is not None
-    assert len(evaluation) > 0
+    assert evaluation.success_items is not None
+    assert len(evaluation.success_items) > 0
 
     level_metrics: defaultdict[str, dict[str, float]] = defaultdict(
         lambda: {
@@ -353,24 +396,26 @@ def get_metrics_by_dataset(
     )
     total_datapacks = 0
 
-    for resp in evaluation:
-        assert resp.items is not None, "Response items are None"
-        for item in resp.items:
-            assert item.datapack_name is not None
-            assert item.groundtruth is not None, f"Groundtruth is not found for datapack {item.datapack_name}"
-            assert item.predictions is not None, f"Predictions are not found for datapack {item.datapack_name}"
+    for item in evaluation.success_items:
+        assert item.evalaute_refs is not None, "Evaluate refs are None"
+        for ref in item.evalaute_refs:
+            assert ref.datapack is not None, "Datapack is None"
+            assert ref.groundtruth is not None, "Groundtruth is None"
+            assert ref.execution_refs is not None, "Execution refs are None"
 
             total_datapacks += 1
 
-            # Only consider service level groundtruth
-            if item.groundtruth.service:
+            execution_ref = ref.execution_refs[0]
+            assert execution_ref.predictions is not None, "Predictions are None"
+
+            if ref.groundtruth.service:
                 level = "service"
-                groundtruth_items = item.groundtruth.service
-                metrics = calculate_metrics_for_level(groundtruth_items, item.predictions, level)
+                groundtruth_items = ref.groundtruth.service
+                metrics = calculate_metrics_for_level(groundtruth_items, execution_ref.predictions, level)
 
                 for metric_name, value in metrics.to_dict().items():
                     level_metrics[level][metric_name] += value
-                level_metrics[level]["time"] += item.execution_duration or 0.0
+                level_metrics[level]["time"] += execution_ref.execution_duration or 0.0
 
     result_metrics = []
     for level, metrics in level_metrics.items():
@@ -432,8 +477,9 @@ def get_metrics_by_dataset(
 def get_algorithms_metrics_across_datasets(
     algorithms: list[str],
     datasets: list[str],
+    algorithm_versions: list[str] | None = None,
     dataset_versions: list[str] | None = None,
-    tag: str | None = None,
+    filter_labels: dict[str, str] | None = None,
     base_url: str | None = None,
     level: str | None = None,
 ) -> list[dict]:
@@ -452,6 +498,14 @@ def get_algorithms_metrics_across_datasets(
     """
     result = []
 
+    if algorithm_versions is None:
+        av = [None] * len(algorithms)
+    else:
+        # Ensure algorithms and algorithm_versions have the same length
+        if len(algorithms) != len(algorithm_versions):
+            raise ValueError("The number of algorithms and algorithm versions must be the same")
+        av = algorithm_versions
+
     # If dataset_versions is not provided, use None for all datasets
     if dataset_versions is None:
         dsv = [None] * len(datasets)
@@ -461,11 +515,14 @@ def get_algorithms_metrics_across_datasets(
             raise ValueError("The number of datasets and dataset versions must be the same")
         dsv = dataset_versions
 
-    for algorithm in algorithms:
-        for i, dataset in enumerate(datasets):
-            dataset_version = dsv[i]
+    for i, algorithm in enumerate(algorithms):
+        algorithm_version = av[i]
+        for j, dataset in enumerate(datasets):
+            dataset_version = dsv[j]
             try:
-                metrics = get_metrics_by_dataset(algorithm, dataset, dataset_version, tag, base_url)
+                metrics = get_metrics_by_dataset(
+                    algorithm, dataset, algorithm_version, dataset_version, filter_labels, base_url
+                )
 
                 if level is not None:
                     # Only return metrics for the specified level
