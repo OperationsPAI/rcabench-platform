@@ -26,6 +26,10 @@ def rcaeval_load_service_names(input_folder: Path) -> list[str]:
     trace_service_names = set(traces["service_name"].to_list())
 
     service_names = metric_service_names | trace_service_names
+
+    # Filter out None and empty strings
+    service_names = {name for name in service_names if name and isinstance(name, str) and name.strip()}
+
     return sorted(service_names)
 
 
@@ -39,6 +43,10 @@ def rcabench_load_service_names(input_folder: Path) -> list[str]:
     log_service_names = set(logs["service_name"].to_list())
 
     service_names = trace_service_names | log_service_names
+
+    # Filter out None and empty strings
+    service_names = {name for name in service_names if name and isinstance(name, str) and name.strip()}
+
     return sorted(service_names)
 
 
