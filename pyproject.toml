@@ -65,15 +65,9 @@ dev = [ #
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
     "marimo[recommended]>=0.14.10",
-    "kubernetes-stubs-elephant-fork>=33.1.0",
     "plotly>=6.2.0",
-    "pyqt6>=6.9.1",
     "pyright>=1.1.403",
     "ruff>=0.12.3",
-    "vegafusion>=2.0.2",
-    "vl-convert-python>=1.8.0",
-    "uv-bump>=0.1.2",
-    "black>=25.1.0",
 ]
 
 [build-system]
