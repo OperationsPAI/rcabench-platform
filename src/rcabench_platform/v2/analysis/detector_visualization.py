@@ -234,9 +234,9 @@ class VisDetector:
 
     def vis_call(self, skip_existing: bool = True) -> None:
         with RCABenchClient() as client:
-            eval_api = EvaluationApi(client)
+            eval_api = EvaluationsApi(client)
             resp = eval_api.api_v2_evaluations_datapacks_detector_post(
-                request=DtoDatapackDetectorReq(
+                request=UploadDetectorResultReq(
                     datapacks=[self.datapack.name],
                 )
             )

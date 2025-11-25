@@ -30,7 +30,7 @@ def run(
     assert output_path.is_dir(), f"output_path: {output_path}"
 
     injection = load_json(path=input_path / "injection.json")
-    injection_name = injection["name"]
+    injection_name = injection.get("injection_name") or injection.get("name")
     assert isinstance(injection_name, str) and injection_name
 
     converted_input_path = input_path / "converted"

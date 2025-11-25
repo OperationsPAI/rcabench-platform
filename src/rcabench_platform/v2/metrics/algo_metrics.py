@@ -7,7 +7,7 @@ from typing import TypedDict
 
 import networkx as nx
 import polars as pl
-from rcabench.openapi import DtoGranularityRecord
+from rcabench.openapi import GranularityResultItem
 
 from ..clients.rcabench_ import get_evaluation_by_dataset
 from ..datasets.spec import build_service_graph
@@ -186,7 +186,7 @@ def alignment_score_multi_gt(
 
 
 def calculate_metrics_for_level(
-    groundtruth_items: list[str], predictions: list[DtoGranularityRecord], level: str
+    groundtruth_items: list[str], predictions: list[GranularityResultItem], level: str
 ) -> AlgoMetricItem:
     """Calculate metrics at a specific granularity level.
 
@@ -243,7 +243,7 @@ def calculate_metrics_for_level(
 
 
 def calculate_alignment_score(
-    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord], k: int = 5
+    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[GranularityResultItem], k: int = 5
 ) -> list[float]:
     normal_traces = pl.scan_parquet(datapack_path / "normal_traces.parquet")
     anomal_traces = pl.scan_parquet(datapack_path / "abnormal_traces.parquet")
@@ -304,7 +304,7 @@ def calculate_alignment_score(
 
 
 def calculate_efficiency_score(
-    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[DtoGranularityRecord]
+    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[GranularityResultItem]
 ) -> float:
     try:
         normal_traces = pl.scan_parquet(datapack_path / "normal_traces.parquet")

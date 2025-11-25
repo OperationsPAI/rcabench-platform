@@ -16,11 +16,11 @@ from rcabench_platform.v2.utils.serde import save_parquet
 
 
 def get_analysis_with_issues():
-    from rcabench.openapi import InjectionApi
+    from rcabench.openapi import InjectionsApi
 
     from rcabench_platform.v2.clients.rcabench_ import get_rcabench_openapi_client
 
-    api = InjectionApi(get_rcabench_openapi_client())
+    api = InjectionsApi(get_rcabench_openapi_client())
     resp = api.api_v1_injections_analysis_with_issues_get()
     assert resp.data is not None
 
