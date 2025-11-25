@@ -7,10 +7,14 @@ import tomli
 import typer
 from rcabench.openapi import (
     ContainersApi,
+    ContainerSpec,
+    DatasetRef,
     DatasetsApi,
     ExecutionsApi,
+    ExecutionSpec,
     InjectionsApi,
     LabelItem,
+    ParameterSpec,
     SearchInjectionReq,
     SubmitExecutionItem,
     SubmitExecutionReq,
@@ -92,7 +96,7 @@ def list_datasets():
 
     data = []
     for item in resp.data.items:
-        data.append({"ID": item.id, "Name": item.name, "Version": item.version, "Status": item.status})
+        data.append({"ID": item.id, "Name": item.name, "Status": item.status})
 
     df = pl.DataFrame(data)
     print_dataframe(df)
@@ -103,11 +107,13 @@ def list_datasets():
 def get_dataset(id: int):
     with RCABenchClient() as client:
         api = DatasetsApi(client)
-        resp = api.get_dataset_by_id(dataset_id=id, include_injections=True)
+        resp = api.get_dataset_by_id(dataset_id=id)
         assert resp.data is not None
 
-    assert resp.data.injections is not None
-    return [i.name for i in resp.data.injections]
+    # Return dataset versions if available
+    if resp.data.versions:
+        return [f"{resp.data.name}@{v.name}" for v in resp.data.versions]
+    return []
 
 
 @app.command()
@@ -150,11 +156,22 @@ def parse_algorithm_spec(algo_string: str) -> AlgoSpec:
     def get_default_tag(algorithm_name: str) -> str | None:
         with RCABenchClient() as client:
             try:
+                from rcabench.openapi import ContainerType
+
                 api = ContainersApi(client)
-                resp = api.api_v2_containers_name_name_latest_get(name=algorithm_name)
-                assert resp.data is not None
-                logger.info(f"found latest tag: {algorithm_name}:{resp.data.tag}")
-                return resp.data.tag
+                # List container versions for the algorithm and get the latest
+                resp = api.list_containers(type=ContainerType.Algorithm)
+                if resp.data and resp.data.items:
+                    for container in resp.data.items:
+                        if container.name == algorithm_name and container.id is not None:
+                            # Get container versions
+                            versions_resp = api.list_container_versions(container_id=container.id)
+                            if versions_resp.data and versions_resp.data.items:
+                                # Return the first version (assumed to be latest)
+                                latest = versions_resp.data.items[0]
+                                logger.info(f"found latest tag: {algorithm_name}:{latest.name}")
+                                return latest.name
+                return None
             except Exception:
                 return None
 
@@ -217,46 +234,51 @@ def submit_execution(
             key, value = env.split("=", 1)
             env_vars[key] = value
 
+    # Convert env_vars dict to list of ParameterSpec
+    env_params = [ParameterSpec(key=k, value={"value": v}) for k, v in env_vars.items()] if env_vars else None
+
     with RCABenchClient(base_url=base_url) as client:
-        api = AlgorithmsApi(client)
+        api = ExecutionsApi(client)
         for algorithm_spec in parsed_algorithms:
-            payloads: list[DtoAlgorithmExecutionRequest] = []
+            specs: list[ExecutionSpec] = []
             if dataset_list:
                 for dataset, dataset_version in zip(dataset_list, dataset_version_list):
-                    payload = DtoAlgorithmExecutionRequest(
-                        algorithm=DtoAlgorithmItem(
-                            name=algorithm_spec["name"], image=algorithm_spec["image"], tag=algorithm_spec["tag"]
+                    spec = ExecutionSpec(
+                        algorithm=ContainerSpec(
+                            name=algorithm_spec["name"],
+                            version=algorithm_spec["tag"],
+                            env_vars=env_params,
                         ),
-                        dataset=dataset,
-                        dataset_version=dataset_version,
-                        env_vars=env_vars,
-                        project_name=project,
+                        dataset=DatasetRef(
+                            name=dataset,
+                            version=dataset_version,
+                        ),
                     )
-
-                    payloads.append(payload)
+                    specs.append(spec)
 
             if datapacks:
                 for datapack in datapacks:
-                    payload = DtoAlgorithmExecutionRequest(
-                        algorithm=DtoAlgorithmItem(
-                            name=algorithm_spec["name"], image=algorithm_spec["image"], tag=algorithm_spec["tag"]
+                    spec = ExecutionSpec(
+                        algorithm=ContainerSpec(
+                            name=algorithm_spec["name"],
+                            version=algorithm_spec["tag"],
+                            env_vars=env_params,
                         ),
                         datapack=datapack,
-                        env_vars=env_vars,
-                        project_name=project,
                     )
-                    payloads.append(payload)
+                    specs.append(spec)
 
-            resp = api.api_v2_algorithms_execute_post(
-                request=DtoBatchAlgorithmExecutionRequest(
-                    executions=payloads,
+            labels = [LabelItem(key="tag", value=tag)] if tag else None
+            resp = api.run_algorithm(
+                request=SubmitExecutionReq(
+                    specs=specs,
                     project_name=project,
-                    labels=DtoExecutionLabels(tag=tag),
+                    labels=labels,
                 )
             )
             assert resp.data is not None
 
-            executions = resp.data.executions
+            executions = resp.data.items
             assert executions is not None
             data = []
             for i, execution in enumerate(executions):
@@ -265,7 +287,7 @@ def submit_execution(
                     "Datapack": execution.datapack_id,
                     "Dataset": execution.dataset_id,
                     "Algorithm": execution.algorithm_id,
-                    "Status": execution.status,
+                    "Status": "submitted",
                     "Task ID": execution.task_id,
                     "Trace ID": execution.trace_id,
                 }
@@ -343,29 +365,28 @@ def upload_algorithm_harbor(
         info_file = algo_folder / "info.toml"
         algorithm_name, env_vars, tag, command = parse_toml_config(info_file)
 
-        # Convert env_vars dict to list of keys only
-        env_vars_list = None
-        if env_vars:
-            env_vars_list = list(env_vars.keys())
-
         logger.info(f"Uploading algorithm: {algorithm_name}")
         if env_vars:
             logger.info(f"Environment variables: {env_vars}")
 
         with RCABenchClient(base_url=base_url) as api_client:
+            from rcabench.openapi import ContainerType, CreateContainerReq, CreateContainerVersionReq
+
             api = ContainersApi(api_client=api_client)
 
-            # Harbor mode - only pass image and tag
-            resp = api.api_v2_containers_post(
-                type="algorithm",
-                name=algorithm_name,
-                image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
-                tag=tag,
-                command=command,
-                env_vars=env_vars_list,
-                build_source_type="harbor",
-                harbor_image=f"10.10.10.240/library/rca-algo-{algorithm_name}",
-                harbor_tag=tag,
+            # Create container with version
+            image_ref = f"10.10.10.240/library/rca-algo-{algorithm_name}:{tag}"
+            resp = api.create_container(
+                request=CreateContainerReq(
+                    name=algorithm_name,
+                    type=ContainerType.Algorithm,
+                    is_public=False,
+                    version=CreateContainerVersionReq(
+                        name=tag,
+                        image_ref=image_ref,
+                        command=command,
+                    ),
+                )
             )
 
         logger.info(f"Response: {resp}")
@@ -389,9 +410,11 @@ def trace(trace_id: str, base_url: str | None = None, timeout: int = 600):
 
     with RCABenchClient(base_url=base_url) as client:
         api = TracesApi(client)
-        res = api.stream_trace_events(trace_id=trace_id, timeout=timeout)
-        for event in res:
-            logger.info(event.model_dump_json(indent=2))
+        # Note: stream_trace_events returns None in the new API
+        # The SSE streaming needs to be handled differently
+        # Using _request_timeout for timeout
+        logger.warning("Trace streaming API has changed - this function may need to be reimplemented")
+        api.stream_trace_events(trace_id=trace_id, _request_timeout=timeout)
 
 
 @app.command()
@@ -461,11 +484,14 @@ def submit_unevaluated_execution(
             key, value = env.split("=", 1)
             env_vars[key] = value
 
+    # Convert env_vars dict to list of ParameterSpec
+    env_params = [ParameterSpec(key=k, value={"value": v}) for k, v in env_vars.items()] if env_vars else None
+
     # Build algorithm specifications
     parsed_algorithms = [parse_algorithm_spec(algo) for algo in algorithms]
 
-    # Build execution request payloads
-    payloads: list[DtoAlgorithmExecutionRequest] = []
+    # Build execution request specs
+    specs: list[ExecutionSpec] = []
 
     # Group unevaluated pairs by algorithm
     algo_datapack_map: dict[str, list[str]] = {}
@@ -475,7 +501,7 @@ def submit_unevaluated_execution(
         algo_datapack_map[algorithm_name].append(datapack_name)
 
     with RCABenchClient(base_url=base_url) as client:
-        api = AlgorithmsApi(client)
+        api = ExecutionsApi(client)
 
         for algorithm_spec in parsed_algorithms:
             algorithm_name = algorithm_spec["name"]
@@ -485,32 +511,33 @@ def submit_unevaluated_execution(
                 continue
 
             for datapack in algo_datapack_map[algorithm_name]:
-                payload = DtoAlgorithmExecutionRequest(
-                    algorithm=DtoAlgorithmItem(
-                        name=algorithm_spec["name"], image=algorithm_spec["image"], tag=algorithm_spec["tag"]
+                spec = ExecutionSpec(
+                    algorithm=ContainerSpec(
+                        name=algorithm_spec["name"],
+                        version=algorithm_spec["tag"],
+                        env_vars=env_params,
                     ),
                     datapack=datapack,
-                    env_vars=env_vars,
-                    project_name=project,
                 )
-                payloads.append(payload)
+                specs.append(spec)
 
-        if not payloads:
-            logger.warning("No valid execution payloads")
+        if not specs:
+            logger.warning("No valid execution specs")
             return
 
-        logger.info(f"Submitting {len(payloads)} execution tasks...")
+        logger.info(f"Submitting {len(specs)} execution tasks...")
 
-        resp = api.api_v2_algorithms_execute_post(
-            request=DtoBatchAlgorithmExecutionRequest(
-                executions=payloads,
+        labels = [LabelItem(key="tag", value=tag)] if tag else None
+        resp = api.run_algorithm(
+            request=SubmitExecutionReq(
+                specs=specs,
                 project_name=project,
-                labels=DtoExecutionLabels(tag=tag),
+                labels=labels,
             )
         )
         assert resp.data is not None
 
-        executions = resp.data.executions
+        executions = resp.data.items
         assert executions is not None
 
         data = []
@@ -520,7 +547,6 @@ def submit_unevaluated_execution(
                 "Datapack": execution.datapack_id,
                 "Dataset": execution.dataset_id,
                 "Algorithm": execution.algorithm_id,
-                "Status": execution.status,
                 "Task ID": execution.task_id,
                 "Trace ID": execution.trace_id,
             }

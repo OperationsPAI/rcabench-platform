@@ -5,7 +5,7 @@ from typing import Annotated
 
 import pandas as pd
 import typer
-from rcabench.openapi import AlgorithmsApi, DtoGranularityResultEnhancedRequest, DtoGranularityResultItem
+from rcabench.openapi import ExecutionsApi, GranularityResultItem, UploadGranularityResultReq
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
 from ..clients.rcabench_ import RCABenchClient
@@ -30,7 +30,7 @@ def run(
     assert output_path.is_dir(), f"output_path: {output_path}"
 
     injection = load_json(path=input_path / "injection.json")
-    injection_name = injection["injection_name"]
+    injection_name = injection["name"]
     assert isinstance(injection_name, str) and injection_name
 
     converted_input_path = input_path / "converted"
@@ -68,26 +68,19 @@ def run(
         logger.info(f"Results saved to {result_file}")
         return
 
-    algorithm_id_str = os.environ.get("ALGORITHM_ID")
     execution_id_str = os.environ.get("EXECUTION_ID")
-    assert algorithm_id_str is not None, "ALGORITHM_ID is not set"
-    algorithm_id = int(algorithm_id_str)
-
-    if execution_id_str is not None:
-        execution_id = int(execution_id_str)
-    else:
-        execution_id = None
+    assert execution_id_str is not None, "EXECUTION_ID is not set"
+    execution_id = int(execution_id_str)
 
     with RCABenchClient() as client:
-        algo_api = AlgorithmsApi(client)
+        exec_api = ExecutionsApi(client)
 
-        resp = algo_api.api_v2_algorithms_algorithm_id_results_post(
-            algorithm_id=algorithm_id,
+        resp = exec_api.upload_localization_results(
             execution_id=execution_id,
-            request=DtoGranularityResultEnhancedRequest(
+            request=UploadGranularityResultReq(
                 duration=duration.total_seconds(),
                 results=[
-                    DtoGranularityResultItem(
+                    GranularityResultItem(
                         level=row["level"],
                         result=row["result"],
                         rank=row["rank"],
@@ -97,7 +90,7 @@ def run(
                 ],
             ),
         )
-        logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
+        logger.info(f"Submit localization result: response code: {resp.code}, message: {resp.message}")
 
 
 @app.command()
