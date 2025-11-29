@@ -1,22 +1,10 @@
 import dataclasses
 import time
 import traceback
-from pathlib import Path
 
 import polars as pl
-from rcabench.openapi import (
-    ContainersApi,
-    ExecutionsApi,
-    GranularityResultItem,
-    InjectionsApi,
-    SearchContainerReq,
-    SearchInjectionReq,
-    UploadGranularityResultReq,
-)
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
-from ..clients.rcabench_ import RCABenchClient
-from ..config import get_config
 from ..datasets.spec import get_datapack_folder, get_datapack_labels
 from ..evaluation.ranking import calc_all_perf
 from ..logging import logger, timeit
@@ -33,25 +21,23 @@ def run_single(
     dataset: str,
     datapack: str,
     *,
+    algorithm_version: str | None = None,
+    dataset_version: str | None = None,
     clear: bool = False,
     skip_finished: bool = True,
-    submit_result: bool = False,
     sampler: str | None = None,
     sampling_rate: float | None = None,
     sampling_mode: str | None = None,
 ):
     alg = global_algorithm_registry()[algorithm]()
 
-    # 基础的input_folder和output_folder
     base_input_folder = get_datapack_folder(dataset, datapack)
 
-    # 如果指定了sampler，则使用sampled子目录作为input_folder
     if sampler is not None:
         assert sampling_rate is not None, "sampling_rate must be provided when using sampler"
         assert sampling_mode is not None, "sampling_mode must be provided when using sampler"
         mode = SamplingMode(sampling_mode)
         input_folder = get_sampler_output_folder(dataset, datapack, sampler, sampling_rate, mode)
-        # output_folder也需要包含sampler信息以区分不同的运行
         algorithm_suffix = f"{algorithm}_sampled_{sampler}_{sampling_rate}_{sampling_mode}"
         output_folder = get_output_folder(dataset, datapack, algorithm_suffix)
     else:
@@ -137,72 +123,3 @@ def run_single(
     save_parquet(perf_df, path=output_folder / "perf.parquet")
 
     finished.touch()
-
-    if submit_result:
-        assert runtime is not None
-        with RCABenchClient(base_url=get_config().base_url) as client:
-            containers_api = ContainersApi(client)
-            executions_api = ExecutionsApi(client)
-            injections_api = InjectionsApi(client)
-
-            # Search for injection by datapack name
-            injections = injections_api.search_injections(
-                search=SearchInjectionReq(
-                    search=f"{datapack}",
-                    page=1,
-                    size=1,
-                ),
-            )
-            assert injections.data is not None and injections.data.items is not None
-            if len(injections.data.items) == 0:
-                logger.warning(f"No injection found for datapack: {datapack}")
-                return
-            datapack_id = injections.data.items[0].id
-
-            # Search for container/algorithm by name
-            containers = containers_api.search_containers(
-                request=SearchContainerReq(
-                    search=algorithm,
-                    page=1,
-                    size=10,
-                ),
-            )
-            assert containers.code is not None
-            if containers.code > 210:
-                logger.error(
-                    f"Error in container search API call for {algorithm}: {containers.code}, {containers.message}"
-                )
-                return
-            assert containers.data is not None
-            assert containers.data.items is not None
-
-            # Find algorithm by name
-            algorithm_id = None
-            for algo in containers.data.items:
-                if algo.name == algorithm:
-                    algorithm_id = algo.id
-                    break
-
-            if algorithm_id is None:
-                logger.warning(f"Algorithm '{algorithm}' not found in available containers")
-                return
-            assert algorithm_id is not None
-            assert datapack_id is not None
-
-            resp = executions_api.upload_localization_results(
-                execution_id=algorithm_id,
-                request=UploadGranularityResultReq(
-                    duration=runtime,
-                    datapack_id=datapack_id,
-                    results=[
-                        GranularityResultItem(
-                            confidence=0,
-                            level=ans["level"],
-                            rank=ans["rank"],
-                            result=ans["name"],
-                        )
-                        for ans in answers
-                    ],
-                ),
-            )
-            logger.info(f"result of submitting {algorithm} for {dataset}/{datapack}: {resp.code}, {resp.message}")

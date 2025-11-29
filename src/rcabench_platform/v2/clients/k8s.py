@@ -41,7 +41,14 @@ class KubeInfo:
 
 @timeit()
 def download_kube_info(*, ns: str | None) -> KubeInfo:
-    kubernetes.config.load_kube_config()
+    try:
+        kubernetes.config.load_kube_config()
+    except kubernetes.config.ConfigException:
+        try:
+            kubernetes.config.load_incluster_config()
+        except kubernetes.config.ConfigException as e:
+            logger.error("Could not configure kubernetes python client")
+            raise e
 
     core_v1 = kubernetes.client.CoreV1Api()
     apps_v1 = kubernetes.client.AppsV1Api()

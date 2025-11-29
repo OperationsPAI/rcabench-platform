@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from rcabench_platform.v2.cli.main import app, timeit
+from rcabench_platform.v2.cli.main import app, logger, timeit
 
 CONTEXTS: dict[str, Path] = {
     "rcabench-platform": Path.cwd(),
@@ -12,11 +12,15 @@ CONTEXTS: dict[str, Path] = {
     "detector": Path.cwd() / "docker/detector",
 }
 
-IMAGE_PREFIX = "10.10.10.240/library"
+HARBOR_REPO = "10.10.10.240/library"
 
 
 def sh(cmd: list[str]) -> None:
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Command '{' '.join(cmd)}' failed with exit code {e.returncode}")
+        raise
 
 
 def sh_out(cmd: list[str]) -> str:
@@ -31,24 +35,25 @@ def get_commit_hash() -> str:
 def assert_clean():
     out = sh_out(["git", "status", "--porcelain"])
     if out:
-        raise RuntimeError("Working directory is not clean")
+        logger.error("Working directory is not clean. Uncommitted changes detected:\n" + out)
+        raise RuntimeError("Please commit or stash your changes before proceeding.")
+
+    logger.info("Working directory is clean.")
 
 
 def get_project_version() -> str:
     return sh_out(["uv", "version", "--short"])
 
 
-@app.command()
-@timeit()
-def build(image_name: str, skip_clean_check: bool = False):
-    if not skip_clean_check:
-        assert_clean()
+def _build(image_name: str, image_prefix: str):
+    logger.info(f"--- Starting build for image: {image_name} (Context: {CONTEXTS[image_name]}) ---")
 
     directory = CONTEXTS[image_name]
     os.chdir(directory)
 
     commit_hash = get_commit_hash()
     version = get_project_version()
+    logger.info(f"Current commit hash: {commit_hash}, project version: {version}")
 
     tmp = None
     if image_name == "rcabench-platform":
@@ -71,9 +76,11 @@ def build(image_name: str, skip_clean_check: bool = False):
     if https_proxy:
         cmd.extend(["--build-arg", f"HTTPS_PROXY={https_proxy}"])
 
-    image_full = f"{IMAGE_PREFIX}/{image_name}:{commit_hash}"
+    image_full = f"{image_prefix}/{image_name}:{commit_hash}"
     cmd.extend(["-t", image_full])
     cmd.extend(["-f", "Dockerfile", "."])
+
+    logger.info(f"Building full tag: {image_full}")
 
     try:
         sh(cmd)
@@ -82,37 +89,74 @@ def build(image_name: str, skip_clean_check: bool = False):
             shutil.rmtree(tmp)
         sh(["uv", "version", version])
 
-    image_latest = f"{IMAGE_PREFIX}/{image_name}:latest"
+    image_latest = f"{image_prefix}/{image_name}:latest"
     sh(["docker", "tag", image_full, image_latest])
+
+    logger.info(f"Successfully built image {image_full} and tagged as {image_latest}")
+    logger.info(f"--- Finished build for image: {image_name} ---")
 
 
 @app.command()
 @timeit()
-def push(image_name: str):
+def build(image_name: str = "all", image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False):
+    if not skip_clean_check:
+        assert_clean()
+
+    if image_name == "all":
+        logger.info(f"Building all images with prefix: {image_prefix}")
+        for name in CONTEXTS:
+            _build(name, image_prefix=image_prefix)
+    else:
+        _build(image_name, image_prefix=image_prefix)
+
+
+def _push(image_name: str, image_prefix: str = HARBOR_REPO):
+    logger.info(f"--- Starting push for image: {image_name} (Repo: {image_prefix}) ---")
+
     directory = CONTEXTS[image_name]
     os.chdir(directory)
 
     commit_hash = get_commit_hash()
 
-    image_full = f"{IMAGE_PREFIX}/{image_name}:{commit_hash}"
+    image_full = f"{image_prefix}/{image_name}:{commit_hash}"
+    logger.info(f"Pushing full tag: {image_full}")
     sh(["docker", "push", image_full])
 
-    image_latest = f"{IMAGE_PREFIX}/{image_name}:latest"
+    image_latest = f"{image_prefix}/{image_name}:latest"
+    logger.info(f"Pushing latest tag: {image_latest}")
     sh(["docker", "push", image_latest])
+
+    logger.info(f"Successfully pushed image {image_full} and {image_latest}")
+    logger.info(f"--- Finished push for image: {image_name} ---")
 
 
 @app.command()
 @timeit()
-def update_all():
-    # Only check clean state once before starting
-    assert_clean()
+def push(image_name: str = "all", image_prefix: str = HARBOR_REPO):
+    if image_name == "all":
+        logger.info(f"Pushing all images to: {image_prefix}")
+        for name in CONTEXTS:
+            _push(name, image_prefix=image_prefix)
+    else:
+        _push(image_name, image_prefix=image_prefix)
 
-    for i, image_name in enumerate(CONTEXTS):
-        # Skip clean check for all builds since we already checked once
-        build(image_name, skip_clean_check=True)
 
-    for image_name in CONTEXTS:
-        push(image_name)
+@app.command()
+@timeit()
+def update_all(image_prefix: str = HARBOR_REPO):
+    logger.info("============== Starting FULL Image Update Process ==============")
+
+    # assert_clean()
+
+    sh(["just", "ci"])
+
+    logger.info("--- Phase 1: Building all images ---")
+    build("all", image_prefix=image_prefix, skip_clean_check=True)
+
+    logger.info("--- Phase 2: Pushing all images ---")
+    push("all", image_prefix=image_prefix)
+
+    logger.info("============== FULL Image Update Process Complete ==============")
 
 
 if __name__ == "__main__":

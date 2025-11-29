@@ -488,8 +488,9 @@ def get_algorithms_metrics_across_datasets(
     Args:
         algorithms: List of algorithm names
         datasets: List of dataset names
-        dataset_versions: List of dataset versions (optional, if None will use default versions)
-        tag: Evaluation tag
+        algorithm_versions: List of algorithm versions (optional, if None will use default version)
+        dataset_versions: List of dataset versions (optional, if None will use default version)
+        filter_labels: Dictionary of labels to filter executions (optional)
         base_url: API base URL (optional)
         level: Granularity level, if None returns all levels
 

@@ -756,12 +756,8 @@ def run(
         return None
 
     if online:
-        algorithm_id_str = os.environ.get("ALGORITHM_ID")
         execution_id_str = os.environ.get("EXECUTION_ID")
-        assert algorithm_id_str is not None, "ALGORITHM_ID is not set"
         assert execution_id_str is not None, "EXECUTION_ID is not set"
-        # algorithm_id is not used in the new SDK workflow
-        # algorithm_id = int(algorithm_id_str)
         execution_id = int(execution_id_str)
     else:
         execution_id = 0  # Not used when online=False
