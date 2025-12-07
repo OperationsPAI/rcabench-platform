@@ -82,7 +82,7 @@ def download_kube_info(*, ns: str | None) -> KubeInfo:
     return KubeInfo(
         nodes=nodes,
         pvs=pvs,
-        namespaces=namespaces,
+        namespaces=namespaces,  # type: ignore
         services=services,
         stateful_sets=stateful_sets,
         deployments=deployments,

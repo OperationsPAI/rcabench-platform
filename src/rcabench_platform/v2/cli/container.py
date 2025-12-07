@@ -8,7 +8,7 @@ import typer
 from rcabench.openapi import ExecutionsApi, GranularityResultItem, UploadGranularityResultReq
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
-from ..clients.rcabench_ import RCABenchClient
+from ..clients.rcabench_ import get_rcabench_client
 from ..config import get_config
 from ..logging import logger, timeit
 from ..sources.convert import convert_datapack
@@ -72,25 +72,25 @@ def run(
     assert execution_id_str is not None, "EXECUTION_ID is not set"
     execution_id = int(execution_id_str)
 
-    with RCABenchClient() as client:
-        exec_api = ExecutionsApi(client)
+    client = get_rcabench_client(base_url=get_config().base_url)
+    exec_api = ExecutionsApi(client)
 
-        resp = exec_api.upload_localization_results(
-            execution_id=execution_id,
-            request=UploadGranularityResultReq(
-                duration=duration.total_seconds(),
-                results=[
-                    GranularityResultItem(
-                        level=row["level"],
-                        result=row["result"],
-                        rank=row["rank"],
-                        confidence=row["confidence"],
-                    )
-                    for row in result_rows
-                ],
-            ),
-        )
-        logger.info(f"Submit localization result: response code: {resp.code}, message: {resp.message}")
+    resp = exec_api.upload_localization_results(
+        execution_id=execution_id,
+        request=UploadGranularityResultReq(
+            duration=duration.total_seconds(),
+            results=[
+                GranularityResultItem(
+                    level=row["level"],
+                    result=row["result"],
+                    rank=row["rank"],
+                    confidence=row["confidence"],
+                )
+                for row in result_rows
+            ],
+        ),
+    )
+    logger.info(f"Submit localization result: response code: {resp.code}, message: {resp.message}")
 
 
 @app.command()

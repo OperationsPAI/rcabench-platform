@@ -451,7 +451,7 @@ class RcabenchDatapackLoader(DatapackLoader):
 
         injection = load_json(path=self._src_folder / "injection.json")
         self._fault_type: str = injection["fault_type"]
-        self._injection_config = json.loads(injection["display_config"])
+        self._injection_config = injection["display_config"]
 
     def name(self) -> str:
         return self._datapack

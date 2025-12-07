@@ -74,7 +74,7 @@ def _compute_span_depths(trace_df: pl.DataFrame) -> dict[str, int]:
     return span_depths
 
 
-def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, dict[str, Any]]:
+def _process_single_datapack_metrics(dataset: str, datapack: str, injection_id: int) -> tuple[str, dict[str, Any]]:
     if dataset == "rcabench":
         loader = RCABenchAnalyzerLoader(datapack)
     elif dataset.startswith("rcaeval"):
@@ -84,7 +84,7 @@ def _process_single_datapack_metrics(dataset: str, datapack: str) -> tuple[str, 
 
     try:
         calculator = DatasetMetricsCalculator(loader)
-        return datapack, calculator.calculate_and_report()
+        return datapack, calculator.calculate_and_report(injection_id)
 
     except Exception as e:
         logger.error(f"Error processing datapack {datapack} in dataset {dataset}: {e}")
@@ -107,16 +107,16 @@ def batch_metrics(dataset: str, online: bool):
         )
         assert res.data is not None and res.data.items is not None, "No injections found with absolute anomaly degree"
 
-        datapacks = [i.name for i in res.data.items if i.name is not None]
+        datapacks = [(i.name, i.id) for i in res.data.items if i.name is not None and i.id is not None]
         logger.info(f"Total retrieved: {len(datapacks)} valid datapacks")
     else:
-        datapacks = [f.name for f in folder.iterdir() if f.is_dir()]
+        datapacks = [(f.name, 0) for f in folder.iterdir() if f.is_dir()]
 
     if not datapacks:
         logger.error(f"Error: No datapacks found in dataset {dataset}")
         return
 
-    tasks = [functools.partial(_process_single_datapack_metrics, dataset, datapack) for datapack in datapacks]
+    tasks = [functools.partial(_process_single_datapack_metrics, dataset, datapack, id) for datapack, id in datapacks]
 
     cpu = os.cpu_count()
     assert cpu is not None, "CPU count is not available"

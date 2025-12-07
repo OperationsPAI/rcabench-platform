@@ -142,11 +142,7 @@ JVM_RETURN_VALUE_OPT: dict[int, str] = {
 
 
 def rcabench_fix_injection(injection: dict[str, Any]) -> None:
-    injection["fault_type"] = FAULT_TYPES[injection["fault_type"]]
-
-    injection["engine_config"] = json.loads(injection["engine_config"])
-
-    display_config: dict[str, Any] = json.loads(injection["display_config"])
+    display_config: dict[str, Any] = injection["display_config"]
     rcabench_fix_injection_display_config(display_config)
     injection["display_config"] = display_config
 
@@ -385,19 +381,18 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
         ],
     }
 
-    def __init__(self, datapack: str):
+    def __init__(self, datapack: str, in_p: Path | None = None):
         super().__init__(datapack)
+        self.in_p = in_p
         self.files: dict[str, Any] = self._load_datapack_files()
 
-    def _get_datapack_folder(self) -> Path | None:
-        in_p = Path(os.environ.get("INPUT_PATH", ""))
-        if in_p.exists() and in_p.is_dir() and (in_p / "converted").exists():
-            return in_p / "converted"
+    def _get_datapack_folder(self) -> Path:
+        if self.in_p and self.in_p.exists() and self.in_p.is_dir() and (self.in_p / "converted").exists():
+            return self.in_p / "converted"
         return Path("data") / "rcabench_dataset" / self.datapack / "converted"
 
     def _load_datapack_files(self) -> dict[str, Any]:
         folder = self._get_datapack_folder()
-        assert folder is not None, "datapack folder must exist"
         files: dict[str, Any] = {}
 
         for file_type in [

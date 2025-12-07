@@ -143,12 +143,17 @@ def push(image_name: str = "all", image_prefix: str = HARBOR_REPO):
 
 @app.command()
 @timeit()
-def update_all(image_prefix: str = HARBOR_REPO):
+def update_all(image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False):
     logger.info("============== Starting FULL Image Update Process ==============")
 
-    # assert_clean()
+    if not skip_clean_check:
+        assert_clean()
 
-    sh(["just", "ci"])
+    try:
+        sh(["just", "ci"])
+    except subprocess.CalledProcessError:
+        logger.error("CI checks failed. Aborting the update process.")
+        return
 
     logger.info("--- Phase 1: Building all images ---")
     build("all", image_prefix=image_prefix, skip_clean_check=True)

@@ -240,10 +240,10 @@ def query_injection(
         api = InjectionsApi(client)
         search_req = SearchInjectionReq(name_pattern=name)
         resp = api.search_injections(search=search_req)
-        if resp.data and resp.data.items and len(resp.data.items) > 0:
-            for item in resp.data.items:
-                if item.name == name and item.id is not None:
-                    return item
+        if resp.data and resp.data.items and len(resp.data.items) == 1:
+            item = resp.data.items[0]
+            if item.name == name and item.id is not None:
+                return item
             return None
     except Exception:
         traceback.print_exc()
@@ -407,23 +407,23 @@ def patch_injection(
     assert resp.data.items is not None, "No items found in the response"
 
     case_names = list(set([item.name for item in resp.data.items if item.name is not None]))
-    for dataset_name in case_names:
-        injection = query_injection(rcabench_url, dataset_name)
+    for datapack_name in case_names:
+        injection = query_injection(rcabench_url, datapack_name)
         if injection:
-            dataset_path = Path("/mnt/jfs/rcabench_dataset") / dataset_name
-            save_json(injection.model_dump(), path=dataset_path / "injection.json")
+            datapack_path = Path("/mnt/jfs/rcabench_dataset") / datapack_name
+            save_json(injection.model_dump(), path=datapack_path / "injection.json")
             save_json(
                 injection.model_dump(),
-                path=dataset_path / "converted" / "injection.json",
+                path=datapack_path / "converted" / "injection.json",
             )
 
-            platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / dataset_name
+            platform_path = Path("/mnt/jfs/rcabench-platform-v2/data/rcabench_with_issues") / datapack_name
             if platform_path.exists():
                 json_path = platform_path / "injection.json"
                 save_json(injection.model_dump(), path=json_path)
                 os.chown(json_path, 1000, 1000)
         else:
-            logger.warning(f"No injection details found for dataset: {dataset_name}")
+            logger.warning(f"No injection details found for datapack: {datapack_name}")
 
 
 if __name__ == "__main__":
