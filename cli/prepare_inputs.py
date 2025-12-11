@@ -268,8 +268,9 @@ def query_kube_info(namespace: str) -> dict[str, Any] | None:
 def run():
     ping_clickhouse()
 
-    env_mode = os.environ["ENV_MODE"]
-    rcabench_url = get_config(env_mode=env_mode).base_url
+    rcabench_url = os.environ.get("RCABENCH_URL")
+    assert rcabench_url is not None, "RCABENCH_URL is not set"
+    logger.debug(f"rcabench_url: `{rcabench_url}`")
 
     # Prepare the output directory
     output_path = Path(os.environ["OUTPUT_PATH"])

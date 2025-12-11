@@ -45,7 +45,7 @@ def get_project_version() -> str:
     return sh_out(["uv", "version", "--short"])
 
 
-def _build(image_name: str, image_prefix: str):
+def _build(image_name: str, image_prefix: str, no_cache: bool = False):
     logger.info(f"--- Starting build for image: {image_name} (Context: {CONTEXTS[image_name]}) ---")
 
     directory = CONTEXTS[image_name]
@@ -68,6 +68,8 @@ def _build(image_name: str, image_prefix: str):
     https_proxy = os.getenv("HTTPS_PROXY", "")
 
     cmd = ["docker", "build"]
+    if no_cache:
+        cmd.append("--no-cache")
     cmd.extend(["--network=host"])
 
     if http_proxy:
@@ -98,16 +100,18 @@ def _build(image_name: str, image_prefix: str):
 
 @app.command()
 @timeit()
-def build(image_name: str = "all", image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False):
+def build(
+    image_name: str = "all", image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False, no_cache: bool = False
+):
     if not skip_clean_check:
         assert_clean()
 
     if image_name == "all":
         logger.info(f"Building all images with prefix: {image_prefix}")
         for name in CONTEXTS:
-            _build(name, image_prefix=image_prefix)
+            _build(name, image_prefix=image_prefix, no_cache=no_cache)
     else:
-        _build(image_name, image_prefix=image_prefix)
+        _build(image_name, image_prefix=image_prefix, no_cache=no_cache)
 
 
 def _push(image_name: str, image_prefix: str = HARBOR_REPO):
@@ -143,7 +147,7 @@ def push(image_name: str = "all", image_prefix: str = HARBOR_REPO):
 
 @app.command()
 @timeit()
-def update_all(image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False):
+def update_all(image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False, no_cache: bool = False):
     logger.info("============== Starting FULL Image Update Process ==============")
 
     if not skip_clean_check:
@@ -156,7 +160,7 @@ def update_all(image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False):
         return
 
     logger.info("--- Phase 1: Building all images ---")
-    build("all", image_prefix=image_prefix, skip_clean_check=True)
+    build("all", image_prefix=image_prefix, skip_clean_check=skip_clean_check, no_cache=no_cache)
 
     logger.info("--- Phase 2: Pushing all images ---")
     push("all", image_prefix=image_prefix)

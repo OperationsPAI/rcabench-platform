@@ -812,7 +812,10 @@ def run(
     }
 
     if online:
-        client = get_rcabench_client()
+        rcabench_url = os.environ.get("RCABENCH_URL")
+        assert rcabench_url is not None, "RCABENCH_URL is not set"
+
+        client = get_rcabench_client(base_url=rcabench_url)
         executions_api = ExecutionsApi(client)
 
         duration = datetime.now() - start_time

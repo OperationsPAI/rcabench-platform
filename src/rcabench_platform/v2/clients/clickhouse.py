@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import TypeAlias
 
@@ -8,16 +9,18 @@ ClickHouseClient: TypeAlias = clickhouse_connect.driver.client.Client
 
 
 def get_clickhouse_client() -> ClickHouseClient:
-    host = "10.10.10.58"
-    username = "default"
-    password = "password"
-    database = "default"
+    host = os.environ.get("CLICKHOUSE_HOST", "localhost")
+    port = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+    username = os.environ.get("CLICKHOUSE_USER", None)
+    password = os.environ.get("CLICKHOUSE_PASSWORD", "")
+    database = os.environ.get("CLICKHOUSE_DATABASE", "default")
 
     client = clickhouse_connect.get_client(
         host=host,
         username=username,
         password=password,
         database=database,
+        port=port,
     )
 
     return client
