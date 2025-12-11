@@ -17,7 +17,7 @@ from rcabench_platform.v2.clients.clickhouse import (
 )
 from rcabench_platform.v2.clients.k8s import download_kube_info
 from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
-from rcabench_platform.v2.config import get_config
+from rcabench_platform.v2.datasets.rcabench import valid
 from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_json
 
@@ -358,6 +358,15 @@ def run():
             save_json(kube_info, path=tempdir / "k8s.json")
 
         copy_files(tempdir, output_path)
+
+    _, is_valid = valid(output_path)
+    if not is_valid:
+        logger.error(
+            f"Output path validation failed: {output_path}. "
+            f"Please check if all required files exist and are valid. "
+            f"Run with DEBUG=true for detailed validation logs."
+        )
+        raise ValueError("Output path validation failed.")
 
 
 @timeit()

@@ -78,6 +78,12 @@ def _build(image_name: str, image_prefix: str, no_cache: bool = False):
     if https_proxy:
         cmd.extend(["--build-arg", f"HTTPS_PROXY={https_proxy}"])
 
+    # For child images, pass the base image as a build arg
+    if image_name != "rcabench-platform":
+        base_image = f"{image_prefix}/rcabench-platform:latest"
+        cmd.extend(["--build-arg", f"BASE_IMAGE={base_image}"])
+        logger.info(f"Using base image: {base_image}")
+
     image_full = f"{image_prefix}/{image_name}:{commit_hash}"
     cmd.extend(["-t", image_full])
     cmd.extend(["-f", "Dockerfile", "."])

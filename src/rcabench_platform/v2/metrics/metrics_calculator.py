@@ -1,5 +1,5 @@
-import json
 import statistics
+from typing import Any
 
 import networkx as nx
 from rcabench.openapi import (
@@ -278,7 +278,7 @@ class DatasetMetricsCalculator:
         return max_degree
 
     def calculate_and_report(self, injection_id: int):
-        results = {}
+        results: dict[str, Any] = {}
         results["SDD@1"] = self.compute_sdd(k=1)
         results["SDD@3"] = self.compute_sdd(k=3)
         results["SDD@5"] = self.compute_sdd(k=5)

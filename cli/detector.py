@@ -155,7 +155,7 @@ class AnalysisResult(TypedDict):
     anomaly_count: int
     issue_categories: dict[str, int]
     absolute_anomaly: bool
-    dataset_metrics: dict
+    datapack_metrics: dict
 
 
 def calculate_anomaly_score(
@@ -758,14 +758,7 @@ def run(
             f"Please check if all required files exist and are valid. "
             f"Run with DEBUG=true for detailed validation logs."
         )
-        return None
-
-    if online:
-        execution_id_str = os.environ.get("EXECUTION_ID")
-        assert execution_id_str is not None, "EXECUTION_ID is not set"
-        execution_id = int(execution_id_str)
-    else:
-        execution_id = 0  # Not used when online=False
+        raise ValueError("Input path validation failed.")
 
     datapack_name = input_path.name
     normal_trace = input_path / "normal_traces.parquet"
@@ -777,7 +770,7 @@ def run(
     # Check if we have valid data for analysis
     if not normal_stat or not abnormal_stat:
         logger.error("No endpoints found in normal or abnormal trace data, terminating analysis.")
-        return None
+        raise ValueError("No endpoints found in normal or abnormal trace data.")
 
     # Initialize analysis state and configuration
     state = AnalysisState(
@@ -808,71 +801,72 @@ def run(
         "anomaly_count": state["metrics"].anomaly_count,
         "issue_categories": state["metrics"].issue_categories,
         "absolute_anomaly": state["metrics"].absolute_anomaly,
-        "dataset_metrics": {},
+        "datapack_metrics": {},
     }
 
     if online:
+        datapack_id_str = os.environ.get("Datapack_ID")
+        assert datapack_id_str is not None, "DATAPACK_ID is not set"
+        datapack_id = int(datapack_id_str)
+        assert datapack_id > 0, "DATAPACK_ID must be positive"
+        logger.debug(f"Datapack ID: {datapack_id}")
+
+        execution_id_str = os.environ.get("EXECUTION_ID")
+        assert execution_id_str is not None, "EXECUTION_ID is not set"
+        execution_id = int(execution_id_str)
+        assert execution_id > 0, "EXECUTION_ID must be positive"
+        logger.debug(f"Execution ID: {execution_id}")
+
         rcabench_url = os.environ.get("RCABENCH_URL")
         assert rcabench_url is not None, "RCABENCH_URL is not set"
 
         client = get_rcabench_client(base_url=rcabench_url)
-        executions_api = ExecutionsApi(client)
-
-        duration = datetime.now() - start_time
-        resp = executions_api.upload_detection_results(
-            execution_id=execution_id,
-            request=UploadDetectorResultReq(
-                duration=duration.total_seconds(),
-                results=[
-                    DetectorResultItem(
-                        issues=i["Issues"],
-                        span_name=i["SpanName"],
-                        abnormal_avg_duration=i["AbnormalAvgDuration"],
-                        abnormal_p90=i["AbnormalP90"],
-                        abnormal_p95=i["AbnormalP95"],
-                        abnormal_p99=i["AbnormalP99"],
-                        abnormal_succ_rate=i["AbnormalSuccRate"],
-                        normal_avg_duration=i["NormalAvgDuration"],
-                        normal_p90=i["NormalP90"],
-                        normal_p95=i["NormalP95"],
-                        normal_p99=i["NormalP99"],
-                        normal_succ_rate=i["NormalSuccRate"],
-                    )
-                    for i in state["conclusion_data"]
-                ],
-            ),
-        )
-        logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
 
         # Create tags and labels from analysis state
         labels = create_labels(state)
+        logger.info(f"Generated labels: {[f'{label.key}={label.value}' for label in labels]}")
 
-        injection_file = input_path / "injection.json"
-        injection_id: int | None = None
-        if injection_file.exists():
-            with open(injection_file) as f:
-                injection_data = json.load(f)
-                injection_id = injection_data.get("id")
-        else:
-            logger.warning(f"injection.json not found at {injection_file}")
+        if "no_anomaly" not in labels:
+            duration = datetime.now() - start_time
+            executions_api = ExecutionsApi(client)
 
-        # Update injection labels using the new API
-        # Note: Tags are stored as labels with a special prefix
-        if injection_id:
-            try:
-                injections_api = InjectionsApi(client)
-                resp = injections_api.manage_injection_labels(
-                    id=injection_id, manage=ManageInjectionLabelReq(add_labels=labels)
-                )
-                logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
-            except Exception as e:
-                logger.error(f"Failed to update injection labels: {e}")
+            resp = executions_api.upload_detection_results(
+                execution_id=execution_id,
+                request=UploadDetectorResultReq(
+                    duration=duration.total_seconds(),
+                    results=[
+                        DetectorResultItem(
+                            issues=i["Issues"],
+                            span_name=i["SpanName"],
+                            abnormal_avg_duration=i["AbnormalAvgDuration"],
+                            abnormal_p90=i["AbnormalP90"],
+                            abnormal_p95=i["AbnormalP95"],
+                            abnormal_p99=i["AbnormalP99"],
+                            abnormal_succ_rate=i["AbnormalSuccRate"],
+                            normal_avg_duration=i["NormalAvgDuration"],
+                            normal_p90=i["NormalP90"],
+                            normal_p95=i["NormalP95"],
+                            normal_p99=i["NormalP99"],
+                            normal_succ_rate=i["NormalSuccRate"],
+                        )
+                        for i in state["conclusion_data"]
+                    ],
+                ),
+            )
+            logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
 
-            calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name, input_path))
-            res = calculator.calculate_and_report(injection_id)
-            result["dataset_metrics"] = res
-        else:
-            logger.warning("Injection ID not found, skipping label update and metrics calculation")
+        try:
+            injections_api = InjectionsApi(client)
+            resp = injections_api.manage_injection_labels(
+                id=datapack_id, manage=ManageInjectionLabelReq(add_labels=labels)
+            )
+            logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
+        except Exception as e:
+            logger.error(f"Failed to update injection labels: {e}")
+
+        calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name, input_path))
+        res = calculator.calculate_and_report(datapack_id)
+        result["datapack_metrics"] = res
 
     return result
 
