@@ -229,14 +229,11 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
 
 @timeit()
-def query_injection(
-    rcabench_url: str,
-    name: str,
-):
+def query_injection(base_url: str, name: str):
     from rcabench.openapi import InjectionsApi, SearchInjectionReq
 
     try:
-        client = get_rcabench_client(base_url=rcabench_url)
+        client = get_rcabench_client(base_url=base_url)
         api = InjectionsApi(client)
         search_req = SearchInjectionReq(name_pattern=name)
         resp = api.search_injections(search=search_req)
@@ -268,9 +265,9 @@ def query_kube_info(namespace: str) -> dict[str, Any] | None:
 def run():
     ping_clickhouse()
 
-    rcabench_url = os.environ.get("RCABENCH_URL")
-    assert rcabench_url is not None, "RCABENCH_URL is not set"
-    logger.debug(f"rcabench_url: `{rcabench_url}`")
+    base_url = os.environ.get("RCABENCH_BASE_URL")
+    assert base_url is not None, "RCABENCH_BASE_URL is not set"
+    logger.debug(f"rcabench_base_url: `{base_url}`")
 
     # Prepare the output directory
     output_path = Path(os.environ["OUTPUT_PATH"])
@@ -282,8 +279,8 @@ def run():
     namespace = os.environ["NAMESPACE"]
     assert namespace, "NAMESPACE must be set"
 
-    timezone = os.environ["TIMEZONE"]
-    assert timezone, "TIMEZONE must be set"
+    db_timezone = os.environ["DB_TIMEZONE"]
+    assert db_timezone, "DB_TIMEZONE must be set"
 
     normal_start = int(os.environ["NORMAL_START"])
     normal_end = int(os.environ["NORMAL_END"])
@@ -305,10 +302,10 @@ def run():
     # support discontinuous time ranges?
     assert normal_end == abnormal_start, "The time ranges must be continuous for now"
 
-    ch_normal_start = convert_to_clickhouse_time(normal_start, timezone)
-    ch_normal_end = convert_to_clickhouse_time(normal_end, timezone)
-    ch_abnormal_start = convert_to_clickhouse_time(abnormal_start, timezone)
-    ch_abnormal_end = convert_to_clickhouse_time(abnormal_end, timezone)
+    ch_normal_start = convert_to_clickhouse_time(normal_start, db_timezone)
+    ch_normal_end = convert_to_clickhouse_time(normal_end, db_timezone)
+    ch_abnormal_start = convert_to_clickhouse_time(abnormal_start, db_timezone)
+    ch_abnormal_end = convert_to_clickhouse_time(abnormal_end, db_timezone)
 
     ch_normal_time_range = [ch_normal_start, ch_normal_end]
     ch_abnormal_time_range = [ch_abnormal_start, ch_abnormal_end]
@@ -341,7 +338,7 @@ def run():
 
         env_params = {
             "NAMESPACE": namespace,
-            "TIMEZONE": timezone,
+            "DB_TIMEZONE": db_timezone,
             "NORMAL_START": str(normal_start),
             "NORMAL_END": str(normal_end),
             "ABNORMAL_START": str(abnormal_start),
@@ -349,7 +346,7 @@ def run():
         }
         save_json(env_params, path=tempdir / "env.json")
 
-        injection = query_injection(rcabench_url, output_path.name)
+        injection = query_injection(base_url, output_path.name)
         if injection:
             save_json(injection.model_dump(), path=tempdir / "injection.json")
 
@@ -389,7 +386,7 @@ def local_test():
     env_params = {
         "OUTPUT_PATH": "temp/ts5-ts-consign-service-partition-tstlvq",
         "NAMESPACE": "ts5",
-        "TIMEZONE": "Asia/Shanghai",
+        "DB_TIMEZONE": "Asia/Shanghai",
         "NORMAL_START": "1752156428",
         "NORMAL_END": "1752156668",
         "ABNORMAL_START": "1752156668",

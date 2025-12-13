@@ -1,15 +1,16 @@
+import os
 import statistics
 from typing import Any
 
 import networkx as nx
 from rcabench.openapi import (
+    ApiClient,
     InjectionsApi,
     LabelItem,
     ManageInjectionLabelReq,
 )
 
-from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
-
+from ..clients.rcabench_ import get_rcabench_client
 from ..datasets.spec import DatasetAnalyzer
 from ..logging import logger
 
@@ -277,7 +278,7 @@ class DatasetMetricsCalculator:
 
         return max_degree
 
-    def calculate_and_report(self, injection_id: int):
+    def calculate_and_report(self, injection_id: int = 0, client: ApiClient | None = None) -> dict[str, Any]:
         results: dict[str, Any] = {}
         results["SDD@1"] = self.compute_sdd(k=1)
         results["SDD@3"] = self.compute_sdd(k=3)
@@ -287,7 +288,8 @@ class DatasetMetricsCalculator:
         results["RootServiceDegree"] = self.get_root_cause_degree()
 
         if injection_id > 0:
-            client = get_rcabench_client()
+            if client is None:
+                client = get_rcabench_client(base_url=os.environ.get("RCABENCH_BASE_URL"))
             api = InjectionsApi(client)
             datapack_name = self.loader.get_datapack()
 

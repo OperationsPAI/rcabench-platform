@@ -728,7 +728,7 @@ def create_labels(state: AnalysisState) -> list[LabelItem]:
 
     tags.append("analysis_completed")
 
-    labels.extend([LabelItem(key=f"tag:{tag}", value="true") for tag in tags])
+    labels.extend([LabelItem(key="tag", value=tag) for tag in tags])
     return labels
 
 
@@ -747,7 +747,7 @@ def save_analysis_results(state: AnalysisState, output_path: Path) -> AnalysisSt
 @app.command()
 @timeit()
 def run(
-    in_p: Path | None = None, ou_p: Path | None = None, convert: bool = True, online: bool = True
+    in_p: Path | None = None, ou_p: Path | None = None, convert: bool = False, online: bool = False
 ) -> AnalysisResult | None:
     start_time = datetime.now()
     input_path, output_path = setup_paths_and_validation(in_p, ou_p)
@@ -805,7 +805,7 @@ def run(
     }
 
     if online:
-        datapack_id_str = os.environ.get("Datapack_ID")
+        datapack_id_str = os.environ.get("DATAPACK_ID")
         assert datapack_id_str is not None, "DATAPACK_ID is not set"
         datapack_id = int(datapack_id_str)
         assert datapack_id > 0, "DATAPACK_ID must be positive"
@@ -817,10 +817,7 @@ def run(
         assert execution_id > 0, "EXECUTION_ID must be positive"
         logger.debug(f"Execution ID: {execution_id}")
 
-        rcabench_url = os.environ.get("RCABENCH_URL")
-        assert rcabench_url is not None, "RCABENCH_URL is not set"
-
-        client = get_rcabench_client(base_url=rcabench_url)
+        client = get_rcabench_client(base_url=os.environ.get("RCABENCH_BASE_URL"))
 
         # Create tags and labels from analysis state
         labels = create_labels(state)
@@ -853,19 +850,22 @@ def run(
                     ],
                 ),
             )
-            logger.info(f"Submit detector result: response code: {resp.code}, message: {resp.message}")
+
+            if resp.code is not None and 200 <= resp.code < 300:
+                logger.info("Submit detector result successfully")
 
         try:
             injections_api = InjectionsApi(client)
             resp = injections_api.manage_injection_labels(
                 id=datapack_id, manage=ManageInjectionLabelReq(add_labels=labels)
             )
-            logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
+            if resp.code is not None and 200 <= resp.code < 300:
+                logger.info(f"Updated injection labels: {resp.code} - {resp.message}")
         except Exception as e:
             logger.error(f"Failed to update injection labels: {e}")
 
         calculator = DatasetMetricsCalculator(RCABenchAnalyzerLoader(datapack_name, input_path))
-        res = calculator.calculate_and_report(datapack_id)
+        res = calculator.calculate_and_report(datapack_id, client=client)
         result["datapack_metrics"] = res
 
     return result
@@ -989,18 +989,10 @@ def validate_datapacks(
             invalid_datapacks.append(datapack_path)
 
         if online:
-            try:
-                # Update injection labels via API
-                injection_file = datapack_path / "injection.json"
-                if injection_file.exists():
-                    manage_req_dict[datapack_path.name] = ManageInjectionLabelReq(
-                        add_labels=[LabelItem(key=f"tag:{add_tag}", value="true")],
-                        remove_labels=[f"tag:{remove_tag}"],
-                    )
-                else:
-                    logger.warning(f"No injection.json found for {datapack_path.name}")
-            except Exception as e:
-                logger.error(f"Failed to update labels for {datapack_path.name}: {e}")
+            manage_req_dict[datapack_path.name] = ManageInjectionLabelReq(
+                add_labels=[LabelItem(key="tag", value=add_tag)],
+                remove_labels=[remove_tag],
+            )
 
     # Batch update injection labels
     if online and manage_req_dict:
@@ -1017,10 +1009,12 @@ def validate_datapacks(
                 continue
 
             try:
-                injections_api.manage_injection_labels(
+                resp = injections_api.manage_injection_labels(
                     id=injection_id,
                     manage=manage_req,
                 )
+                if resp.code is not None and 200 <= resp.code < 300:
+                    logger.info(f"Updated labels for {datapack_name}: {resp.code} - {resp.message}")
             except Exception:
                 continue
 

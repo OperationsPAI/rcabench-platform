@@ -72,10 +72,7 @@ def run(
     assert execution_id_str is not None, "EXECUTION_ID is not set"
     execution_id = int(execution_id_str)
 
-    rcabench_url = os.environ.get("RCABENCH_URL")
-    assert rcabench_url is not None, "RCABENCH_URL is not set"
-
-    client = get_rcabench_client(base_url=rcabench_url)
+    client = get_rcabench_client(base_url=os.environ.get("RCABENCH_BASE_URL"))
     exec_api = ExecutionsApi(client)
 
     resp = exec_api.upload_localization_results(

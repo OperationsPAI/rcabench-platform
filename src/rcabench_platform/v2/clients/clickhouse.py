@@ -9,11 +9,11 @@ ClickHouseClient: TypeAlias = clickhouse_connect.driver.client.Client
 
 
 def get_clickhouse_client() -> ClickHouseClient:
-    host = os.environ.get("CLICKHOUSE_HOST", "localhost")
-    port = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
-    username = os.environ.get("CLICKHOUSE_USER", None)
-    password = os.environ.get("CLICKHOUSE_PASSWORD", "")
-    database = os.environ.get("CLICKHOUSE_DATABASE", "default")
+    host = os.environ.get("DB_HOST", "localhost")
+    port = int(os.environ.get("DB_PORT", "8123"))
+    username = os.environ.get("DB_USER", None)
+    password = os.environ.get("DB_PASSWORD", "")
+    database = os.environ.get("DB_DATABASE", "default")
 
     client = clickhouse_connect.get_client(
         host=host,
