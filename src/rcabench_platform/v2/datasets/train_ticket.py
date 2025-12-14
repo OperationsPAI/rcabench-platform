@@ -49,6 +49,14 @@ PATTERN_REPLACEMENTS = [
         r"(.*?)GET (.*?)/api/v1/executeservice/execute/execute/[0-9a-f-]+",
         r"\1GET \2/api/v1/executeservice/execute/execute/{orderId}",
     ),
+    (
+        r"(.*?)DELETE (.*?)/api/v1/adminorderservice/adminorder/[0-9a-f-]+/[A-Z0-9]+",
+        r"\1DELETE \2/api/v1/adminorderservice/adminorder/{orderId}/{trainNumber}",
+    ),
+    (
+        r"(.*?)DELETE (.*?)/api/v1/adminrouteservice/adminroute/[0-9a-f-]+",
+        r"\1DELETE \2/api/v1/adminrouteservice/adminroute/{routeId}",
+    ),
 ]
 
 
