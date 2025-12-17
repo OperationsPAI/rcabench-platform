@@ -1,9 +1,7 @@
-import json
-from functools import partial
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import networkx as nx
 import pandas as pd
 import polars as pl
 from drain3 import TemplateMiner
@@ -11,466 +9,411 @@ from drain3.drain import LogCluster
 from drain3.file_persistence import FilePersistence
 from drain3.template_miner_config import TemplateMinerConfig
 
-from ..datasets.rcabench import FAULT_TYPES, rcabench_get_service_name
-from ..datasets.train_ticket import extract_path
+from ..datasets.rcabench import get_service_names
 from ..logging import logger, timeit
+from ..pedestals import get_pedestal
 from ..utils.serde import load_json
 from .convert import DatapackLoader, DatasetLoader, Label
 
 
 def replace_time_col(lf: pl.LazyFrame, col_name: str) -> pl.LazyFrame:
-    lf = lf.with_columns(pl.col(col_name)).rename({col_name: "time"})
-    return lf
+    """Rename timestamp column to 'time'"""
+    return lf.with_columns(pl.col(col_name)).rename({col_name: "time"})
 
 
 def unnest_json_col(lf: pl.LazyFrame, col_name: str, dtype: pl.Struct) -> pl.LazyFrame:
-    lf = lf.with_columns(pl.col(col_name).str.json_decode(dtype).struct.unnest()).drop(col_name)
-    return lf
+    """Parse JSON column and unnest struct fields"""
+    return lf.with_columns(pl.col(col_name).str.json_decode(dtype).struct.unnest()).drop(col_name)
 
 
-def convert_metrics(src: Path) -> pl.LazyFrame:
-    lf = pl.scan_parquet(src)
-    original_columns: list[str] = lf.collect_schema().names()
+class Converter:
+    """RCABench data format converter"""
 
-    selected_columns = [
-        "TimeUnix",
-        "MetricName",
-        "Value",
-        "ResourceAttributes",
-    ]
-    additional_columns = [
-        "ServiceName",
-        "Attributes",
-    ]
-    for col in additional_columns:
-        if col in original_columns:
-            selected_columns.append(col)
+    def __init__(self, src_folder: Path, prefix: str, system: str = "ts") -> None:
+        self._src_folder = src_folder
+        self._prefix = prefix
+        self._pedestal = get_pedestal(system)
 
-    lf = lf.select(selected_columns)
+    def metrics(self, src: Path) -> pl.LazyFrame:
+        """Convert metrics parquet to standardized format"""
+        lf = pl.scan_parquet(src)
+        original_columns: list[str] = lf.collect_schema().names()
 
-    lf = replace_time_col(lf, "TimeUnix")
+        selected_columns = ["TimeUnix", "MetricName", "Value", "ResourceAttributes"]
+        additional_columns = ["ServiceName", "Attributes"]
+        for col in additional_columns:
+            if col in original_columns:
+                selected_columns.append(col)
 
-    lf = lf.rename({"MetricName": "metric", "Value": "value"})
+        lf = lf.select(selected_columns)
+        lf = replace_time_col(lf, "TimeUnix")
+        lf = lf.rename({"MetricName": "metric", "Value": "value"})
 
-    if "ServiceName" in original_columns:
-        lf = lf.rename({"ServiceName": "service_name"})
-    else:
-        lf = lf.with_columns(pl.lit(None, dtype=pl.String).alias("service_name"))
+        if "ServiceName" in original_columns:
+            lf = lf.rename({"ServiceName": "service_name"})
+        else:
+            lf = lf.with_columns(pl.lit(None, dtype=pl.String).alias("service_name"))
 
-    attr_cols = []
+        attr_cols = []
 
-    resource_attributes = pl.Struct(
-        [
-            pl.Field("k8s.node.name", pl.String),
-            pl.Field("k8s.namespace.name", pl.String),
-            pl.Field("k8s.statefulset.name", pl.String),
-            pl.Field("k8s.deployment.name", pl.String),
-            pl.Field("k8s.replicaset.name", pl.String),
-            pl.Field("k8s.pod.name", pl.String),
-            pl.Field("k8s.container.name", pl.String),
-        ]
-    )
-    lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
-    attr_cols += [field.name for field in resource_attributes.fields]
+        resource_attributes = pl.Struct(
+            [
+                pl.Field("k8s.node.name", pl.String),
+                pl.Field("k8s.namespace.name", pl.String),
+                pl.Field("k8s.statefulset.name", pl.String),
+                pl.Field("k8s.deployment.name", pl.String),
+                pl.Field("k8s.replicaset.name", pl.String),
+                pl.Field("k8s.pod.name", pl.String),
+                pl.Field("k8s.container.name", pl.String),
+            ]
+        )
+        lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
+        attr_cols += [field.name for field in resource_attributes.fields]
 
-    if "Attributes" in original_columns:
+        if "Attributes" in original_columns:
+            attributes = pl.Struct(
+                [
+                    pl.Field("destination_workload", pl.String),
+                    pl.Field("source_workload", pl.String),
+                    pl.Field("destination", pl.String),
+                    pl.Field("source", pl.String),
+                ]
+            )
+            lf = unnest_json_col(lf, "Attributes", attributes)
+            attr_cols += [field.name for field in attributes.fields]
+
+        lf = lf.rename({col: "attr." + col for col in attr_cols})
+        return lf.sort("time")
+
+    def metrics_histogram(self, src: Path) -> pl.LazyFrame:
+        """Convert histogram metrics to standardized format"""
+        lf = pl.scan_parquet(src).select(
+            "TimeUnix",
+            "MetricName",
+            "ServiceName",
+            "ResourceAttributes",
+            "Attributes",
+            "Count",
+            "Sum",
+            "Min",
+            "Max",
+        )
+
+        lf = replace_time_col(lf, "TimeUnix")
+        lf = lf.rename(
+            {
+                "MetricName": "metric",
+                "ServiceName": "service_name",
+                "Count": "count",
+                "Sum": "sum",
+                "Min": "min",
+                "Max": "max",
+            }
+        )
+
+        lf = lf.with_columns(
+            pl.col("count").cast(pl.Float64),
+            pl.col("sum").cast(pl.Float64),
+            pl.col("min").cast(pl.Float64),
+            pl.col("max").cast(pl.Float64),
+        )
+
+        resource_attributes = pl.Struct(
+            [
+                pl.Field("pod.name", pl.String),
+                pl.Field("service.name", pl.String),
+                pl.Field("service.namespace", pl.String),
+            ]
+        )
+        lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
+        lf = lf.rename(
+            {
+                "pod.name": "attr.k8s.pod.name",
+                "service.name": "attr.k8s.service.name",
+                "service.namespace": "attr.k8s.namespace.name",
+            }
+        )
+
         attributes = pl.Struct(
             [
-                pl.Field("destination_workload", pl.String),
-                pl.Field("source_workload", pl.String),
+                pl.Field("jvm.gc.action", pl.String),
+                pl.Field("jvm.gc.name", pl.String),
                 pl.Field("destination", pl.String),
                 pl.Field("source", pl.String),
             ]
         )
         lf = unnest_json_col(lf, "Attributes", attributes)
-        attr_cols += [field.name for field in attributes.fields]
+        lf = lf.rename({field.name: "attr." + field.name for field in attributes.fields})
 
-    lf = lf.rename({col: "attr." + col for col in attr_cols})
+        return lf.sort("time")
 
-    lf = lf.sort("time")
-
-    return lf
-
-
-def convert_metrics_histogram(src: Path) -> pl.LazyFrame:
-    lf = pl.scan_parquet(src).select(
-        "TimeUnix",
-        "MetricName",
-        "ServiceName",
-        "ResourceAttributes",
-        "Attributes",
-        "Count",
-        "Sum",
-        # "BucketCounts",
-        # "ExplicitBounds",
-        "Min",
-        "Max",
-        # "AggregationTemporality",
-    )
-
-    lf = replace_time_col(lf, "TimeUnix")
-
-    lf = lf.rename(
-        {
-            "MetricName": "metric",
-            "ServiceName": "service_name",
-            "Count": "count",
-            "Sum": "sum",
-            "Min": "min",
-            "Max": "max",
-        }
-    )
-
-    lf = lf.with_columns(
-        pl.col("count").cast(pl.Float64),
-        pl.col("sum").cast(pl.Float64),
-        pl.col("min").cast(pl.Float64),
-        pl.col("max").cast(pl.Float64),
-    )
-
-    resource_attributes = pl.Struct(
-        [
-            pl.Field("pod.name", pl.String),
-            pl.Field("service.name", pl.String),
-            pl.Field("service.namespace", pl.String),
-        ]
-    )
-    lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
-    lf = lf.rename(
-        {
-            "pod.name": "attr.k8s.pod.name",
-            "service.name": "attr.k8s.service.name",
-            "service.namespace": "attr.k8s.namespace.name",
-        }
-    )
-
-    attributes = pl.Struct(
-        [
-            pl.Field("jvm.gc.action", pl.String),
-            pl.Field("jvm.gc.name", pl.String),
-            pl.Field("destination", pl.String),
-            pl.Field("source", pl.String),
-        ]
-    )
-    lf = unnest_json_col(lf, "Attributes", attributes)
-    lf = lf.rename({field.name: "attr." + field.name for field in attributes.fields})
-
-    lf = lf.sort("time")
-    return lf
-
-
-def convert_traces(src: Path, filter: bool = False) -> pl.DataFrame:
-    lf = pl.scan_parquet(src).select(
-        "Timestamp",
-        "TraceId",
-        "SpanId",
-        "ParentSpanId",
-        "SpanName",
-        "SpanKind",
-        "ServiceName",
-        "ResourceAttributes",
-        "SpanAttributes",
-        "Duration",
-        "StatusCode",
-    )
-
-    lf = replace_time_col(lf, "Timestamp")
-
-    lf = lf.rename(
-        {
-            "TraceId": "trace_id",
-            "SpanId": "span_id",
-            "ParentSpanId": "parent_span_id",
-            "SpanName": "span_name",
-            "ServiceName": "service_name",
-            "Duration": "duration",
-            "SpanKind": "attr.span_kind",
-            "StatusCode": "attr.status_code",
-        }
-    )
-
-    resource_attributes = pl.Struct(
-        [
-            pl.Field("pod.name", pl.String),
-            pl.Field("service.name", pl.String),
-            pl.Field("service.namespace", pl.String),
-        ]
-    )
-    lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
-    lf = lf.rename(
-        {
-            "pod.name": "attr.k8s.pod.name",
-            "service.name": "attr.k8s.service.name",
-            "service.namespace": "attr.k8s.namespace.name",
-        }
-    )
-
-    span_attributes = pl.Struct(
-        [
-            # "telemetry.sdk.language": "go"
-            pl.Field("http.method", pl.String),
-            pl.Field("http.request_content_length", pl.String),
-            pl.Field("http.response_content_length", pl.String),
-            pl.Field("http.status_code", pl.String),
-            #
-            # "telemetry.sdk.language": "java"
-            pl.Field("http.request.method", pl.String),
-            pl.Field("http.response.status_code", pl.String),
-            #
-        ]
-    )
-    lf = unnest_json_col(lf, "SpanAttributes", span_attributes)
-
-    coalesce_columns = [
-        ("http.request.method", "http.method"),
-        ("http.response.status_code", "http.status_code"),
-    ]
-    lf = lf.with_columns([pl.coalesce(*cols).alias(cols[0]) for cols in coalesce_columns])
-    lf = lf.drop([cols[1] for cols in coalesce_columns])
-
-    lf = lf.with_columns(
-        pl.col("http.request_content_length").cast(pl.UInt64),
-        pl.col("http.response_content_length").cast(pl.UInt64),
-        pl.col("http.response.status_code").cast(pl.UInt16),
-    )
-
-    lf = lf.rename(
-        {
-            "http.request.method": "attr.http.request.method",
-            "http.response.status_code": "attr.http.response.status_code",
-            "http.request_content_length": "attr.http.request.content_length",
-            "http.response_content_length": "attr.http.response.content_length",
-        }
-    )
-
-    if filter:
-        traces_with_long_spans = lf.filter(pl.col("duration") > 2_000_000_000).select("trace_id").unique()
-        lf = lf.join(traces_with_long_spans, on="trace_id", how="anti")
-
-    lf = lf.sort("time")
-    df = lf.collect()
-    df = df.with_columns(
-        [
-            pl.when(pl.col("service_name").is_in(["loadgenerator", "ts-ui-dashboard"]))
-            .then(pl.col("span_name").map_elements(extract_path, return_dtype=pl.String))
-            .otherwise(pl.col("span_name"))
-            .alias("span_name")
-        ]
-    )
-    del lf
-
-    return df
-
-
-def convert_logs(src: Path) -> pl.DataFrame:
-    lf = pl.scan_parquet(src).select(
-        "Timestamp",
-        "TraceId",
-        "SpanId",
-        "SeverityText",
-        "ServiceName",
-        "Body",
-        "ResourceAttributes",
-        # "LogAttributes",
-    )
-
-    lf = replace_time_col(lf, "Timestamp")
-
-    lf = lf.rename(
-        {
-            "TraceId": "trace_id",
-            "SpanId": "span_id",
-            "ServiceName": "service_name",
-            "SeverityText": "level",
-            "Body": "message",
-        }
-    )
-
-    lf = lf.with_columns(
-        pl.col("level").str.to_uppercase(),
-    )
-
-    # Filter out ts-ui-dashboard logs
-    lf = lf.filter(pl.col("service_name") != "ts-ui-dashboard")
-
-    resource_attributes = pl.Struct(
-        [
-            pl.Field("pod.name", pl.String),
-            pl.Field("service.name", pl.String),
-            pl.Field("service.namespace", pl.String),
-        ]
-    )
-    lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
-    lf = lf.rename(
-        {
-            "pod.name": "attr.k8s.pod.name",
-            "service.name": "attr.k8s.service.name",
-            "service.namespace": "attr.k8s.namespace.name",
-        }
-    )
-
-    lf = lf.sort("time")
-
-    # Process templates directly within convert_logs
-    df = lf.collect()
-
-    # Extract unique messages for template processing
-    unique_messages = df.select("message").unique()
-
-    if unique_messages.height > 0:
-        logger.info(f"Processing {unique_messages.height} unique log messages for template extraction")
-
-        # Determine template paths with fallback logic
-        import os
-
-        # Try environment variable INPUT_PATH first
-        input_path = os.getenv("INPUT_PATH")
-        if input_path:
-            template_base = Path(input_path).parent / "drain_template"
-        else:
-            # Fallback: use src file's parent's parent directory
-            template_base = src.parent.parent / "drain_template"
-
-        config_path = template_base / "drain_ts.ini"
-        persistence_path = template_base / "drain_ts.bin"
-
-        logger.info(f"Using template paths: config={config_path}, persistence={persistence_path}")
-
-        template_miner = create_template_miner(config_path, persistence_path)
-
-        message_mappings = []
-        for message in unique_messages["message"].to_list():
-            if message:  # Skip empty messages
-                result = template_miner.add_log_message(message)
-                template_id = result["cluster_id"]
-                cluster = template_miner.drain.id_to_cluster.get(template_id)
-                if isinstance(cluster, LogCluster):
-                    log_template = cluster.get_template()
-                else:
-                    log_template = ""
-
-                message_mappings.append(
-                    {
-                        "message": message,
-                        "template_id": template_id,
-                        "log_template": log_template,
-                    }
-                )
-
-        del template_miner
-
-        # Create template mapping DataFrame
-        template_mapping_df = pl.DataFrame(
-            message_mappings, schema={"message": pl.String, "template_id": pl.UInt16, "log_template": pl.String}
+    def traces(self, src: Path, filter_long: bool = False) -> pl.DataFrame:
+        """Convert trace parquet to standardized format"""
+        lf = pl.scan_parquet(src).select(
+            "Timestamp",
+            "TraceId",
+            "SpanId",
+            "ParentSpanId",
+            "SpanName",
+            "SpanKind",
+            "ServiceName",
+            "ResourceAttributes",
+            "SpanAttributes",
+            "Duration",
+            "StatusCode",
         )
 
-        # Join with log data to add template columns
-        df = (
-            df.join(template_mapping_df, on="message", how="left")
-            .with_columns(
-                [
-                    pl.col("template_id").alias("attr.template_id"),
-                    pl.col("log_template").alias("attr.log_template"),
-                ]
-            )
-            .drop(["template_id", "log_template"])
-        )
-
-        del template_mapping_df, unique_messages
-
-    return df
-
-
-def convert_conclusion(src: Path) -> pl.LazyFrame:
-    # Check if file exists and has content
-    if not src.exists():
-        logger.warning(f"Conclusion CSV file does not exist: {src}")
-        # Return empty LazyFrame with correct schema
-        return pl.LazyFrame(
-            schema={
-                "SpanName": pl.String,
-                "Issues": pl.String,
-                "AbnormalAvgDuration": pl.Float64,
-                "NormalAvgDuration": pl.Float64,
-                "AbnormalSuccRate": pl.Float64,
-                "NormalSuccRate": pl.Float64,
-                "AbnormalP90": pl.Float64,
-                "NormalP90": pl.Float64,
-                "AbnormalP95": pl.Float64,
-                "NormalP95": pl.Float64,
-                "AbnormalP99": pl.Float64,
-                "NormalP99": pl.Float64,
+        lf = replace_time_col(lf, "Timestamp")
+        lf = lf.rename(
+            {
+                "TraceId": "trace_id",
+                "SpanId": "span_id",
+                "ParentSpanId": "parent_span_id",
+                "SpanName": "span_name",
+                "ServiceName": "service_name",
+                "Duration": "duration",
+                "SpanKind": "attr.span_kind",
+                "StatusCode": "attr.status_code",
             }
         )
+
+        resource_attributes = pl.Struct(
+            [
+                pl.Field("pod.name", pl.String),
+                pl.Field("service.name", pl.String),
+                pl.Field("service.namespace", pl.String),
+            ]
+        )
+        lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
+        lf = lf.rename(
+            {
+                "pod.name": "attr.k8s.pod.name",
+                "service.name": "attr.k8s.service.name",
+                "service.namespace": "attr.k8s.namespace.name",
+            }
+        )
+
+        span_attributes = pl.Struct(
+            [
+                pl.Field("http.method", pl.String),
+                pl.Field("http.request_content_length", pl.String),
+                pl.Field("http.response_content_length", pl.String),
+                pl.Field("http.status_code", pl.String),
+                pl.Field("http.request.method", pl.String),
+                pl.Field("http.response.status_code", pl.String),
+            ]
+        )
+        lf = unnest_json_col(lf, "SpanAttributes", span_attributes)
+
+        coalesce_columns = [
+            ("http.request.method", "http.method"),
+            ("http.response.status_code", "http.status_code"),
+        ]
+        lf = lf.with_columns([pl.coalesce(*cols).alias(cols[0]) for cols in coalesce_columns])
+        lf = lf.drop([cols[1] for cols in coalesce_columns])
+
+        lf = lf.with_columns(
+            pl.col("http.request_content_length").cast(pl.UInt64),
+            pl.col("http.response_content_length").cast(pl.UInt64),
+            pl.col("http.response.status_code").cast(pl.UInt16),
+        )
+
+        lf = lf.rename(
+            {
+                "http.request.method": "attr.http.request.method",
+                "http.response.status_code": "attr.http.response.status_code",
+                "http.request_content_length": "attr.http.request.content_length",
+                "http.response_content_length": "attr.http.response.content_length",
+            }
+        )
+
+        if filter_long:
+            traces_with_long_spans = lf.filter(pl.col("duration") > 2_000_000_000).select("trace_id").unique()
+            lf = lf.join(traces_with_long_spans, on="trace_id", how="anti")
+
+        lf = lf.sort("time")
+        df = lf.collect()
+
+        # Normalize paths for loadgenerator and entrance service
+        df = df.with_columns(
+            [
+                pl.when(pl.col("service_name").is_in(["loadgenerator", self._pedestal.entrance_service]))
+                .then(pl.col("span_name").map_elements(self._pedestal.normalize_path, return_dtype=pl.String))
+                .otherwise(pl.col("span_name"))
+                .alias("span_name")
+            ]
+        )
+
+        return df
+
+    def logs(self, src: Path) -> pl.DataFrame:
+        """Convert log parquet to standardized format with template extraction"""
+        lf = pl.scan_parquet(src).select(
+            "Timestamp",
+            "TraceId",
+            "SpanId",
+            "SeverityText",
+            "ServiceName",
+            "Body",
+            "ResourceAttributes",
+        )
+
+        lf = replace_time_col(lf, "Timestamp")
+        lf = lf.rename(
+            {
+                "TraceId": "trace_id",
+                "SpanId": "span_id",
+                "ServiceName": "service_name",
+                "SeverityText": "level",
+                "Body": "message",
+            }
+        )
+
+        lf = lf.with_columns(pl.col("level").str.to_uppercase())
+        lf = lf.filter(pl.col("service_name") != "ts-ui-dashboard")
+
+        resource_attributes = pl.Struct(
+            [
+                pl.Field("pod.name", pl.String),
+                pl.Field("service.name", pl.String),
+                pl.Field("service.namespace", pl.String),
+            ]
+        )
+        lf = unnest_json_col(lf, "ResourceAttributes", resource_attributes)
+        lf = lf.rename(
+            {
+                "pod.name": "attr.k8s.pod.name",
+                "service.name": "attr.k8s.service.name",
+                "service.namespace": "attr.k8s.namespace.name",
+            }
+        )
+
+        lf = lf.sort("time")
+        df = lf.collect()
+
+        # Extract templates
+        unique_messages = df.select("message").unique()
+
+        if unique_messages.height > 0:
+            logger.info(f"Processing {unique_messages.height} unique log messages for template extraction")
+
+            import os
+
+            input_path = os.getenv("INPUT_PATH")
+            template_base = (
+                Path(input_path).parent / "drain_template" if input_path else src.parent.parent / "drain_template"
+            )
+
+            config_path = template_base / "drain_ts.ini"
+            persistence_path = template_base / "drain_ts.bin"
+
+            logger.info(f"Using template paths: config={config_path}, persistence={persistence_path}")
+
+            template_miner = create_template_miner(config_path, persistence_path)
+
+            message_mappings = []
+            for message in unique_messages["message"].to_list():
+                if message:
+                    result = template_miner.add_log_message(message)
+                    template_id = result["cluster_id"]
+                    cluster = template_miner.drain.id_to_cluster.get(template_id)
+                    log_template = cluster.get_template() if isinstance(cluster, LogCluster) else ""
+
+                    message_mappings.append(
+                        {
+                            "message": message,
+                            "template_id": template_id,
+                            "log_template": log_template,
+                        }
+                    )
+
+            del template_miner
+
+            template_mapping_df = pl.DataFrame(
+                message_mappings, schema={"message": pl.String, "template_id": pl.UInt16, "log_template": pl.String}
+            )
+
+            df = (
+                df.join(template_mapping_df, on="message", how="left")
+                .with_columns(
+                    [
+                        pl.col("template_id").alias("attr.template_id"),
+                        pl.col("log_template").alias("attr.log_template"),
+                    ]
+                )
+                .drop(["template_id", "log_template"])
+            )
+
+            del template_mapping_df, unique_messages
+
+        return df
+
+    def data(self) -> dict[str, Any]:
+        mapping: dict[str, Callable] = {
+            f"{self._prefix}_traces.parquet": self.traces,
+            f"{self._prefix}_logs.parquet": self.logs,
+            f"{self._prefix}_metrics.parquet": self.metrics,
+            f"{self._prefix}_metrics_sum.parquet": self.metrics,
+            f"{self._prefix}_metrics_histogram.parquet": self.metrics_histogram,
+        }
+
+        result: dict[str, Any] = {}
+        for file_path, func in mapping.items():
+            result[file_path] = func(self._src_folder / file_path)
+
+        return result
+
+
+def convert_conclusion(csv_path: Path) -> pl.LazyFrame:
+    """Convert detector conclusion CSV to parquet format"""
+    schema = {
+        "SpanName": pl.String,
+        "Issues": pl.String,
+        "AbnormalAvgDuration": pl.Float64,
+        "NormalAvgDuration": pl.Float64,
+        "AbnormalSuccRate": pl.Float64,
+        "NormalSuccRate": pl.Float64,
+        "AbnormalP90": pl.Float64,
+        "NormalP90": pl.Float64,
+        "AbnormalP95": pl.Float64,
+        "NormalP95": pl.Float64,
+        "AbnormalP99": pl.Float64,
+        "NormalP99": pl.Float64,
+    }
+
+    if not csv_path.exists():
+        logger.warning(f"Conclusion CSV does not exist: {csv_path}")
+        return pl.LazyFrame(schema=schema)
 
     try:
-        lf = pl.scan_csv(
-            src,
-            schema={
-                "SpanName": pl.String,
-                "Issues": pl.String,
-                "AbnormalAvgDuration": pl.Float64,
-                "NormalAvgDuration": pl.Float64,
-                "AbnormalSuccRate": pl.Float64,
-                "NormalSuccRate": pl.Float64,
-                "AbnormalP90": pl.Float64,
-                "NormalP90": pl.Float64,
-                "AbnormalP95": pl.Float64,
-                "NormalP95": pl.Float64,
-                "AbnormalP99": pl.Float64,
-                "NormalP99": pl.Float64,
-            },
-        )
-        return lf
+        return pl.scan_csv(csv_path, schema=schema)
     except Exception as e:
-        logger.warning(f"Error reading conclusion CSV {src}: {e}")
-        # Return empty LazyFrame with correct schema
-        return pl.LazyFrame(
-            schema={
-                "SpanName": pl.String,
-                "Issues": pl.String,
-                "AbnormalAvgDuration": pl.Float64,
-                "NormalAvgDuration": pl.Float64,
-                "AbnormalSuccRate": pl.Float64,
-                "NormalSuccRate": pl.Float64,
-                "AbnormalP90": pl.Float64,
-                "NormalP90": pl.Float64,
-                "AbnormalP95": pl.Float64,
-                "NormalP95": pl.Float64,
-                "AbnormalP99": pl.Float64,
-                "NormalP99": pl.Float64,
-            }
-        )
+        logger.warning(f"Error reading conclusion CSV {csv_path}: {e}")
+        return pl.LazyFrame(schema=schema)
 
 
-class RcabenchDatapackLoader(DatapackLoader):
-    def __init__(self, src_folder: Path, datapack: str) -> None:
+class RCABenchDatapackLoader(DatapackLoader):
+    def __init__(self, src_folder: Path, datapack: str, system: str = "ts") -> None:
         self._src_folder = src_folder
         self._datapack = datapack
-        self._service = rcabench_get_service_name(datapack)
+        self._system = system
 
-        injection = load_json(path=self._src_folder / "injection.json")
-        self._fault_type: str = injection["fault_type"]
-        self._injection_config = injection["display_config"]
+        self.validate_datapack()
 
+    @property
     def name(self) -> str:
         return self._datapack
 
     def labels(self) -> list[Label]:
-        if self._fault_type.startswith("Network"):
-            injection_point = self._injection_config.get("injection_point")
-            assert isinstance(injection_point, dict)
+        injection: dict[str, Any] = load_json(path=self._src_folder / "injection.json")
+        service_names = get_service_names(injection)
 
-            source_service = injection_point.get("source_service")
-            target_service = injection_point.get("target_service")
+        labels: list[Label] = []
+        for service in service_names:
+            label = Label(level="service", name=service)
+            labels.append(label)
 
-            if source_service and target_service:
-                return [
-                    Label(level="service", name=source_service),
-                    Label(level="service", name=target_service),
-                ]
-
-        return [Label(level="service", name=self._service)]
+        return labels
 
     def data(self) -> dict[str, Any]:
         ans: dict[str, Any] = {
@@ -479,24 +422,17 @@ class RcabenchDatapackLoader(DatapackLoader):
             "conclusion.parquet": convert_conclusion(self._src_folder / "conclusion.csv"),
         }
 
-        converters = {
-            "_traces": convert_traces,
-            "_logs": convert_logs,
-            "_metrics": convert_metrics,
-            "_metrics_sum": convert_metrics,
-            "_metrics_histogram": convert_metrics_histogram,
-        }
-
-        for key, func in converters.items():
-            for prefix in ("normal", "abnormal"):
-                name = f"{prefix}{key}.parquet"
-                ans[name] = func(self._src_folder / name)
+        # Convert traces, logs, metrics for both normal and abnormal
+        for prefix in ("normal", "abnormal"):
+            converter = Converter(self._src_folder, prefix=prefix, system=self._system)
+            result = converter.data()
+            ans.update(result)
 
         return ans
 
 
 def create_template_miner(config_path: Path, persistence_path: Path) -> TemplateMiner:
-    """Create a Drain3 template miner with file persistence and config."""
+    """Create Drain3 template miner with file persistence"""
     persistence = FilePersistence(str(persistence_path))
     miner_config = TemplateMinerConfig()
     miner_config.load(str(config_path))
@@ -504,7 +440,7 @@ def create_template_miner(config_path: Path, persistence_path: Path) -> Template
 
 
 def extract_unique_log_messages(src_root: Path, datapacks: list[str]) -> pl.DataFrame:
-    """Extract unique log messages from all datapacks, excluding ts-ui-dashboard service."""
+    """Extract unique log messages from all datapacks (excluding ts-ui-dashboard)"""
     all_logs = []
 
     for datapack in datapacks:
@@ -518,7 +454,6 @@ def extract_unique_log_messages(src_root: Path, datapacks: list[str]) -> pl.Data
     if not all_logs:
         return pl.DataFrame(schema={"Body": pl.String})
 
-    # Combine all logs and filter out ts-ui-dashboard
     combined_lf = pl.concat(all_logs)
     unique_messages = combined_lf.filter(pl.col("ServiceName") != "ts-ui-dashboard").select("Body").unique().collect()
 
@@ -527,6 +462,7 @@ def extract_unique_log_messages(src_root: Path, datapacks: list[str]) -> pl.Data
 
 @timeit()
 def scan_datapacks(src_root: Path) -> list[str]:
+    """Scan source folder for valid datapacks"""
     datapacks = []
     for path in src_root.iterdir():
         if not path.is_dir():
@@ -548,11 +484,7 @@ def scan_datapacks(src_root: Path) -> list[str]:
             logger.warning(f"Error reading conclusion CSV {path / 'conclusion.csv'}: {e}")
             continue
 
-        total_size = 0
-        for file in path.iterdir():
-            if not file.is_file():
-                continue
-            total_size += file.stat().st_size
+        total_size = sum(file.stat().st_size for file in path.iterdir() if file.is_file())
         total_size_mib = total_size / (1024 * 1024)
 
         if total_size_mib > 500:
@@ -563,7 +495,6 @@ def scan_datapacks(src_root: Path) -> list[str]:
         datapacks.append((path.name, mtime))
 
     datapacks.sort(key=lambda x: x[1])
-
     return [name for name, _ in datapacks]
 
 
@@ -581,39 +512,4 @@ class RcabenchDatasetLoader(DatasetLoader):
 
     def __getitem__(self, index: int) -> DatapackLoader:
         datapack = self._datapacks[index]
-        return RcabenchDatapackLoader(src_folder=self._src_root / datapack, datapack=datapack)
-
-
-def _build_service_graph(datapack_folder: Path) -> nx.Graph:
-    normal_traces = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
-    anomal_traces = pl.scan_parquet(datapack_folder / "abnormal_traces.parquet")
-    traces = pl.concat([normal_traces, anomal_traces])
-
-    lf = traces.select(
-        "span_id",
-        "parent_span_id",
-        "service_name",
-    ).filter(pl.col("parent_span_id").is_not_null())
-
-    lf = lf.join(
-        lf.select("span_id", pl.col("service_name").alias("parent_service_name")),
-        left_on="parent_span_id",
-        right_on="span_id",
-        how="inner",
-    )
-
-    edges_df = (
-        lf.select("parent_service_name", "service_name")
-        .filter(
-            pl.col("parent_service_name") != pl.col("service_name")  # Exclude self-calls
-        )
-        .unique()
-        .collect()
-    )
-
-    graph = nx.Graph()
-
-    for parent_service, child_service in edges_df.iter_rows():
-        graph.add_edge(parent_service, child_service)
-
-    return graph
+        return RCABenchDatapackLoader(src_folder=self._src_root / datapack, datapack=datapack)

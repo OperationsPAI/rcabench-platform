@@ -23,7 +23,7 @@ from rcabench_platform.v2.sources.convert import (
     link_subset,
 )
 from rcabench_platform.v2.sources.rcabench import (
-    RcabenchDatapackLoader,
+    RCABenchDatapackLoader,
     RcabenchDatasetLoader,
 )
 from rcabench_platform.v2.utils.dataframe import print_dataframe
@@ -146,7 +146,7 @@ def test_build_template():
 @timeit()
 def local_test_1():
     datapack = "ts0-mysql-bandwidth-5p8bkc"
-    loader = RcabenchDatapackLoader(
+    loader = RCABenchDatapackLoader(
         src_folder=Path("data") / "rcabench_dataset" / datapack,
         datapack=datapack,
     )

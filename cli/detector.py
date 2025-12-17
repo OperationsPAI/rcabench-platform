@@ -22,7 +22,6 @@ from tqdm import tqdm
 from rcabench_platform.v2.cli.main import app
 from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
 from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader, valid
-from rcabench_platform.v2.datasets.train_ticket import extract_path
 from rcabench_platform.v2.logging import logger, timeit
 from rcabench_platform.v2.metrics.ad.configs import (
     EnhancedLatencyConfig,
@@ -34,6 +33,7 @@ from rcabench_platform.v2.metrics.ad.detectors import (
 )
 from rcabench_platform.v2.metrics.ad.types import HistoricalData
 from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
+from rcabench_platform.v2.pedestals import Pedestal, get_pedestal
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
 load_dotenv(Path.cwd() / ".env")
@@ -249,10 +249,10 @@ def is_success_rate_significant(
     return return_result
 
 
-def preprocess_trace(file: Path) -> dict[str, Any]:
+def preprocess_trace(file: Path, pedestal: Pedestal) -> dict[str, Any]:
+    """Preprocess trace data from a Parquet file and extract endpoint statistics."""
     if not file.exists():
-        logger.error(f"Trace file does not exist: {file}")
-        return {}
+        raise FileNotFoundError(f"Trace file not found: {file}")
 
     df = pl.scan_parquet(file)
 
@@ -262,9 +262,9 @@ def preprocess_trace(file: Path) -> dict[str, Any]:
 
     entry_count = entry_df.select(pl.len()).collect().item()
     if entry_count == 0:
-        logger.error("loadgenerator not found in trace data, using ts-ui-dashboard as fallback")
+        logger.error(f"loadgenerator not found in trace data, using {pedestal.entrance_service} as fallback")
         entry_df = df.filter(
-            (pl.col("ServiceName") == "ts-ui-dashboard")
+            (pl.col("ServiceName") == pedestal.entrance_service)
             & (pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
         )
         entry_count = entry_df.select(pl.len()).collect().item()
@@ -278,7 +278,7 @@ def preprocess_trace(file: Path) -> dict[str, Any]:
 
         # Try each available service as potential entry point
         for service in available_services:
-            if service in ["loadgenerator", "ts-ui-dashboard"]:
+            if service in ["loadgenerator", pedestal.entrance_service]:
                 continue  # Already tried these
 
             entry_df = df.filter(
@@ -294,13 +294,13 @@ def preprocess_trace(file: Path) -> dict[str, Any]:
             logger.error("No root spans found in any service, terminating analysis")
             return {}
 
-    entry_df_collected = entry_df.with_columns(pl.col("Timestamp").alias("ts")).sort("ts").collect()
+    entry_df_collected = entry_df.with_columns(pl.col("Timestamp").alias(pedestal.name)).sort(pedestal.name).collect()
 
     entrypoints = set(entry_df_collected["SpanName"].to_list())
 
     deduped_entrypoints = {}
     for entrypoint in entrypoints:
-        path = extract_path(entrypoint)
+        path = pedestal.normalize_path(entrypoint)
         deduped_entrypoints[entrypoint] = path
 
     stat = {}
@@ -744,10 +744,60 @@ def save_analysis_results(state: AnalysisState, output_path: Path) -> AnalysisSt
     return state
 
 
+def platform_convert(
+    injection_name: str, in_p: Path | None = None, ou_p: Path | None = None, system: str = "ts"
+) -> None:
+    from rcabench_platform.v2.sources.convert import convert_datapack
+    from rcabench_platform.v2.sources.rcabench import RCABenchDatapackLoader
+
+    if in_p is None:
+        in_p = Path(os.environ.get("INPUT_PATH", ""))
+    if ou_p is None:
+        ou_p = Path(os.environ.get("OUTPUT_PATH", ""))
+
+    input_path = in_p
+    output_path = ou_p
+    assert input_path.exists(), f"Input path does not exist: {input_path}"
+    assert output_path.exists(), f"Output path does not exist: {output_path}"
+
+    # Check if conclusion.csv exists before proceeding with conversion
+    conclusion_csv = input_path / "conclusion.csv"
+    if not conclusion_csv.exists():
+        logger.warning("conclusion.csv not found, skipping platform conversion")
+        return
+
+    # Assert essential trace files exist and are not empty
+    normal_traces = input_path / "normal_traces.parquet"
+    abnormal_traces = input_path / "abnormal_traces.parquet"
+
+    assert normal_traces.exists(), f"normal_traces.parquet not found in {input_path}"
+    assert abnormal_traces.exists(), f"abnormal_traces.parquet not found in {input_path}"
+
+    # Assert trace files are not empty
+    normal_df = pl.scan_parquet(normal_traces)
+    normal_count = normal_df.select(pl.len()).collect().item()
+    assert normal_count > 0, f"normal_traces.parquet is empty in {input_path}"
+
+    abnormal_df = pl.scan_parquet(abnormal_traces)
+    abnormal_count = abnormal_df.select(pl.len()).collect().item()
+    assert abnormal_count > 0, f"abnormal_traces.parquet is empty in {input_path}"
+
+    logger.info(f"Trace files validated: normal={normal_count} records, abnormal={abnormal_count} records")
+
+    converted_input_path = output_path / "converted"
+
+    convert_datapack(
+        loader=RCABenchDatapackLoader(input_path, datapack=injection_name, system=system),
+        dst_folder=converted_input_path,
+        skip_finished=False,
+    )
+    logger.info(f"Successfully converted datapack for {injection_name}")
+
+
 @app.command()
 @timeit()
 def run(
-    in_p: Path | None = None, ou_p: Path | None = None, convert: bool = False, online: bool = False
+    in_p: Path | None = None, ou_p: Path | None = None, system: str = "ts", convert: bool = False, online: bool = False
 ) -> AnalysisResult | None:
     start_time = datetime.now()
     input_path, output_path = setup_paths_and_validation(in_p, ou_p)
@@ -764,8 +814,10 @@ def run(
     normal_trace = input_path / "normal_traces.parquet"
     abnormal_trace = input_path / "abnormal_traces.parquet"
 
-    normal_stat = preprocess_trace(normal_trace)
-    abnormal_stat = preprocess_trace(abnormal_trace)
+    pedestal = get_pedestal(system)
+
+    normal_stat = preprocess_trace(normal_trace, pedestal)
+    abnormal_stat = preprocess_trace(abnormal_trace, pedestal)
 
     # Check if we have valid data for analysis
     if not normal_stat or not abnormal_stat:
@@ -791,7 +843,7 @@ def run(
     datapack_name = input_path.name
 
     if convert:
-        platform_convert(in_p, ou_p)
+        platform_convert(datapack_name, in_p, ou_p, system)
 
     # Return analysis metadata
     result: AnalysisResult = {
@@ -871,69 +923,14 @@ def run(
     return result
 
 
-def platform_convert(in_p: Path | None = None, ou_p: Path | None = None):
-    from rcabench_platform.v2.sources.convert import convert_datapack
-    from rcabench_platform.v2.sources.rcabench import RcabenchDatapackLoader
-
-    if in_p is None:
-        in_p = Path(os.environ.get("INPUT_PATH", ""))
-    if ou_p is None:
-        ou_p = Path(os.environ.get("OUTPUT_PATH", ""))
-
-    input_path = in_p
-    output_path = ou_p
-    assert input_path.exists(), f"Input path does not exist: {input_path}"
-    assert output_path.exists(), f"Output path does not exist: {output_path}"
-
-    # Check if conclusion.csv exists before proceeding with conversion
-    conclusion_csv = input_path / "conclusion.csv"
-    if not conclusion_csv.exists():
-        logger.warning("conclusion.csv not found, skipping platform conversion")
-        return
-
-    # Assert injection.json exists and is valid
-    injection_file = input_path / "injection.json"
-    assert injection_file.exists(), f"injection.json not found in {input_path}"
-
-    with open(injection_file) as f:
-        injection = json.load(f)
-        injection_name = injection.get("name")
-        assert injection_name and isinstance(injection_name, str), (
-            f"Invalid injection_name in {injection_file}: {injection_name}"
-        )
-
-    # Assert essential trace files exist and are not empty
-    normal_traces = input_path / "normal_traces.parquet"
-    abnormal_traces = input_path / "abnormal_traces.parquet"
-
-    assert normal_traces.exists(), f"normal_traces.parquet not found in {input_path}"
-    assert abnormal_traces.exists(), f"abnormal_traces.parquet not found in {input_path}"
-
-    # Assert trace files are not empty
-    normal_df = pl.scan_parquet(normal_traces)
-    normal_count = normal_df.select(pl.len()).collect().item()
-    assert normal_count > 0, f"normal_traces.parquet is empty in {input_path}"
-
-    abnormal_df = pl.scan_parquet(abnormal_traces)
-    abnormal_count = abnormal_df.select(pl.len()).collect().item()
-    assert abnormal_count > 0, f"abnormal_traces.parquet is empty in {input_path}"
-
-    logger.info(f"Trace files validated: normal={normal_count} records, abnormal={abnormal_count} records")
-
-    converted_input_path = output_path / "converted"
-
-    convert_datapack(
-        loader=RcabenchDatapackLoader(src_folder=input_path, datapack=injection_name),
-        dst_folder=converted_input_path,
-        skip_finished=False,
-    )
-    logger.info(f"Successfully converted datapack for {injection_name}")
-
-
 @app.command()
 @timeit()
 def validate_datapacks(
-    force: bool, mapping_file: Path, delete_invalid: bool = False, online: bool = False
+    mapping_file: Path,
+    system: str = "ts",
+    force: bool = False,
+    delete_invalid: bool = False,
+    online: bool = False,
 ) -> dict[str, Any]:
     dataset_path = Path("data") / "rcabench_dataset"
     assert dataset_path.exists(), f"Dataset path does not exist: {dataset_path}"
@@ -957,27 +954,15 @@ def validate_datapacks(
     # Run validation in parallel
     validation_results = fmap_processpool(validation_tasks, parallel=parallel, cpu_limit_each=1, ignore_exceptions=True)
 
-    black_list = [
-        "admin",
-        "voucher",
-        "avatar",
-        "ts-gateway-service",
-        "execute",
-        "ts-news-service",
-        "ts-notification-service",
-        "ts-ticket-office-service",
-        "ts-wait-order-service",
-        "ts-food-delivery-service",
-        "ts-delivery-service",
-    ]
-
     # Process results
     valid_datapacks = []
     invalid_datapacks: list[Path] = []
     manage_req_dict: dict[str, ManageInjectionLabelReq] = {}
 
+    pedestal = get_pedestal(system)
+
     for datapack_path, is_valid in tqdm(validation_results):
-        if any(bl in datapack_path.name for bl in black_list):
+        if any(bl in datapack_path.name for bl in pedestal.black_list):
             is_valid = False
 
         add_tag = "valid" if is_valid else "invalid"

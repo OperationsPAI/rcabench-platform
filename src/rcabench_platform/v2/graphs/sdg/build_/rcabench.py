@@ -4,12 +4,11 @@ import math
 from pathlib import Path
 from typing import Any
 
-import dateutil.tz
 import polars as pl
 
 from ....datasets.rcabench import get_parent_resource_from_pod_name
-from ....datasets.train_ticket import tt_add_op_name, tt_fix_client_spans
 from ....logging import logger, timeit
+from ....pedestals import get_pedestal
 from ....utils.serde import load_json
 from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 from .common import add_node_opt, calc_metric_min_max, is_constant_metric, replace_enum_values
@@ -423,12 +422,14 @@ def apply_pod_service_namespace(sdg: SDG, df: pl.DataFrame, pod_node: PlaceNode)
 
 
 @timeit()
-def load_traces(input_folder: Path) -> pl.LazyFrame:
+def load_traces(input_folder: Path, system: str = "ts") -> pl.LazyFrame:
+    pedestal = get_pedestal(system)
+
     normal_traces = pl.scan_parquet(input_folder / "normal_traces.parquet")
     anomal_traces = pl.scan_parquet(input_folder / "abnormal_traces.parquet")
     lf = merge_two_time_ranges(normal_traces, anomal_traces)
 
-    lf = tt_add_op_name(lf)
+    lf = pedestal.add_op_name(lf)
 
     status_code_values = ["Unset", "Ok", "Error"]
     lf = lf.with_columns(
@@ -459,8 +460,9 @@ def load_logs(input_folder: Path) -> pl.LazyFrame:
 
 
 @timeit(log_args=False)
-def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame) -> None:
-    traces, id2op, id2parent = tt_fix_client_spans(traces)
+def apply_traces_and_logs(sdg: SDG, traces: pl.DataFrame, logs: pl.DataFrame, system: str = "ts") -> None:
+    pedestal = get_pedestal(system)
+    traces, id2op, id2parent = pedestal.fix_client_spans(traces)
 
     df_map = traces.partition_by("op_name", as_dict=True)
     del traces

@@ -27,6 +27,7 @@ from ..utils.serde import save_csv, save_json, save_parquet, save_txt
 
 
 class DatapackLoader(ABC):
+    @property
     @abstractmethod
     def name(self) -> str: ...
 
@@ -35,6 +36,10 @@ class DatapackLoader(ABC):
 
     @abstractmethod
     def data(self) -> dict[str, Any]: ...
+
+    def validate_datapack(self) -> None:
+        if not re.match(r"^[A-Za-z0-9_-]+$", self.name):
+            raise ValueError(f"Invalid datapack name: {self.name}")
 
 
 class DatasetLoader(ABC):
@@ -97,7 +102,7 @@ def _convert_datapack(
     skip_finished: bool,
 ) -> tuple[str, list[Label]]:
     datapack = loader[index]
-    dst_folder = data_folder / datapack.name()
+    dst_folder = data_folder / datapack.name
     return convert_datapack(datapack, dst_folder, skip_finished=skip_finished)
 
 
@@ -108,8 +113,7 @@ def convert_datapack(
     *,
     skip_finished: bool = True,
 ) -> tuple[str, list[Label]]:
-    datapack = loader.name()
-    validate_datapack_name(datapack)
+    datapack = loader.name
 
     labels = loader.labels()
     validate_datapack_labels(labels)
@@ -133,7 +137,7 @@ def convert_datapack(
                     del data[k]
 
                     size = (tempdir / k).stat().st_size
-                    logger.debug(f"saved data [{i}/{len(keys)}] {loader.name()}/{k} size={human_byte_size(size)}")
+                    logger.debug(f"saved data [{i}/{len(keys)}] {loader.name}/{k} size={human_byte_size(size)}")
 
                 move_files(tempdir, dst_folder)
 
@@ -188,13 +192,6 @@ def validate_dataset_name(name: str) -> None:
         raise ValueError("Dataset name cannot be empty")
     if not re.match(r"^[A-Za-z0-9_-]+$", name):
         raise ValueError(f"Invalid dataset name: {name}")
-
-
-def validate_datapack_name(name: str) -> None:
-    if not name:
-        raise ValueError("Datapack name cannot be empty")
-    if not re.match(r"^[A-Za-z0-9_-]+$", name):
-        raise ValueError(f"Invalid datapack name: {name}")
 
 
 def validate_datapack_labels(labels: list[Label]) -> None:

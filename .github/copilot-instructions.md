@@ -27,6 +27,7 @@ DEBUG=true ./main.py eval single <algorithm> <dataset> <datapack>  # verbose out
 ```
 
 **Environment Variables:**
+
 - `DEBUG=true` - Enable verbose logging in algorithms
 - `DATA_ROOT` - Override data directory (default: `data/rcabench-platform-v2`)
 - `OUTPUT_ROOT` - Override output directory (default: `output/rcabench-platform-v2`)
@@ -54,7 +55,7 @@ All RCA algorithms inherit from `Algorithm` (in `src/rcabench_platform/v2/algori
 class MyAlgorithm(Algorithm):
     def needs_cpu_count(self) -> int | None:
         return 1  # or None for all cores
-    
+
     def __call__(self, args: AlgorithmArgs) -> list[AlgorithmAnswer]:
         # Read data from args.input_folder (parquet files)
         # Write intermediate results to args.output_folder
@@ -89,6 +90,7 @@ See `docs/specifications.md` for detailed sampler metrics (Controllability, API 
 ### 3. Data Formats
 
 **Standard Datapack Structure:**
+
 ```
 data/<dataset>/<datapack>/
   ├── trace.parquet          # Distributed trace data
@@ -146,6 +148,7 @@ Dataset converters follow a common pattern (see `src/rcabench_platform/v2/source
 ### Evaluation Metrics
 
 Performance metrics are calculated in `src/rcabench_platform/v2/evaluation/ranking.py`:
+
 - **Avg@k**: Average rank of first hit within top-k
 - **Top-k Accuracy**: Percentage of cases with at least one hit in top-k
 

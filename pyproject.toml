@@ -42,7 +42,7 @@ dependencies = [ #
     "duckdb>=1.3.2",
     "statsmodels>=0.14.5",
     "pydantic>=2.12.4",
-    "rcabench>=1.1.49",
+    "rcabench>=1.1.51",
 ]
 
 [project.scripts]
@@ -105,8 +105,8 @@ exclude = [ #
     "output/",
 ]
 
-[tool.uv]
-index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+# [tool.uv]
+# index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 
 [tool.marimo.runtime]

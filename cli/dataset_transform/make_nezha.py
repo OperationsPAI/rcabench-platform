@@ -76,6 +76,7 @@ class NezhaDatapackLoader(DatapackLoader):
             else f"{self.inject_time.strftime('%Y-%m-%d_%H-%M')}_normal_case"
         )
 
+    @property
     def name(self) -> str:
         return self.case_id
 

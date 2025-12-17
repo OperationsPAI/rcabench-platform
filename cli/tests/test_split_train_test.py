@@ -13,9 +13,8 @@ from rcabench.openapi import (
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
 from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
-from rcabench_platform.v2.config import get_config
 from rcabench_platform.v2.datasets.rcabench import rcabench_split_train_test, valid
-from rcabench_platform.v2.datasets.spec import delete_dataset, get_datapack_list
+from rcabench_platform.v2.datasets.spec import get_datapack_list
 
 DATASET_NAME = "pair-diag"
 
@@ -46,6 +45,7 @@ def get_previous_datapacks(datasets_api: DatasetsApi) -> list[str]:
 
 def split_datapacks(datapacks: list, previous_datapacks: list[str]) -> tuple[list, list]:
     train_datapacks, test_datapacks = rcabench_split_train_test(
+        src_folder="rcabench_dataset",
         datapacks=datapacks[:300],
         train_ratio=0.8,
         previous_datapacks=previous_datapacks,
@@ -88,6 +88,7 @@ def run(stage: int):
     previous_datapacks = get_previous_datapacks(datasets_api)
 
     train_datapacks, test_datapacks = rcabench_split_train_test(
+        src_folder="rcabench_dataset",
         datapacks=datapacks,
         train_ratio=0.8,
         previous_datapacks=previous_datapacks,
@@ -174,6 +175,7 @@ def build_anomaly(date: str, name: str):
     )
 
     train_datapacks, test_datapacks = rcabench_split_train_test(
+        src_folder="rcabench_dataset",
         datapacks=datapacks,
         train_ratio=0.8,
         previous_datapacks=[],

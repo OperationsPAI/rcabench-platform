@@ -1,6 +1,5 @@
 import json
 import math
-import os
 import random
 import re
 from collections import defaultdict
@@ -12,20 +11,8 @@ import polars as pl
 
 from ..datasets.spec import get_datapack_folder
 from ..logging import logger, timeit
-from ..sources.convert import link_subset
+from ..utils.serde import load_json
 from .spec import DatasetAnalyzer, build_service_graph
-
-DATAPACK_PATTERN = (
-    r"(ts|ts\d)-(mysql|ts-rabbitmq|ts-ui-dashboard|ts-\w+-service|ts-\w+-\w+-service|ts-\w+-\w+-\w+-service)-(.+)-[^-]+"
-)
-
-
-def rcabench_get_service_name(datapack_name: str) -> str:
-    m = re.match(DATAPACK_PATTERN, datapack_name)
-    assert m is not None, f"Invalid datapack name: `{datapack_name}`"
-    service_name: str = m.group(2)
-    return service_name
-
 
 FAULT_TYPES: list[str] = [
     "PodKill",
@@ -60,6 +47,71 @@ FAULT_TYPES: list[str] = [
     "JVMMySQLLatency",
     "JVMMySQLException",
 ]
+
+HTTP_REPLACE_METHODS: list[str] = [
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+    "PATCH",
+]
+
+HTTP_REPLACE_BODY_TYPE: dict[int, str] = {
+    0: "empty",
+    1: "random",
+}
+
+JVM_MEM_TYPE: dict[int, str] = {
+    1: "heap",
+    2: "stack",
+}
+
+JVM_RETURN_TYPE: dict[int, str] = {
+    1: "String",
+    2: "Int",
+}
+
+JVM_RETURN_VALUE_OPT: dict[int, str] = {
+    0: "Default",
+    1: "Random",
+}
+
+REQUIRED_FILES = [
+    # Parquet files
+    "abnormal_logs.parquet",
+    "abnormal_metrics_sum.parquet",
+    "abnormal_metrics_histogram.parquet",
+    "abnormal_trace_id_ts.parquet",
+    "abnormal_metrics.parquet",
+    "abnormal_traces.parquet",
+    "normal_metrics_histogram.parquet",
+    "normal_trace_id_ts.parquet",
+    "normal_logs.parquet",
+    "normal_metrics.parquet",
+    "normal_metrics_sum.parquet",
+    "normal_traces.parquet",
+    # JSON files
+    "injection.json",
+    "k8s.json",
+    "env.json",
+]
+
+
+def get_service_names(injection: dict[str, Any]) -> list[str]:
+    """Extract service names from injection.json for batch fault injections"""
+    groundtruths: list[dict[str, Any]] = injection.get("ground_truth", [])
+    assert len(groundtruths) > 0, "No groundtruths found in injection.json"
+
+    svc_names: list[str] = []
+
+    for gt in groundtruths:
+        services: list[str] = gt.get("service", [])
+        assert len(services) > 0, "No services found in groundtruth"
+        svc_names.extend(services)
+
+    return svc_names
 
 
 def get_parent_resource_from_pod_name(
@@ -110,37 +162,6 @@ def get_parent_resource_from_pod_name(
     return (None, None, None)
 
 
-HTTP_REPLACE_METHODS: list[str] = [
-    "GET",
-    "POST",
-    "PUT",
-    "DELETE",
-    "HEAD",
-    "OPTIONS",
-    "PATCH",
-]
-
-HTTP_REPLACE_BODY_TYPE: dict[int, str] = {
-    0: "empty",
-    1: "random",
-}
-
-JVM_MEM_TYPE: dict[int, str] = {
-    1: "heap",
-    2: "stack",
-}
-
-JVM_RETURN_TYPE: dict[int, str] = {
-    1: "String",
-    2: "Int",
-}
-
-JVM_RETURN_VALUE_OPT: dict[int, str] = {
-    0: "Default",
-    1: "Random",
-}
-
-
 def rcabench_fix_injection(injection: dict[str, Any]) -> None:
     display_config: dict[str, Any] = injection["display_config"]
     rcabench_fix_injection_display_config(display_config)
@@ -172,6 +193,7 @@ def rcabench_fix_injection_display_config(display_config: dict[str, Any]) -> Non
 
 @timeit(log_args={"train_ratio"})
 def rcabench_split_train_test(
+    src_folder: str,
     datapacks: list[str],
     train_ratio: float,
     previous_datapacks: list[str],
@@ -186,8 +208,11 @@ def rcabench_split_train_test(
 
     group_by_service: defaultdict[str, list[str]] = defaultdict(list)
     for datapack in additional_datapacks:
-        service_name = rcabench_get_service_name(datapack)
-        group_by_service[service_name].append(datapack)
+        datapack_folder = get_datapack_folder(src_folder, datapack)
+        injection: dict[str, Any] = load_json(path=datapack_folder / "injection.json")
+        service_names = get_service_names(injection)
+        services_hash = hash(tuple(service_names))
+        group_by_service[str(services_hash)].append(datapack)
 
     min_group_size = min(len(v) for v in group_by_service.values())
     logger.debug("min_group_size: {}", min_group_size)
@@ -266,27 +291,7 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
     if invalid_cache.exists():
         invalid_cache.unlink()
 
-    required_files = [
-        # Parquet files
-        "abnormal_logs.parquet",
-        "abnormal_metrics_sum.parquet",
-        "abnormal_metrics_histogram.parquet",
-        "abnormal_trace_id_ts.parquet",
-        "abnormal_metrics.parquet",
-        "abnormal_traces.parquet",
-        "normal_metrics_histogram.parquet",
-        "normal_trace_id_ts.parquet",
-        "normal_logs.parquet",
-        "normal_metrics.parquet",
-        "normal_metrics_sum.parquet",
-        "normal_traces.parquet",
-        # JSON files
-        "injection.json",
-        "k8s.json",
-        "env.json",
-    ]
-
-    for filename in required_files:
+    for filename in REQUIRED_FILES:
         file_path = path_obj / filename
 
         if not file_path.exists():
@@ -481,8 +486,8 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
         assert isinstance(injection, dict), "injection must be a dictionary"
         if not injection:
             return []
-        ground_truth = injection.get("ground_truth", {})
-        root_services = ground_truth.get("service", [])
+
+        root_services = get_service_names(injection)
         return root_services
 
     def get_entry_service(self) -> str | None:

@@ -125,6 +125,7 @@ class RcaevalDatapackLoader(DatapackLoader):
         self._datapack = datapack
         self._service = service
 
+    @property
     def name(self) -> str:
         return self._datapack
 

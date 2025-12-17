@@ -183,6 +183,7 @@ class AIops21DatapackLoader(DatapackLoader):
         self._fault_case = fault_case
         self._date_str = date_str
 
+    @property
     def name(self) -> str:
         return self._datapack
 
@@ -249,17 +250,17 @@ class AIops21DatapackLoader(DatapackLoader):
         # Check traces
         traces_df = data_dict["traces.parquet"].collect()
         if traces_df.is_empty():
-            raise ValueError(f"Traces dataframe is empty for datapack {self.name()}")
+            raise ValueError(f"Traces dataframe is empty for datapack {self.name}")
 
         # Check metrics
         metrics_df = data_dict["metrics.parquet"].collect()
         if metrics_df.is_empty():
-            raise ValueError(f"Metrics dataframe is empty for datapack {self.name()}")
+            raise ValueError(f"Metrics dataframe is empty for datapack {self.name}")
 
         # Logs can be empty, so we'll just log a warning
         logs_df = data_dict["logs.parquet"].collect()
         if logs_df.is_empty():
-            logger.warning(f"Logs dataframe is empty for datapack {self.name()}")
+            logger.warning(f"Logs dataframe is empty for datapack {self.name}")
 
     def data(self) -> dict[str, Any]:
         # Calculate time windows: [normal_start, normal_end, fault_start, fault_end]

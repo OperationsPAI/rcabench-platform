@@ -208,6 +208,7 @@ class EadroDatapackLoader(DatapackLoader):
         self.dataset_name = datapack_info["dataset_name"]
         self.folder_path = datapack_info["folder_path"]
 
+    @property
     def name(self) -> str:
         prefix = "SN" if self.dataset_name.startswith("SN") else "TT"
         return f"{prefix}-case-{self.start_time.strftime('%Y-%m-%dT%H-%M-%S')}"

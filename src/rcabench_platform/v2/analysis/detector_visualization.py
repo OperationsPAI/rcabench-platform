@@ -15,15 +15,16 @@ from rcabench_platform.v2.utils.fmap import fmap_processpool
 from ..cli.main import logger
 from ..clients.rcabench_ import get_rcabench_client
 from ..datasets.rcabench import valid
-from ..datasets.train_ticket import extract_path
+from ..pedestals import Pedestal, get_pedestal
 from ..utils.display import get_timestamp
 
 DETECTOR_NAME = "detector"
 
 
 class VisDetector:
-    def __init__(self, datapack: Path):
+    def __init__(self, datapack: Path, system: str = "ts") -> None:
         self.datapack: Path = datapack
+        self.pedestal: Pedestal = get_pedestal(system)
         self.output_path: Path = Path("temp") / "vis_detector" / get_timestamp()
         if not valid(self.datapack):
             raise ValueError(f"Invalid datapack: {self.datapack}")
@@ -81,7 +82,7 @@ class VisDetector:
         ).sort("Timestamp")
 
         self.entry_df = entry_df.with_columns(
-            pl.col("SpanName").map_elements(extract_path, return_dtype=pl.Utf8).alias("api_path")
+            pl.col("SpanName").map_elements(self.pedestal.normalize_path, return_dtype=pl.Utf8).alias("api_path")
         )
 
     def _create_span_visualization(self) -> None:

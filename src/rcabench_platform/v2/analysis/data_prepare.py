@@ -45,7 +45,7 @@ ITEMS_CACHE_TIME = getenv_int("ITEMS_CACHE_TIME", default=_DEFAULT_ITEMS_CACHE_T
 class InputItem:
     injection: InjectionDetailResp
     algo_durations: dict[str, float]  # algorithm -> execution_duration
-    algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] | None = None
+    algo_evals: dict[str, tuple[list[ChaosGroundtruth], list[GranularityResultItem]]] | None = None
 
 
 @dataclass
@@ -62,7 +62,7 @@ class Item:
     workload: Literal["trainticket"] = "trainticket"
 
     # Algo Metric statistics
-    _algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] | None = None
+    _algo_evals: dict[str, tuple[list[ChaosGroundtruth], list[GranularityResultItem]]] | None = None
     _algo_durations: dict[str, float] = field(default_factory=dict)
     algo_metrics: dict[str, AlgoMetricItem] = field(default_factory=dict)
 
@@ -92,10 +92,26 @@ class Item:
             return
 
         self.algo_metrics = {}
-        for algo, (groundtruth, predictions) in self._algo_evals.items():
-            assert groundtruth.service is not None
+        for algo, (groundtruths, predictions) in self._algo_evals.items():
+            # Collect all groundtruth services from all groundtruth items
+            # This handles multiple pod injections correctly
+            groundtruth_services = []
+            for groundtruth in groundtruths:
+                assert groundtruth.service is not None
+                # Add all services from this groundtruth (usually just one, but could be multiple)
+                groundtruth_services.extend(groundtruth.service)
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_groundtruth_services = []
+            for service in groundtruth_services:
+                if service not in seen:
+                    seen.add(service)
+                    unique_groundtruth_services.append(service)
+
+            # Calculate metrics with all groundtruth services
             metric_item = calculate_metrics_for_level(
-                groundtruth_items=[groundtruth.service[0]], predictions=predictions, level="service"
+                groundtruth_items=unique_groundtruth_services, predictions=predictions, level="service"
             )
 
             if algo in self._algo_durations:
@@ -186,7 +202,7 @@ def get_execution_item(
 
     # Collect data grouped by datapack_name
     # datapack_name -> { algorithm -> (execution_duration, groundtruth, predictions) }
-    datapack_algo_data: dict[str, dict[str, tuple[float, ChaosGroundtruth, list[GranularityResultItem]]]] = {}
+    datapack_algo_data: dict[str, dict[str, tuple[float, list[ChaosGroundtruth], list[GranularityResultItem]]]] = {}
 
     for item in items:
         assert item.algorithm is not None
@@ -201,7 +217,7 @@ def get_execution_item(
 
         for eval_ref in item.evalaute_refs:
             assert eval_ref.datapack is not None
-            assert eval_ref.groundtruth is not None
+            assert eval_ref.groundtruths is not None
             assert eval_ref.execution_refs is not None and len(eval_ref.execution_refs) > 0
 
             execution_refs = sorted(
@@ -220,7 +236,7 @@ def get_execution_item(
 
             datapack_algo_data[datapack_name][item.algorithm] = (
                 execution_ref.execution_duration,
-                eval_ref.groundtruth,
+                eval_ref.groundtruths,
                 execution_ref.predictions,
             )
 
@@ -236,11 +252,11 @@ def get_execution_item(
     input_items: list[InputItem] = []
     for datapack_name, algo_data in datapack_algo_data.items():
         algo_durations: dict[str, float] = {}
-        algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] = {}
+        algo_evals: dict[str, tuple[list[ChaosGroundtruth], list[GranularityResultItem]]] = {}
 
-        for algo, (duration, groundtruth, predictions) in algo_data.items():
+        for algo, (duration, groundtruths, predictions) in algo_data.items():
             algo_durations[algo] = duration
-            algo_evals[algo] = (groundtruth, predictions)
+            algo_evals[algo] = (groundtruths, predictions)
 
         input_items.append(
             InputItem(
@@ -297,7 +313,7 @@ def get_resources(namespace: str) -> tuple[dict[str, ChaosResourceField], ChaosR
 
 
 def process_item(
-    algo_evals: dict[str, tuple[ChaosGroundtruth, list[GranularityResultItem]]] | None,
+    algo_evals: dict[str, tuple[list[ChaosGroundtruth], list[GranularityResultItem]]] | None,
     algo_durations: dict[str, float],
     injection: InjectionDetailResp,
     fault_resource_mapping: dict[str, ChaosResourceField],

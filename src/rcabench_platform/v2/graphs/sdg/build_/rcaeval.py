@@ -3,14 +3,14 @@ from pathlib import Path
 
 import polars as pl
 
-from ....datasets.train_ticket import tt_add_op_name, tt_fix_client_spans
 from ....logging import logger, timeit
+from ....pedestals import get_pedestal
 from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
 from .common import is_constant_metric
 
 
 @timeit()
-def build_sdg_from_rcaeval(dataset: str, datapack: str, input_folder: Path) -> SDG:
+def build_sdg_from_rcaeval(dataset: str, datapack: str, input_folder: Path, system: str = "ts") -> SDG:
     sdg = SDG()
     sdg.data["dataset"] = dataset
     sdg.data["datapack"] = datapack
@@ -18,7 +18,7 @@ def build_sdg_from_rcaeval(dataset: str, datapack: str, input_folder: Path) -> S
     inject_time = load_inject_time(input_folder)
     sdg.data["inject_time"] = inject_time
 
-    traces = load_traces(input_folder, inject_time)
+    traces = load_traces(input_folder, inject_time, system)
     metrics = load_metrics(input_folder, inject_time)
 
     logger.debug("loading all dataframes")
@@ -31,7 +31,7 @@ def build_sdg_from_rcaeval(dataset: str, datapack: str, input_folder: Path) -> S
     apply_metrics(sdg, metrics)
     del metrics
 
-    apply_traces(sdg, traces)
+    apply_traces(sdg, traces, system)
     del traces
 
     return sdg
@@ -48,20 +48,20 @@ def load_inject_time(input_folder: Path) -> datetime.datetime:
     return inject_time
 
 
-def load_traces(input_folder: Path, inject_time: datetime.datetime) -> pl.LazyFrame:
+def load_traces(input_folder: Path, inject_time: datetime.datetime, system: str = "ts") -> pl.LazyFrame:
+    pedestal = get_pedestal(system)
+
     lf = pl.scan_parquet(input_folder / "traces.parquet")
-
     lf = lf.with_columns((pl.col("time") >= inject_time).cast(pl.UInt8).alias("anomal"))
-
     lf = lf.with_columns(pl.col("duration").cast(pl.Float64))
-
-    lf = tt_add_op_name(lf)
+    lf = pedestal.add_op_name(lf)
 
     return lf
 
 
-def apply_traces(sdg: SDG, traces: pl.DataFrame) -> None:
-    traces, id2op, id2parent = tt_fix_client_spans(traces)
+def apply_traces(sdg: SDG, traces: pl.DataFrame, system: str = "ts") -> None:
+    pedestal = get_pedestal(system)
+    traces, id2op, id2parent = pedestal.fix_client_spans(traces)
 
     df_map = traces.partition_by("op_name", as_dict=True)
     for (op_name,), df in df_map.items():

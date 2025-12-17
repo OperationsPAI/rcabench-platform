@@ -12,7 +12,7 @@ from ..clients.rcabench_ import get_rcabench_client
 from ..config import get_config
 from ..logging import logger, timeit
 from ..sources.convert import convert_datapack
-from ..sources.rcabench import RcabenchDatapackLoader
+from ..sources.rcabench import RCABenchDatapackLoader
 from ..utils.serde import load_json, save_csv
 
 app = typer.Typer()
@@ -36,7 +36,7 @@ def run(
     converted_input_path = input_path / "converted"
 
     convert_datapack(
-        loader=RcabenchDatapackLoader(src_folder=input_path, datapack=injection_name),
+        loader=RCABenchDatapackLoader(src_folder=input_path, datapack=injection_name),
         dst_folder=converted_input_path,
         skip_finished=True,
     )

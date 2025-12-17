@@ -11,8 +11,8 @@ from pathlib import Path
 import polars as pl
 
 from ...datasets.spec import get_datapack_folder
-from ...datasets.train_ticket import extract_path
 from ...logging import logger, timeit
+from ...pedestals import get_pedestal
 from ...utils.fs import running_mark
 from ...utils.serde import save_parquet
 from ..event_encoding import calculate_event_coverage
@@ -191,6 +191,8 @@ def calculate_sampler_performance(
     expected_count = int(total_traces * sampling_rate)
     controllability = abs((sampled_count - expected_count) / expected_count) if expected_count > 0 else 0.0
 
+    pedestal = get_pedestal()
+
     if sampled_count == 0:
         # Still need to calculate total metrics even when no samples
         # Load full traces for total metrics calculation
@@ -219,7 +221,7 @@ def calculate_sampler_performance(
                 selected_entries_lf = entry_traces_lf
 
         traces_with_entry_lf = selected_entries_lf.with_columns(
-            pl.col("span_name").map_elements(extract_path, return_dtype=pl.String).alias("entry_span")
+            pl.col("span_name").map_elements(pedestal.normalize_path, return_dtype=pl.String).alias("entry_span")
         )
         trace_entries_lf = traces_with_entry_lf.group_by("trace_id").agg(
             [pl.first("entry_span").alias("entry_span"), pl.first("is_abnormal").alias("is_abnormal")]
@@ -378,7 +380,7 @@ def calculate_sampler_performance(
 
     # Add parsed span names and get unique entry spans per trace
     traces_with_entry_lf = selected_entries_lf.with_columns(
-        pl.col("span_name").map_elements(extract_path, return_dtype=pl.String).alias("entry_span")
+        pl.col("span_name").map_elements(pedestal.normalize_path, return_dtype=pl.String).alias("entry_span")
     )
 
     # Get one entry span per trace (first occurrence)

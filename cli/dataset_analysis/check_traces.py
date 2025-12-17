@@ -16,15 +16,12 @@ from rcabench_platform.v2.datasets.spec import (
     get_datapack_folder,
     get_dataset_meta_file,
 )
-from rcabench_platform.v2.datasets.train_ticket import _normalize_op_name
-from rcabench_platform.v2.utils.dataframe import print_dataframe
-from rcabench_platform.v2.utils.fmap import fmap_threadpool
-from rcabench_platform.v2.utils.serde import load_json, save_parquet
+from rcabench_platform.v2.pedestals import get_pedestal
 
 
 @app.command()
 @timeit()
-def check_loadgenerator(limit: int = 10000, parallel: int = 16):
+def check_loadgenerator(system: str = "ts", limit: int = 10000, parallel: int = 16):
     assert limit > 0
 
     temp = get_config().temp
@@ -56,7 +53,7 @@ def check_loadgenerator(limit: int = 10000, parallel: int = 16):
 
     logger.info(f"Found {len(trace_id_list)} unique traces")
 
-    df = df.with_columns(_normalize_op_name(pl.col("SpanName")).alias("SpanName"))
+    df = df.with_columns(get_pedestal(system).normalize_op_name(pl.col("SpanName")).alias("SpanName"))
 
 
 @dataclass(kw_only=True, slots=True)
@@ -151,7 +148,7 @@ def vis_all(start_time: str = "2025-07-18 11:00:00"):
 
 
 @app.command()
-def visualize_span_latency(ns: str, start_time: str = "2025-07-18 11:00:00"):
+def visualize_span_latency(ns: str, system: str = "ts", start_time: str = "2025-07-18 11:00:00"):
     temp = get_config().temp
 
     logger.info("Starting span latency visualization")
@@ -181,9 +178,11 @@ def visualize_span_latency(ns: str, start_time: str = "2025-07-18 11:00:00"):
         max_time_beijing = beijing_timestamps.max()
         logger.info(f"Time range (Beijing Time): {min_time_beijing} to {max_time_beijing}")
 
+    pedestal = get_pedestal(system)
+
     df = df.with_columns(
         [
-            _normalize_op_name(pl.col("SpanName")).alias("SpanName"),
+            pedestal.normalize_op_name(pl.col("SpanName")).alias("SpanName"),
             (pl.col("Timestamp")).alias("datetime"),
             (pl.col("Duration") / 1e9).alias("duration_seconds"),
         ]

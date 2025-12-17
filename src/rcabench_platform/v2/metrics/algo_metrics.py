@@ -400,7 +400,7 @@ def get_metrics_by_dataset(
         assert item.evalaute_refs is not None, "Evaluate refs are None"
         for ref in item.evalaute_refs:
             assert ref.datapack is not None, "Datapack is None"
-            assert ref.groundtruth is not None, "Groundtruth is None"
+            assert ref.groundtruths is not None, "Groundtruths is None"
             assert ref.execution_refs is not None, "Execution refs are None"
 
             total_datapacks += 1
@@ -408,10 +408,24 @@ def get_metrics_by_dataset(
             execution_ref = ref.execution_refs[0]
             assert execution_ref.predictions is not None, "Predictions are None"
 
-            if ref.groundtruth.service:
+            # Collect all groundtruth services from all groundtruth items
+            # This handles multiple pod injections correctly
+            groundtruth_services = []
+            for gt in ref.groundtruths:
+                if gt.service:
+                    groundtruth_services.extend(gt.service)
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_groundtruth_services = []
+            for service in groundtruth_services:
+                if service not in seen:
+                    seen.add(service)
+                    unique_groundtruth_services.append(service)
+
+            if unique_groundtruth_services:
                 level = "service"
-                groundtruth_items = ref.groundtruth.service
-                metrics = calculate_metrics_for_level(groundtruth_items, execution_ref.predictions, level)
+                metrics = calculate_metrics_for_level(unique_groundtruth_services, execution_ref.predictions, level)
 
                 for metric_name, value in metrics.to_dict().items():
                     level_metrics[level][metric_name] += value

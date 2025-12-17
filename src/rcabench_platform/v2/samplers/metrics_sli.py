@@ -4,7 +4,6 @@ from pathlib import Path
 
 import polars as pl
 
-from ..datasets.train_ticket import extract_path
 from ..logging import logger, timeit
 from ..utils.serde import save_parquet
 
