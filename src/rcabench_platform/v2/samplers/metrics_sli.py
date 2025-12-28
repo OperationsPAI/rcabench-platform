@@ -27,9 +27,9 @@ def generate_metrics_sli(input_folder: Path, output_folder: Path | None = None) 
     output_path = output_folder / "metrics_sli.parquet"
 
     # Skip if already exists
-    if output_path.exists():
-        logger.debug(f"metrics_sli.parquet already exists at {output_path}")
-        return
+    #if output_path.exists():
+    #    logger.debug(f"metrics_sli.parquet already exists at {output_path}")
+    #    return
 
     logger.info(f"Generating metrics_sli.parquet for {input_folder}")
 
