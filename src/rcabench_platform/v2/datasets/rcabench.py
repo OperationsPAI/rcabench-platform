@@ -295,15 +295,17 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
         file_path = path_obj / filename
 
         if not file_path.exists():
-            logger.warning("Validation failed: Missing required file: {}", file_path)
+            reason = f"Missing required file: {filename}"
+            logger.warning("Validation failed: {}", reason)
             invalid_f = path_obj / ".invalid"
-            invalid_f.touch()
+            invalid_f.write_text(reason)
             return path, False
 
         if file_path.stat().st_size == 0:
-            logger.warning("Validation failed: Empty file: {}", file_path)
+            reason = f"Empty file: {filename}"
+            logger.warning("Validation failed: {}", reason)
             invalid_f = path_obj / ".invalid"
-            invalid_f.touch()
+            invalid_f.write_text(reason)
             return path, False
 
         if filename.endswith(".json"):
@@ -311,9 +313,10 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
                 with open(file_path, encoding="utf-8") as f:
                     json.load(f)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                logger.warning("Validation failed: Invalid JSON file {}: {}", file_path, e)
+                reason = f"Invalid JSON file {filename}: {e}"
+                logger.warning("Validation failed: {}", reason)
                 invalid_f = path_obj / ".invalid"
-                invalid_f.touch()
+                invalid_f.write_text(reason)
                 return path, False
 
         elif filename.endswith(".parquet"):
@@ -322,15 +325,17 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
                 row_count = df.height
 
                 if row_count == 0:
-                    logger.warning("Validation failed: Parquet file has no data rows: {}", file_path)
+                    reason = f"Parquet file has no data rows: {filename}"
+                    logger.warning("Validation failed: {}", reason)
                     invalid_f = path_obj / ".invalid"
-                    invalid_f.touch()
+                    invalid_f.write_text(reason)
                     return path, False
 
             except Exception as e:
-                logger.warning("Validation failed: Failed to read Parquet file {}: {}", file_path, e)
+                reason = f"Failed to read Parquet file {filename}: {e}"
+                logger.warning("Validation failed: {}", reason)
                 invalid_f = path_obj / ".invalid"
-                invalid_f.touch()
+                invalid_f.write_text(reason)
                 return path, False
 
     # All validation passed, create valid cache file

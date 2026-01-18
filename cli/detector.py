@@ -1043,30 +1043,36 @@ def validate_datapacks(
 @app.command()
 @timeit()
 def patch_detection():
-    """Run patch detection on all valid datapacks.
-
-    Args:
-        dataset_path: Path to the dataset directory
-        delete_invalid: Whether to delete invalid datapacks during validation
-        validate_first: Whether to run validation before processing
-        parallel: Number of parallel processes
-    """
+    """Run patch detection on all valid datapacks that haven't been converted yet."""
     dataset_path: Path = Path("data") / "rcabench_dataset"
     assert dataset_path.exists(), f"Dataset path does not exist: {dataset_path}"
 
     tasks = []
-    assertions = []
+    skipped = []
 
     for datapack in dataset_path.iterdir():
-        try:
-            if not datapack.is_dir():
-                continue
-            tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=False, online=False))
-        except Exception as e:
-            assertions.append((datapack.name, str(e)))
+        if not datapack.is_dir():
+            continue
 
-    logger.info(f"Found {len(tasks)} valid datapacks to process")
-    assert len(tasks) > 0, "No valid datapacks found to process"
+        # Check if datapack has .valid marker
+        valid_marker = datapack / ".valid"
+        if not valid_marker.exists():
+            skipped.append((datapack.name, "no .valid marker"))
+            continue
+
+        # Check if datapack has already been converted
+        converted_dir = datapack / "converted"
+        if converted_dir.exists():
+            skipped.append((datapack.name, "already converted"))
+            continue
+
+        tasks.append(functools.partial(run, in_p=datapack, ou_p=datapack, convert=True, online=False))
+
+    logger.info(f"Found {len(tasks)} datapacks to convert (skipped {len(skipped)})")
+
+    if len(tasks) == 0:
+        logger.warning("No datapacks found that need conversion")
+        return
 
     cpu = os.cpu_count()
     assert cpu is not None, "Cannot determine CPU count"
@@ -1078,16 +1084,14 @@ def patch_detection():
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
 
-    with open("temp/patch_assertions.txt", "w") as f:
-        for datapack_name, error in assertions:
-            f.write(f"{datapack_name}: {error}\n")
-            logger.error(f"Assertion failed for {datapack_name}: {error}")
+    with open("temp/patch_skipped.txt", "w") as f:
+        for datapack_name, reason in skipped:
+            f.write(f"{datapack_name}: {reason}\n")
 
     with open("temp/patch_results.txt", "w") as f:
         for result in results:
             if result is not None:
-                if result["is_latency_only"] and not result["absolute_anomaly"]:
-                    f.write(f"{result['datapack_name']}\n")
+                f.write(f"{result['datapack_name']}: converted\n")
 
 
 if __name__ == "__main__":

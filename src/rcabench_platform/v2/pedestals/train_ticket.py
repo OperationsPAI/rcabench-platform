@@ -32,57 +32,85 @@ class TrainTicketPedestal(Pedestal):
         "ts-delivery-service",
     ]
 
+    # UUID pattern: 8-4-4-4-12 hex format
+    _UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
     # Path normalization patterns: (regex, replacement)
+    # Note: Patterns use {UUID} as placeholder, replaced in __init_subclass__
     _PATTERN_REPLACEMENTS = [
+        # Verify code (alphanumeric, not UUID)
         (
-            r"(.*?)GET (.*?)/api/v1/verifycode/verify/[0-9a-zA-Z]+",
-            r"\1GET \2/api/v1/verifycode/verify/{verifyCode}",
+            r"(.*?GET .*?)/api/v1/verifycode/verify/[0-9a-zA-Z]+",
+            r"\1/api/v1/verifycode/verify/{verifyCode}",
         ),
+        # Food service with date and stations
         (
-            r"(.*?)GET (.*?)/api/v1/foodservice/foods/[0-9]{4}-[0-9]{2}-[0-9]{2}/[a-z]+/[a-z]+/[A-Z0-9]+",
-            r"\1GET \2/api/v1/foodservice/foods/{date}/{startStation}/{endStation}/{tripId}",
+            r"(.*?GET .*?)/api/v1/foodservice/foods/[0-9]{4}-[0-9]{2}-[0-9]{2}/[a-z]+/[a-z]+/[A-Z0-9]+",
+            r"\1/api/v1/foodservice/foods/{date}/{startStation}/{endStation}/{tripId}",
         ),
+        # Contact service
         (
-            r"(.*?)GET (.*?)/api/v1/contactservice/contacts/account/[0-9a-f-]+",
-            r"\1GET \2/api/v1/contactservice/contacts/account/{accountId}",
+            r"(.*?GET .*?)/api/v1/contactservice/contacts/account/{UUID}",
+            r"\1/api/v1/contactservice/contacts/account/{accountId}",
         ),
+        # User service
         (
-            r"(.*?)GET (.*?)/api/v1/userservice/users/id/[0-9a-f-]+",
-            r"\1GET \2/api/v1/userservice/users/id/{userId}",
+            r"(.*?GET .*?)/api/v1/userservice/users/id/{UUID}",
+            r"\1/api/v1/userservice/users/id/{userId}",
         ),
+        # Consign service - order
         (
-            r"(.*?)GET (.*?)/api/v1/consignservice/consigns/order/[0-9a-f-]+",
-            r"\1GET \2/api/v1/consignservice/consigns/order/{id}",
+            r"(.*?GET .*?)/api/v1/consignservice/consigns/order/{UUID}",
+            r"\1/api/v1/consignservice/consigns/order/{id}",
         ),
+        # Consign service - account
         (
-            r"(.*?)GET (.*?)/api/v1/consignservice/consigns/account/[0-9a-f-]+",
-            r"\1GET \2/api/v1/consignservice/consigns/account/{id}",
+            r"(.*?GET .*?)/api/v1/consignservice/consigns/account/{UUID}",
+            r"\1/api/v1/consignservice/consigns/account/{id}",
         ),
+        # Execute service - collected
         (
-            r"(.*?)GET (.*?)/api/v1/executeservice/execute/collected/[0-9a-f-]+",
-            r"\1GET \2/api/v1/executeservice/execute/collected/{orderId}",
+            r"(.*?GET .*?)/api/v1/executeservice/execute/collected/{UUID}",
+            r"\1/api/v1/executeservice/execute/collected/{orderId}",
         ),
+        # Cancel service - with two UUIDs (orderId/loginId)
         (
-            r"(.*?)GET (.*?)/api/v1/cancelservice/cancel/[0-9a-f-]+/[0-9a-f-]+",
-            r"\1GET \2/api/v1/cancelservice/cancel/{orderId}/{loginId}",
+            r"(.*?GET .*?)/api/v1/cancelservice/cancel/{UUID}/{UUID}",
+            r"\1/api/v1/cancelservice/cancel/{orderId}/{loginId}",
         ),
+        # Cancel service - refund
         (
-            r"(.*?)GET (.*?)/api/v1/cancelservice/cancel/refound/[0-9a-f-]+",
-            r"\1GET \2/api/v1/cancelservice/cancel/refound/{orderId}",
+            r"(.*?GET .*?)/api/v1/cancelservice/cancel/refound/{UUID}",
+            r"\1/api/v1/cancelservice/cancel/refound/{orderId}",
         ),
+        # Execute service - execute
         (
-            r"(.*?)GET (.*?)/api/v1/executeservice/execute/execute/[0-9a-f-]+",
-            r"\1GET \2/api/v1/executeservice/execute/execute/{orderId}",
+            r"(.*?GET .*?)/api/v1/executeservice/execute/execute/{UUID}",
+            r"\1/api/v1/executeservice/execute/execute/{orderId}",
         ),
+        # Admin order service - delete
         (
-            r"(.*?)DELETE (.*?)/api/v1/adminorderservice/adminorder/[0-9a-f-]+/[A-Z0-9]+",
-            r"\1DELETE \2/api/v1/adminorderservice/adminorder/{orderId}/{trainNumber}",
+            r"(.*?DELETE .*?)/api/v1/adminorderservice/adminorder/{UUID}/[A-Z0-9]+",
+            r"\1/api/v1/adminorderservice/adminorder/{orderId}/{trainNumber}",
         ),
+        # Admin route service - delete
         (
-            r"(.*?)DELETE (.*?)/api/v1/adminrouteservice/adminroute/[0-9a-f-]+",
-            r"\1DELETE \2/api/v1/adminrouteservice/adminroute/{routeId}",
+            r"(.*?DELETE .*?)/api/v1/adminrouteservice/adminroute/{UUID}",
+            r"\1/api/v1/adminrouteservice/adminroute/{routeId}",
         ),
     ]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        # Expand {UUID} placeholder in patterns
+        cls._PATTERN_REPLACEMENTS = [
+            (pat.replace("{UUID}", cls._UUID_PATTERN), rep) for pat, rep in cls._PATTERN_REPLACEMENTS
+        ]
+
+    def __init__(self) -> None:
+        # Expand {UUID} placeholder in patterns for this class
+        uuid_pat = self._UUID_PATTERN
+        self._PATTERN_REPLACEMENTS = [(pat.replace("{UUID}", uuid_pat), rep) for pat, rep in self._PATTERN_REPLACEMENTS]
 
     # Polars-compatible patterns (replace \1, \2 with ${1}, ${2})
     _PATTERN_REPLACEMENTS_POLARS = [
