@@ -351,15 +351,15 @@ class DuckDBAggregator:
 
         if k == 1:
             return """
-            CASE 
+            CASE
                 WHEN "datapack_metric_SDD@1" = 0 THEN 'SDD@1 = 0'
                 ELSE 'SDD@1 > 0'
             END
             """
         elif k == 3:
             return """
-            CASE 
-                WHEN "datapack_metric_SDD@3" = 0 AND "datapack_metric_SDD@1" > 0 
+            CASE
+                WHEN "datapack_metric_SDD@3" = 0 AND "datapack_metric_SDD@1" > 0
                     THEN 'SDD@3 = 0 (SDD@1 > 0)'
                 WHEN "datapack_metric_SDD@3" > 0 THEN 'SDD@3 > 0'
                 WHEN "datapack_metric_SDD@1" = 0 THEN 'SDD@1 = 0'
@@ -368,13 +368,13 @@ class DuckDBAggregator:
             """
         elif k == 5:
             return """
-            CASE 
-                WHEN "datapack_metric_SDD@5" = 0 
-                     AND "datapack_metric_SDD@3" > 0 
-                     AND "datapack_metric_SDD@1" > 0 
+            CASE
+                WHEN "datapack_metric_SDD@5" = 0
+                     AND "datapack_metric_SDD@3" > 0
+                     AND "datapack_metric_SDD@1" > 0
                     THEN 'SDD@5 = 0 (SDD@1,3 > 0)'
                 WHEN "datapack_metric_SDD@5" > 0 THEN 'SDD@5 > 0'
-                WHEN "datapack_metric_SDD@3" = 0 AND "datapack_metric_SDD@1" > 0 
+                WHEN "datapack_metric_SDD@3" = 0 AND "datapack_metric_SDD@1" > 0
                     THEN 'SDD@3 = 0 (SDD@1 > 0)'
                 WHEN "datapack_metric_SDD@1" = 0 THEN 'SDD@1 = 0'
                 ELSE 'Other'
@@ -464,7 +464,11 @@ class DuckDBAggregator:
         algo_columns = self._get_algo_columns()
 
         # Define required columns for this algorithm
-        required_cols = [f"algo_{algorithm_name}_top1", f"algo_{algorithm_name}_top3", f"algo_{algorithm_name}_top5"]
+        required_cols = [
+            f"algo_{algorithm_name}_top1",
+            f"algo_{algorithm_name}_top3",
+            f"algo_{algorithm_name}_top5",
+        ]
 
         # Validate all required columns exist
         missing_cols = [col for col in required_cols if col not in algo_columns]
@@ -475,17 +479,17 @@ class DuckDBAggregator:
         top1_col, top3_col, top5_col = required_cols
 
         query = f"""
-        SELECT 
+        SELECT
             *,
-            CASE 
+            CASE
                 WHEN {top1_col} = 1 THEN 'top1_success'
                 WHEN {top3_col} = 1 THEN 'top3_success'
                 WHEN {top5_col} = 1 THEN 'top5_success'
                 ELSE 'complete_failure'
             END AS performance_category
         FROM data
-        WHERE {top1_col} IS NOT NULL 
-            AND {top3_col} IS NOT NULL 
+        WHERE {top1_col} IS NOT NULL
+            AND {top3_col} IS NOT NULL
             AND {top5_col} IS NOT NULL
         """
 
@@ -521,7 +525,7 @@ class DuckDBAggregator:
             raise ValueError("performance_filter must be string or list of strings")
 
         query = f"""
-        SELECT 
+        SELECT
             performance_category,
             fault_category,
             fault_type,
@@ -571,11 +575,11 @@ class DuckDBAggregator:
         failure_sum_expr = " + ".join(failure_terms)
 
         query = f"""
-        SELECT 
+        SELECT
             *,
             ({failure_sum_expr}) AS failure_count,
             {len(topk_columns)} AS algorithms_considered
-        FROM data 
+        FROM data
         WHERE ({failure_sum_expr}) >= {min_algorithms}
         ORDER BY fault_category, fault_type
         """
@@ -603,7 +607,7 @@ class DuckDBAggregator:
             return pl.DataFrame()
 
         group_sql = f"""
-        CASE 
+        CASE
             WHEN "{sdd_column}" = 0 THEN 'SDD@{k} = 0'
             ELSE 'SDD@{k} > 0'
         END
@@ -686,7 +690,7 @@ class DuckDBAggregator:
         select_clause = ",\n            ".join(select_statements)
 
         query = f"""
-        SELECT 
+        SELECT
             COUNT(*) as total_count,
             {select_clause}
         FROM data
@@ -707,7 +711,7 @@ class DuckDBAggregator:
 
     def dataset_fault_type(self) -> pl.DataFrame:
         query = """
-        SELECT 
+        SELECT
             fault_type,
             fault_category,
             SUM(CASE WHEN anomaly_degree = 'no' THEN 1 ELSE 0 END) AS no,
@@ -734,7 +738,7 @@ class DuckDBAggregator:
             pl.DataFrame: DataFrame containing dataset basic statistics
         """
         query = """
-        SELECT 
+        SELECT
             COUNT(*) AS total_datapacks,
             AVG(service_count) AS service_count,
             MAX(service_count_by_trace) AS max_services_by_trace_per_datapack,

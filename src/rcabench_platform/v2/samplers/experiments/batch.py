@@ -96,7 +96,10 @@ def run_sampler_batch(
 
             t0 = time.time()
             fmap_processpool(
-                tasks, parallel=parallel, cpu_limit_each=sampler_cpu_count, ignore_exceptions=ignore_exceptions
+                tasks,
+                parallel=parallel,
+                cpu_limit_each=sampler_cpu_count,
+                ignore_exceptions=ignore_exceptions,
             )
             t1 = time.time()
 

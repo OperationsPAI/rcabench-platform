@@ -255,7 +255,11 @@ def rcabench_split_train_test(
         train_datapacks = train_datapacks[:target_train]
         test_datapacks = test_datapacks[:target_test]
 
-        logger.info("Adjusted to datapack_limit: train={}, test={}", len(train_datapacks), len(test_datapacks))
+        logger.info(
+            "Adjusted to datapack_limit: train={}, test={}",
+            len(train_datapacks),
+            len(test_datapacks),
+        )
 
     logger.info(
         "Final dataset: train={} datapacks, test={} datapacks, total={}",
@@ -499,7 +503,11 @@ class RCABenchAnalyzerLoader(DatasetAnalyzer):
         return "loadgenerator"
 
     def _extract_service_metrics(
-        self, metrics_lf: pl.LazyFrame, traces_lf: pl.LazyFrame, logs_lf: pl.LazyFrame, service_name: str
+        self,
+        metrics_lf: pl.LazyFrame,
+        traces_lf: pl.LazyFrame,
+        logs_lf: pl.LazyFrame,
+        service_name: str,
     ) -> dict[str, list[float]]:
         assert isinstance(metrics_lf, pl.LazyFrame), "metrics_lf must be a polars LazyFrame"
         assert isinstance(service_name, str) and service_name.strip(), "service_name must be a non-empty string"

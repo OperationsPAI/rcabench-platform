@@ -33,8 +33,8 @@ def check_loadgenerator(system: str = "ts", limit: int = 10000, parallel: int = 
         WITH target_traces AS (
             SELECT      TraceId
             FROM        otel_traces
-            WHERE       ServiceName = 'loadgenerator' 
-                      AND ParentSpanId = '' 
+            WHERE       ServiceName = 'loadgenerator'
+                      AND ParentSpanId = ''
                       AND Timestamp > toDateTime('2025-07-16 00:00:00')
             ORDER BY    Timestamp DESC
         )
@@ -159,9 +159,9 @@ def visualize_span_latency(ns: str, system: str = "ts", start_time: str = "2025-
         query = f"""
         SELECT      TraceId, SpanName, Duration, Timestamp
         FROM        otel_traces
-        WHERE       ServiceName = 'loadgenerator' 
-        AND ParentSpanId = '' 
-        AND Timestamp > toDateTime('{start_time}') 
+        WHERE       ServiceName = 'loadgenerator'
+        AND ParentSpanId = ''
+        AND Timestamp > toDateTime('{start_time}')
         AND ResourceAttributes['service.namespace'] = '{ns}'
         ORDER BY    Timestamp
         """

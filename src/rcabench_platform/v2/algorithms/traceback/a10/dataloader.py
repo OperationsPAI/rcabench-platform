@@ -50,85 +50,107 @@ class DataLoader:
     def _load_traces(self):
         normal_traces = self.input_folder / "normal_traces.parquet"
         assert normal_traces.exists()
-        self.con.execute(f"""
-            CREATE TABLE traces_good AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE traces_good AS
             SELECT * FROM read_parquet('{normal_traces}')
-        """)
+        """
+        )
 
         abnormal_traces = self.input_folder / "abnormal_traces.parquet"
         assert abnormal_traces.exists()
-        self.con.execute(f"""
-            CREATE TABLE traces_bad AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE traces_bad AS
             SELECT * FROM read_parquet('{abnormal_traces}')
-        """)
+        """
+        )
 
     def _load_conclusion(self):
         conclusion_file = self.input_folder / "conclusion.parquet"
         assert conclusion_file.exists()
-        self.con.execute(f"""
-            CREATE TABLE conclusion AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE conclusion AS
             SELECT * FROM read_parquet('{conclusion_file}')
-        """)
+        """
+        )
 
     def _load_metrics(self):
         normal_metrics = self.input_folder / "normal_metrics.parquet"
         assert normal_metrics.exists()
-        self.con.execute(f"""
-            CREATE TABLE metrics_good AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE metrics_good AS
             SELECT * FROM read_parquet('{normal_metrics}')
-        """)
+        """
+        )
 
         abnormal_metrics = self.input_folder / "abnormal_metrics.parquet"
         assert abnormal_metrics.exists()
-        self.con.execute(f"""
-            CREATE TABLE metrics_bad AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE metrics_bad AS
             SELECT * FROM read_parquet('{abnormal_metrics}')
-        """)
+        """
+        )
 
     def _load_metrics_hist(self):
         normal_metrics = self.input_folder / "normal_metrics_histogram.parquet"
         assert normal_metrics.exists()
-        self.con.execute(f"""
-            CREATE TABLE metrics_hist_good AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE metrics_hist_good AS
             SELECT * FROM read_parquet('{normal_metrics}')
-        """)
+        """
+        )
 
         abnormal_metrics = self.input_folder / "abnormal_metrics_histogram.parquet"
         assert abnormal_metrics.exists()
-        self.con.execute(f"""
-            CREATE TABLE metrics_hist_bad AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE metrics_hist_bad AS
             SELECT * FROM read_parquet('{abnormal_metrics}')
-        """)
+        """
+        )
 
     def _load_metrics_sum(self):
         normal_metrics = self.input_folder / "normal_metrics_sum.parquet"
         assert normal_metrics.exists()
-        self.con.execute(f"""
-            CREATE TABLE metrics_sum_good AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE metrics_sum_good AS
             SELECT * FROM read_parquet('{normal_metrics}')
-        """)
+        """
+        )
 
         abnormal_metrics = self.input_folder / "abnormal_metrics_sum.parquet"
         assert abnormal_metrics.exists()
-        self.con.execute(f"""
-            CREATE TABLE metrics_sum_bad AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE metrics_sum_bad AS
             SELECT * FROM read_parquet('{abnormal_metrics}')
-        """)
+        """
+        )
 
     def _load_logs(self):
         normal_logs = self.input_folder / "normal_logs.parquet"
         assert normal_logs.exists()
-        self.con.execute(f"""
-            CREATE TABLE logs_good AS 
+        self.con.execute(
+            f"""
+            CREATE TABLE logs_good AS
             SELECT * FROM read_parquet('{normal_logs}')
-        """)
+        """
+        )
 
         abnormal_logs = self.input_folder / "abnormal_logs.parquet"
         assert abnormal_logs.exists()
-        self.con.execute(f"""
-        CREATE TABLE logs_bad AS 
+        self.con.execute(
+            f"""
+        CREATE TABLE logs_bad AS
             SELECT * FROM read_parquet('{abnormal_logs}')
-        """)
+        """
+        )
 
 
 # ============================================================================
@@ -153,7 +175,7 @@ class SDGBuilder:
             child.service_name AS callee_service,
             child.span_name AS callee_span_name
         FROM all_traces AS parent
-        JOIN all_traces AS child 
+        JOIN all_traces AS child
             ON parent.span_id = child.parent_span_id
             AND parent.trace_id = child.trace_id
         WHERE parent.service_name IS NOT NULL

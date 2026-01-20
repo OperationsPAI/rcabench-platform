@@ -421,7 +421,13 @@ def _export_html(df: pd.DataFrame, merge_columns: list[str] | None = None, **kwa
 
 
 def _export_formatted_text(df: pd.DataFrame, max_rows: int | None = None, max_cols: int | None = None, **kwargs) -> str:
-    default_kwargs = {"index": False, "max_cols": max_cols, "max_rows": max_rows, "width": None, "max_colwidth": None}
+    default_kwargs = {
+        "index": False,
+        "max_cols": max_cols,
+        "max_rows": max_rows,
+        "width": None,
+        "max_colwidth": None,
+    }
     default_kwargs.update(kwargs)
 
     # Set pandas display options
@@ -438,7 +444,12 @@ def _export_formatted_text(df: pd.DataFrame, max_rows: int | None = None, max_co
         return str(df)
 
 
-def _export_png(df: pd.DataFrame, output_file: str | Path, merge_columns: list[str] | None = None, **kwargs) -> None:
+def _export_png(
+    df: pd.DataFrame,
+    output_file: str | Path,
+    merge_columns: list[str] | None = None,
+    **kwargs,
+) -> None:
     """Export DataFrame as PNG image using matplotlib with intelligent row width adjustment"""
     try:
         import matplotlib.pyplot as plt
@@ -497,7 +508,10 @@ def _export_png(df: pd.DataFrame, output_file: str | Path, merge_columns: list[s
     min_width, min_height = default_kwargs["min_figsize"]
     max_width, max_height = default_kwargs["max_figsize"]
 
-    optimal_figsize = (max(min_width, min(max_width, base_width)), max(min_height, min(max_height, base_height)))
+    optimal_figsize = (
+        max(min_width, min(max_width, base_width)),
+        max(min_height, min(max_height, base_height)),
+    )
 
     # Use provided figsize if specified, otherwise use calculated size
     figsize = default_kwargs["figsize"] or optimal_figsize

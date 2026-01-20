@@ -745,7 +745,10 @@ def save_analysis_results(state: AnalysisState, output_path: Path) -> AnalysisSt
 
 
 def platform_convert(
-    injection_name: str, in_p: Path | None = None, ou_p: Path | None = None, system: str = "ts"
+    injection_name: str,
+    in_p: Path | None = None,
+    ou_p: Path | None = None,
+    system: str = "ts",
 ) -> None:
     from rcabench_platform.v2.sources.convert import convert_datapack
     from rcabench_platform.v2.sources.rcabench import RCABenchDatapackLoader
@@ -797,7 +800,11 @@ def platform_convert(
 @app.command()
 @timeit()
 def run(
-    in_p: Path | None = None, ou_p: Path | None = None, system: str = "ts", convert: bool = False, online: bool = False
+    in_p: Path | None = None,
+    ou_p: Path | None = None,
+    system: str = "ts",
+    convert: bool = False,
+    online: bool = False,
 ) -> AnalysisResult | None:
     start_time = datetime.now()
     input_path, output_path = setup_paths_and_validation(in_p, ou_p)

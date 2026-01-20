@@ -111,7 +111,9 @@ class Item:
 
             # Calculate metrics with all groundtruth services
             metric_item = calculate_metrics_for_level(
-                groundtruth_items=unique_groundtruth_services, predictions=predictions, level="service"
+                groundtruth_items=unique_groundtruth_services,
+                predictions=predictions,
+                level="service",
             )
 
             if algo in self._algo_durations:
@@ -202,7 +204,10 @@ def get_execution_item(
 
     # Collect data grouped by datapack_name
     # datapack_name -> { algorithm -> (execution_duration, groundtruth, predictions) }
-    datapack_algo_data: dict[str, dict[str, tuple[float, list[ChaosGroundtruth], list[GranularityResultItem]]]] = {}
+    datapack_algo_data: dict[
+        str,
+        dict[str, tuple[float, list[ChaosGroundtruth], list[GranularityResultItem]]],
+    ] = {}
 
     for item in items:
         assert item.algorithm is not None
@@ -295,7 +300,9 @@ def get_individual_service(
     return f"{service.source}->{service.target}", True
 
 
-def get_resources(namespace: str) -> tuple[dict[str, ChaosResourceField], ChaosResources]:
+def get_resources(
+    namespace: str,
+) -> tuple[dict[str, ChaosResourceField], ChaosResources]:
     client = get_rcabench_client()
     api = InjectionsApi(client)
 

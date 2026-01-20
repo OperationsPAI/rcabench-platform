@@ -231,7 +231,9 @@ def _get_fault_target_coverages(coverage_df: pl.DataFrame, is_pair: bool) -> dic
     return result
 
 
-def get_fault_service_coverages(coverage_df: pl.DataFrame) -> dict[str, dict[str, float]]:
+def get_fault_service_coverages(
+    coverage_df: pl.DataFrame,
+) -> dict[str, dict[str, float]]:
     return _get_fault_target_coverages(coverage_df, is_pair=False)
 
 

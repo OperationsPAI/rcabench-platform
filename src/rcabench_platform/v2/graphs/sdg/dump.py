@@ -83,7 +83,11 @@ def replace_large_set(data: dict[str, Any]):
 def replace_large_df(data: dict[str, Any]):
     for k, v in data.items():
         if isinstance(v, pl.DataFrame):
-            data[k] = {"len": len(v), "schema": v.schema, "content": "<large DataFrame>"}
+            data[k] = {
+                "len": len(v),
+                "schema": v.schema,
+                "content": "<large DataFrame>",
+            }
         elif isinstance(v, dict):
             replace_large_df(v)
 

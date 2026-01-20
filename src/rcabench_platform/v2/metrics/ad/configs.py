@@ -164,9 +164,9 @@ class EnhancedLatencyConfig(DetectionConfig):
 
     """
     # === Percentile absolute anomaly thresholds ===
-    # Use absolute thresholds for anomaly detection when baseline latency is small, avoid false positives 
+    # Use absolute thresholds for anomaly detection when baseline latency is small, avoid false positives
     # from high multipliers of small values
-    # Average latency absolute anomaly threshold(seconds), directly determine as anomaly when current 
+    # Average latency absolute anomaly threshold(seconds), directly determine as anomaly when current
     # latency exceeds 2 seconds
     # P90 latency absolute anomaly threshold(seconds), adapt to P90 statistical characteristics
     # P95 latency absolute anomaly threshold(seconds), higher absolute threshold

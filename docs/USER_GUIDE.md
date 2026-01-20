@@ -33,7 +33,7 @@ For dataset analysis functionality (includes graphviz and matplotlib):
 # Using uv
 uv add "rcabench-platform[analysis]"
 
-# Using pip  
+# Using pip
 pip install "rcabench-platform[analysis]"
 ```
 
@@ -370,8 +370,8 @@ with RCABenchClient() as client:
         search=DtoDatasetV2SearchReq(search="")
     )
     print(f"Found {len(datasets.data.items)} datasets")
-    
-    # Work with algorithms  
+
+    # Work with algorithms
     algorithms_api = AlgorithmsApi(client)
     algorithms = algorithms_api.api_v2_algorithms_get()
     print(f"Found {len(algorithms.data.items)} algorithms")
@@ -387,25 +387,25 @@ class MyCustomAlgorithm(Algorithm):
     def needs_cpu_count(self) -> int | None:
         # Return number of CPU cores needed, or None for all available cores
         return 1
-    
+
     def __call__(self, args: AlgorithmArgs) -> list[AlgorithmAnswer]:
         # Implement your RCA logic here
         # args.dataset: dataset name
-        # args.datapack: datapack name  
+        # args.datapack: datapack name
         # args.input_folder: Path to input data
         # args.output_folder: Path to save results
-        
+
         # Example: Simple random ranking
         services = ["service-a", "service-b", "service-c"]
         results = []
-        
+
         for i, service in enumerate(services):
             results.append(AlgorithmAnswer(
                 level="service",
                 name=service,
                 rank=i + 1
             ))
-        
+
         return results
 
 # Register your algorithm
@@ -425,7 +425,7 @@ class MyCustomSampler(TraceSampler):
     def needs_cpu_count(self) -> int | None:
         # Return number of CPU cores needed, or None for all available cores
         return 1
-    
+
     def __call__(self, args: SamplerArgs) -> list[SampleResult]:
         # Implement your sampling logic here
         # args.dataset: dataset name
@@ -434,13 +434,13 @@ class MyCustomSampler(TraceSampler):
         # args.output_folder: Path to save results
         # args.sampling_rate: Target sampling rate (0.0 to 1.0)
         # args.mode: SamplingMode.ONLINE or SamplingMode.OFFLINE
-        
+
         # Load traces from normal_traces.parquet and abnormal_traces.parquet
         import polars as pl
-        
+
         normal_traces_lf = pl.scan_parquet(args.input_folder / "normal_traces.parquet")
         abnormal_traces_lf = pl.scan_parquet(args.input_folder / "abnormal_traces.parquet")
-        
+
         # Get unique trace_ids
         combined_traces_lf = pl.concat([
             normal_traces_lf.select("trace_id"),
@@ -448,14 +448,14 @@ class MyCustomSampler(TraceSampler):
         ])
         unique_traces = combined_traces_lf.unique().collect()
         trace_ids = unique_traces["trace_id"].to_list()
-        
+
         # Implement your sampling strategy
         results = []
         for trace_id in trace_ids:
             # Calculate sample score based on your algorithm
             sample_score = 0.5  # Example: constant score
             results.append(SampleResult(trace_id=trace_id, sample_score=sample_score))
-        
+
         # Apply sampling mode
         if args.mode == SamplingMode.ONLINE:
             # Online mode: independent sampling strategy
@@ -476,7 +476,7 @@ class MyCustomSampler(TraceSampler):
             results.sort(key=lambda x: x.sample_score, reverse=True)
             target_count = int(len(results) * args.sampling_rate)
             return results[:target_count]
-        
+
         return results
 
 # Register your sampler
@@ -501,7 +501,7 @@ print(f"Random algorithm needs {random_algo.needs_cpu_count()} CPU cores")
 # Create algorithm arguments
 args = AlgorithmArgs(
     dataset="my-dataset",
-    datapack="my-datapack", 
+    datapack="my-datapack",
     input_folder=Path("/path/to/input"),
     output_folder=Path("/path/to/output")
 )
@@ -573,7 +573,7 @@ print(f"Generated {len(sli_metrics)} SLI metric records")
 service_metrics = sli_metrics.filter(
     pl.col("service_name") == "ts-user-service"
 ).select([
-    "time", "span_name", "avg_duration", "duration_p95", 
+    "time", "span_name", "avg_duration", "duration_p95",
     "total_count", "error_count"
 ])
 ```
@@ -589,7 +589,7 @@ from rcabench_platform.v2.metrics.algo_metrics import (
 # Get metrics for a single algorithm
 metrics = get_metrics_by_dataset(
     algorithm="random",
-    dataset="my-dataset", 
+    dataset="my-dataset",
     dataset_version="v1.0",
     tag="experiment-1"
 )
@@ -599,7 +599,7 @@ print(f"Metrics: {metrics}")
 comparison_metrics = get_multi_algorithms_metrics_by_dataset(
     algorithms=["random", "baro", "nsigma"],
     dataset="my-dataset",
-    dataset_version="v1.0", 
+    dataset_version="v1.0",
     tag="comparison-experiment"
 )
 print(f"Comparison metrics: {comparison_metrics}")
@@ -749,7 +749,7 @@ algorithms_to_test = ["random", "baro"]
 
 with RCABenchClient() as client:
     api = DatasetsApi(client)
-    
+
     for dataset in datasets_to_process:
         for algorithm in algorithms_to_test:
             # Submit execution programmatically
@@ -827,7 +827,7 @@ python main.py eval batch \
 python main.py eval perf-report rcabench-train --include-sampled
 
 # The unified report will show:
-# - Algorithm performance on original data (sampler.name = null)  
+# - Algorithm performance on original data (sampler.name = null)
 # - Algorithm performance on sampled data (with sampler details)
 # - Direct comparison of accuracy impact from sampling
 
@@ -855,7 +855,7 @@ perf_df = pl.read_parquet(config.output / "sampler_reports" / "detailed_perf.par
 coverage_analysis = perf_df.select([
     "sampler", "dataset", "sampling_rate", "mode",
     "comprehensiveness",  # API coverage (renamed from comprehensiveness)
-    "path_coverage",      # Execution path coverage  
+    "path_coverage",      # Execution path coverage
     "event_coverage",     # Event coverage (traces + logs)
     "total_entry_types",  # Total API types
     "total_path_types",   # Total execution path types
@@ -875,7 +875,7 @@ print(interesting_cases)
 # Analyze coverage diversity across all three metrics
 diversity_analysis = perf_df.group_by(["sampler", "sampling_rate"]).agg([
     pl.col("comprehensiveness").mean().alias("avg_api_coverage"),
-    pl.col("path_coverage").mean().alias("avg_path_coverage"), 
+    pl.col("path_coverage").mean().alias("avg_path_coverage"),
     pl.col("event_coverage").mean().alias("avg_event_coverage"),
     (pl.col("total_path_types") / pl.col("total_entry_types")).mean().alias("path_complexity_ratio"),
     (pl.col("total_event_pairs") / pl.col("total_entry_types")).mean().alias("event_complexity_ratio")
@@ -919,7 +919,7 @@ For algorithms stored in Harbor registry:
 
 1. Create algorithm folder with required files:
    - `info.toml`: Algorithm metadata
-   - `Dockerfile`: Container definition  
+   - `Dockerfile`: Container definition
    - `entrypoint.sh`: Algorithm entry point
 
 2. Upload to platform:
@@ -941,7 +941,7 @@ The platform provides comprehensive trace sampling capabilities for evaluating s
 
 #### Sampling Modes
 
-- **Online Mode**: Each trace decision is made independently. The implementation can use various strategies (threshold-based, probability-based, etc.) and the actual sampling rate may vary from the target rate. 
+- **Online Mode**: Each trace decision is made independently. The implementation can use various strategies (threshold-based, probability-based, etc.) and the actual sampling rate may vary from the target rate.
 - **Offline Mode**: Batch sampling that considers all traces together. Typically implemented as top-N selection that sorts all traces by their scores and selects exactly the top `sampling_rate * total_traces` traces. This guarantees the exact sampling rate.
 
 #### Performance Metrics

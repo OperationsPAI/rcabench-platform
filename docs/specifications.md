@@ -88,7 +88,7 @@ Sampler performance is evaluated using the following metrics:
   - Calculated as part of event coverage analysis using unique trace patterns
 + **Benefit-Cost Ratio**: Efficiency of unique pattern discovery = $\frac{\text{Unique Trace Patterns Discovered}}{\text{Actual Sample Count}}$
   - Uses unique trace patterns from event encoding as "benefit"
-  - Actual sample count as "cost" 
+  - Actual sample count as "cost"
   - Higher ratio indicates more efficient discovery of diverse trace patterns
   - Calculated as part of event coverage analysis
 + **Intra-Sample Average Dissimilarity**: Diversity of sampled trace collection = $\frac{\sum_{i=1}^{N} \sum_{j=i+1}^{N} (1 - JaccardSimilarity(T_i, T_j))}{N(N-1)/2}$

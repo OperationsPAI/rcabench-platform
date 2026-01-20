@@ -105,7 +105,11 @@ class LogsSearcher:
     ) -> tuple[pl.DataFrame, dict[str, Any]]:
         """Create paginated logs table using Polars for improved performance."""
         if len(df) == 0:
-            return pl.DataFrame(), {"total_pages": 0, "current_page": 0, "total_logs": 0}
+            return pl.DataFrame(), {
+                "total_pages": 0,
+                "current_page": 0,
+                "total_logs": 0,
+            }
 
         # Calculate pagination
         total_logs = len(df)
@@ -326,7 +330,8 @@ class LogsSearcher:
             if col in display_df.columns:
                 display_df = display_df.with_columns(
                     pl.col(col).map_elements(
-                        lambda x: truncate_string(str(x), 200) if x is not None else "", return_dtype=pl.Utf8
+                        lambda x: truncate_string(str(x), 200) if x is not None else "",
+                        return_dtype=pl.Utf8,
                     )
                 )
 

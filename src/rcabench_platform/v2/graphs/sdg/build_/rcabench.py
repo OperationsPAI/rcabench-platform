@@ -11,7 +11,12 @@ from ....logging import logger, timeit
 from ....pedestals import get_pedestal
 from ....utils.serde import load_json
 from ..defintion import SDG, DepEdge, DepKind, Indicator, PlaceKind, PlaceNode
-from .common import add_node_opt, calc_metric_min_max, is_constant_metric, replace_enum_values
+from .common import (
+    add_node_opt,
+    calc_metric_min_max,
+    is_constant_metric,
+    replace_enum_values,
+)
 
 
 @timeit()
@@ -703,7 +708,10 @@ def apply_services_link(sdg: SDG) -> None:
         resource = get_parent_resource_from_pod_name(pod_node.self_name)
         if resource[1]:
             service_node = sdg.add_node(PlaceNode(kind=PlaceKind.service, self_name=resource[1]), strict=False)
-            sdg.add_edge(DepEdge(src_id=service_node.id, dst_id=pod_node.id, kind=DepKind.routes_to), strict=False)
+            sdg.add_edge(
+                DepEdge(src_id=service_node.id, dst_id=pod_node.id, kind=DepKind.routes_to),
+                strict=False,
+            )
 
 
 def apply_extra_indicators(sdg: SDG) -> None:
@@ -756,7 +764,13 @@ def apply_detector_conclusion(sdg: SDG, input_folder: Path) -> None:
         assert isinstance(span_name, str) and span_name
         for node in ts_ui_dashboard_functions:
             if span_name in node.self_name:
-                sli_nodes.append({"node.id": node.id, "node.self_name": node.self_name, "issues": issues})
+                sli_nodes.append(
+                    {
+                        "node.id": node.id,
+                        "node.self_name": node.self_name,
+                        "issues": issues,
+                    }
+                )
                 break
 
     sdg.data["detector.sli.nodes"] = sli_nodes

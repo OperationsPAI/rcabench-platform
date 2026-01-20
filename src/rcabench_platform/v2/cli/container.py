@@ -5,7 +5,11 @@ from typing import Annotated
 
 import pandas as pd
 import typer
-from rcabench.openapi import ExecutionsApi, GranularityResultItem, UploadGranularityResultReq
+from rcabench.openapi import (
+    ExecutionsApi,
+    GranularityResultItem,
+    UploadGranularityResultReq,
+)
 
 from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
 from ..clients.rcabench_ import get_rcabench_client

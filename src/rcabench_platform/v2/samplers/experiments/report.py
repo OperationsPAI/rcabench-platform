@@ -34,7 +34,11 @@ def generate_sampler_perf_report(
     """
     # Auto-detect available samplers, rates, and modes if not specified
     if samplers is None or sampling_rates is None or modes is None:
-        available_samplers, available_rates, available_modes = _scan_available_configurations(datasets)
+        (
+            available_samplers,
+            available_rates,
+            available_modes,
+        ) = _scan_available_configurations(datasets)
 
         if samplers is None:
             samplers = available_samplers
@@ -260,7 +264,10 @@ def generate_sampler_perf_report(
         dataset_agg_df = agg_perf_df.filter(pl.col("dataset") == dataset)
 
         if len(dataset_detailed_df) > 0:
-            save_parquet(dataset_detailed_df, path=dataset_output_folder / "detailed_perf.parquet")
+            save_parquet(
+                dataset_detailed_df,
+                path=dataset_output_folder / "detailed_perf.parquet",
+            )
             save_parquet(dataset_agg_df, path=dataset_output_folder / "aggregated_perf.parquet")
             logger.info(f"Saved {dataset} sampler reports to: {dataset_output_folder}")
 
@@ -300,7 +307,9 @@ def generate_sampler_perf_report(
     logger.info(f"Dataset-specific results saved to: {config.output / 'sampler_reports'}")
 
 
-def _scan_available_configurations(datasets: list[str]) -> tuple[list[str], list[float], list[SamplingMode]]:
+def _scan_available_configurations(
+    datasets: list[str],
+) -> tuple[list[str], list[float], list[SamplingMode]]:
     """
     Scan all available sampler configurations across datasets.
 

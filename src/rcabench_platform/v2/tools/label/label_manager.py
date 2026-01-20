@@ -19,7 +19,8 @@ class LabelManager:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS labels (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE NOT NULL,
@@ -27,9 +28,11 @@ class LabelManager:
                     color TEXT DEFAULT '#007bff',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS dataset_labels (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     dataset_path TEXT NOT NULL,
@@ -38,9 +41,11 @@ class LabelManager:
                     FOREIGN KEY (label_id) REFERENCES labels (id),
                     UNIQUE(dataset_path, label_id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS annotations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     dataset_path TEXT NOT NULL,
@@ -51,9 +56,11 @@ class LabelManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS selection_templates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT UNIQUE NOT NULL,
@@ -61,7 +68,8 @@ class LabelManager:
                     metrics TEXT NOT NULL,   -- JSON string of selected metrics
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
             conn.commit()
 
@@ -89,11 +97,13 @@ class LabelManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT id, name, description, color, created_at
                     FROM labels
                     ORDER BY name
-                """)
+                """
+                )
                 rows = cursor.fetchall()
                 columns = ["id", "name", "description", "color", "created_at"]
 
@@ -192,18 +202,29 @@ class LabelManager:
             return []
 
     def add_annotation(
-        self, dataset_path: str, annotation_type: str, annotation_value: str, confidence: float = 1.0, notes: str = ""
+        self,
+        dataset_path: str,
+        annotation_type: str,
+        annotation_value: str,
+        confidence: float = 1.0,
+        notes: str = "",
     ) -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    INSERT INTO annotations 
+                    INSERT INTO annotations
                     (dataset_path, annotation_type, annotation_value, confidence, notes)
                     VALUES (?, ?, ?, ?, ?)
                 """,
-                    (dataset_path, annotation_type, annotation_value, confidence, notes),
+                    (
+                        dataset_path,
+                        annotation_type,
+                        annotation_value,
+                        confidence,
+                        notes,
+                    ),
                 )
                 conn.commit()
                 return True
@@ -217,7 +238,7 @@ class LabelManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    SELECT id, annotation_type, annotation_value, confidence, notes, 
+                    SELECT id, annotation_type, annotation_value, confidence, notes,
                            created_at, updated_at
                     FROM annotations
                     WHERE dataset_path = ?
@@ -251,7 +272,7 @@ class LabelManager:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    UPDATE annotations 
+                    UPDATE annotations
                     SET annotation_value = ?, confidence = ?, notes = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
@@ -289,25 +310,29 @@ class LabelManager:
                 total_datasets = cursor.fetchone()[0]
 
                 # Label usage statistics
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT l.name, COUNT(dl.dataset_path) as usage_count
                     FROM labels l
                     LEFT JOIN dataset_labels dl ON l.id = dl.label_id
                     GROUP BY l.id, l.name
                     ORDER BY usage_count DESC
-                """)
+                """
+                )
                 label_usage = dict(cursor.fetchall())
 
                 # Annotation statistics
                 cursor.execute("SELECT COUNT(*) FROM annotations")
                 total_annotations = cursor.fetchone()[0]
 
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT annotation_type, COUNT(*) as count
                     FROM annotations
                     GROUP BY annotation_type
                     ORDER BY count DESC
-                """)
+                """
+                )
                 annotation_types = dict(cursor.fetchall())
 
                 return {
@@ -336,13 +361,21 @@ class LabelManager:
                 )
 
                 # Export dataset labels with label names
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT dl.*, l.name as label_name
                     FROM dataset_labels dl
                     JOIN labels l ON dl.label_id = l.id
-                """)
+                """
+                )
                 dataset_labels_rows = cursor.fetchall()
-                dataset_labels_columns = ["id", "dataset_path", "label_id", "created_at", "label_name"]
+                dataset_labels_columns = [
+                    "id",
+                    "dataset_path",
+                    "label_id",
+                    "created_at",
+                    "label_name",
+                ]
                 dataset_labels_df = (
                     pl.DataFrame(dataset_labels_rows, schema=dataset_labels_columns, orient="row")
                     if dataset_labels_rows
@@ -368,7 +401,11 @@ class LabelManager:
                     else pl.DataFrame(schema=annotations_columns)
                 )
 
-                return {"labels": labels_df, "dataset_labels": dataset_labels_df, "annotations": annotations_df}
+                return {
+                    "labels": labels_df,
+                    "dataset_labels": dataset_labels_df,
+                    "annotations": annotations_df,
+                }
         except Exception as e:
             st.error(f"Failed to export data: {str(e)}")
             return {}
@@ -426,11 +463,13 @@ class LabelManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT id, name, services, metrics, created_at
                     FROM selection_templates
                     ORDER BY name
-                """)
+                """
+                )
                 rows = cursor.fetchall()
                 columns = ["id", "name", "services", "metrics", "created_at"]
 

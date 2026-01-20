@@ -192,7 +192,12 @@ def plot_heatmap(meta: HeatmapMeta) -> None:
 class VisDatapacks:
     BAR_DATA_KEY = ["degree", "name", "count"]
 
-    def __init__(self, config: VisInjectionsConfig, distributions_dict: dict[str, dict[str, Any]], metrics: list[str]):
+    def __init__(
+        self,
+        config: VisInjectionsConfig,
+        distributions_dict: dict[str, dict[str, Any]],
+        metrics: list[str],
+    ):
         self.config = config
         self.distributions_dict = distributions_dict
         self.metrics = metrics

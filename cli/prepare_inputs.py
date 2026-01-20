@@ -48,13 +48,13 @@ def query_metrics(save_path: Path, namespace: str, start_time: str, end_time: st
         MetricDescription,
         Value,
         multiIf(
-                om.Attributes['source_workload'] != '', 
+                om.Attributes['source_workload'] != '',
                 om.Attributes['source_workload'],
-                om.Attributes['destination_workload'] != '', 
+                om.Attributes['destination_workload'] != '',
                 om.Attributes['destination_workload'],
-                om.ResourceAttributes['k8s.deployment.name'] != '', 
+                om.ResourceAttributes['k8s.deployment.name'] != '',
                 om.ResourceAttributes['k8s.deployment.name'],
-                om.ResourceAttributes['k8s.statefulset.name'] != '', 
+                om.ResourceAttributes['k8s.statefulset.name'] != '',
                 om.ResourceAttributes['k8s.statefulset.name'],
                 om.ServiceName
         ) AS ServiceName,
@@ -100,7 +100,7 @@ def query_metrics_sum(save_path: Path, namespace: str, start_time: str, end_time
         otel_metrics_sum omg
     WHERE
         (
-            omg.ResourceAttributes['k8s.namespace.name'] = '{namespace}' 
+            omg.ResourceAttributes['k8s.namespace.name'] = '{namespace}'
             OR omg.ResourceAttributes['service.namespace'] = '{namespace}'
             OR omg.Attributes['destination_namespace'] = '{namespace}'
             OR omg.Attributes['source_namespace'] = '{namespace}'
@@ -143,7 +143,7 @@ def query_metrics_histogram(save_path: Path, namespace: str, start_time: str, en
         otel_metrics_histogram omh
     WHERE
         (
-            omh.ResourceAttributes['k8s.namespace.name'] = '{namespace}' 
+            omh.ResourceAttributes['k8s.namespace.name'] = '{namespace}'
             OR omh.ResourceAttributes['service.namespace'] = '{namespace}'
             OR omh.Attributes['destination_namespace'] = '{namespace}'
             OR omh.Attributes['source_namespace'] = '{namespace}'
@@ -185,7 +185,7 @@ def query_logs(save_path: Path, namespace: str, start_time: str, end_time: str):
 @timeit()
 def query_traces(save_path: Path, namespace: str, start_time: str, end_time: str):
     query = f"""
-    SELECT 
+    SELECT
         Timestamp,
         TraceId,
         SpanId,
@@ -213,7 +213,7 @@ def query_traces(save_path: Path, namespace: str, start_time: str, end_time: str
 @timeit()
 def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time: str):
     query = f"""
-    SELECT 
+    SELECT
         TraceId,
         Start,
         End

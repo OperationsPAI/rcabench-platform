@@ -224,7 +224,10 @@ def calculate_sampler_performance(
             pl.col("span_name").map_elements(pedestal.normalize_path, return_dtype=pl.String).alias("entry_span")
         )
         trace_entries_lf = traces_with_entry_lf.group_by("trace_id").agg(
-            [pl.first("entry_span").alias("entry_span"), pl.first("is_abnormal").alias("is_abnormal")]
+            [
+                pl.first("entry_span").alias("entry_span"),
+                pl.first("is_abnormal").alias("is_abnormal"),
+            ]
         )
         trace_entries_df = trace_entries_lf.collect()
         entry_span_counts = trace_entries_df.group_by("entry_span").agg(pl.len().alias("count"))
@@ -233,8 +236,24 @@ def calculate_sampler_performance(
         # Calculate total path types
         all_traces_df = pl.concat(
             [
-                normal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
-                abnormal_traces_lf.select(["trace_id", "span_id", "parent_span_id", "service_name", "span_name"]),
+                normal_traces_lf.select(
+                    [
+                        "trace_id",
+                        "span_id",
+                        "parent_span_id",
+                        "service_name",
+                        "span_name",
+                    ]
+                ),
+                abnormal_traces_lf.select(
+                    [
+                        "trace_id",
+                        "span_id",
+                        "parent_span_id",
+                        "service_name",
+                        "span_name",
+                    ]
+                ),
             ]
         ).collect()
         path_coverage_metrics = calculate_path_coverage(all_traces_df, set(), dataset)  # Empty sampled set
@@ -280,8 +299,24 @@ def calculate_sampler_performance(
             abnormal_logs_lf = pl.scan_parquet(abnormal_logs_path)
             logs_for_events_df = pl.concat(
                 [
-                    normal_logs_lf.select(["trace_id", "span_id", "service_name", "time", "attr.template_id"]),
-                    abnormal_logs_lf.select(["trace_id", "span_id", "service_name", "time", "attr.template_id"]),
+                    normal_logs_lf.select(
+                        [
+                            "trace_id",
+                            "span_id",
+                            "service_name",
+                            "time",
+                            "attr.template_id",
+                        ]
+                    ),
+                    abnormal_logs_lf.select(
+                        [
+                            "trace_id",
+                            "span_id",
+                            "service_name",
+                            "time",
+                            "attr.template_id",
+                        ]
+                    ),
                 ]
             ).collect()
 
@@ -385,7 +420,10 @@ def calculate_sampler_performance(
 
     # Get one entry span per trace (first occurrence)
     trace_entries_lf = traces_with_entry_lf.group_by("trace_id").agg(
-        [pl.first("entry_span").alias("entry_span"), pl.first("is_abnormal").alias("is_abnormal")]
+        [
+            pl.first("entry_span").alias("entry_span"),
+            pl.first("is_abnormal").alias("is_abnormal"),
+        ]
     )
 
     trace_entries_df = trace_entries_lf.collect()
@@ -509,7 +547,11 @@ def calculate_sampler_performance(
 
     # Always calculate event coverage to get total_event_pairs, even when no traces sampled
     event_coverage_metrics = calculate_event_coverage(
-        all_traces_for_events_df, logs_for_events_df, sampled_trace_ids, input_folder, dataset
+        all_traces_for_events_df,
+        logs_for_events_df,
+        sampled_trace_ids,
+        input_folder,
+        dataset,
     )
 
     # Calculate span statistics
@@ -730,7 +772,10 @@ def calculate_balance_cv(trace_entries_df: pl.DataFrame, sampled_trace_ids: set[
 
 
 def calculate_gt_trace_proportion(
-    input_folder: Path, all_traces_df: pl.DataFrame, sampled_trace_ids: set[str], abnormal_trace_ids: set[str]
+    input_folder: Path,
+    all_traces_df: pl.DataFrame,
+    sampled_trace_ids: set[str],
+    abnormal_trace_ids: set[str],
 ) -> float:
     """
     Calculate the proportion of ground truth related traces in sampled abnormal traces.
@@ -957,7 +1002,16 @@ def _calculate_normal_only_performance(
 
     # Calculate event coverage (normal traces only, no logs)
     all_traces_for_events_df = normal_traces_lf.select(
-        ["trace_id", "span_id", "parent_span_id", "service_name", "span_name", "time", "duration", "attr.status_code"]
+        [
+            "trace_id",
+            "span_id",
+            "parent_span_id",
+            "service_name",
+            "span_name",
+            "time",
+            "duration",
+            "attr.status_code",
+        ]
     ).collect()
 
     event_coverage_metrics = calculate_event_coverage(

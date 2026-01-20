@@ -260,7 +260,11 @@ class TracesVisualizer:
                 # Try to parse string timestamp
                 try:
                     # Try common formats
-                    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"]:
+                    for fmt in [
+                        "%Y-%m-%d %H:%M:%S",
+                        "%Y-%m-%dT%H:%M:%S",
+                        "%Y-%m-%dT%H:%M:%S.%f",
+                    ]:
                         try:
                             dt = datetime.strptime(timestamp, fmt)
                             return dt.strftime("%Y-%m-%d %H:%M:%S")

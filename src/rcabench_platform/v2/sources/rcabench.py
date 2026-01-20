@@ -330,7 +330,12 @@ class Converter:
             del template_miner
 
             template_mapping_df = pl.DataFrame(
-                message_mappings, schema={"message": pl.String, "template_id": pl.UInt16, "log_template": pl.String}
+                message_mappings,
+                schema={
+                    "message": pl.String,
+                    "template_id": pl.UInt16,
+                    "log_template": pl.String,
+                },
             )
 
             df = (

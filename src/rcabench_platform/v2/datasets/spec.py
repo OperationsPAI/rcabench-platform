@@ -71,7 +71,12 @@ def predefined_dependency() -> nx.DiGraph:
         ],
         "ts-admin-user-service": ["ts-user-service"],
         "ts-auth-service": ["ts-verification-code-service"],
-        "ts-basic-service": ["ts-price-service", "ts-route-service", "ts-station-service", "ts-train-service"],
+        "ts-basic-service": [
+            "ts-price-service",
+            "ts-route-service",
+            "ts-station-service",
+            "ts-train-service",
+        ],
         "ts-cancel-service": [
             "ts-inside-payment-service",
             "ts-notification-service",
@@ -88,7 +93,11 @@ def predefined_dependency() -> nx.DiGraph:
             "ts-travel-service",
             "ts-rabbitmq",
         ],
-        "ts-inside-payment-service": ["ts-order-other-service", "ts-order-service", "ts-payment-service"],
+        "ts-inside-payment-service": [
+            "ts-order-other-service",
+            "ts-order-service",
+            "ts-payment-service",
+        ],
         "ts-order-other-service": ["ts-station-service"],
         "ts-order-service": ["ts-station-service"],
         "ts-preserve-other-service": [
@@ -128,10 +137,23 @@ def predefined_dependency() -> nx.DiGraph:
             "ts-travel2-service",
             "ts-travel-service",
         ],
-        "ts-route-plan-service": ["ts-route-service", "ts-travel2-service", "ts-travel-service"],
-        "ts-seat-service": ["ts-config-service", "ts-order-other-service", "ts-order-service"],
+        "ts-route-plan-service": [
+            "ts-route-service",
+            "ts-travel2-service",
+            "ts-travel-service",
+        ],
+        "ts-seat-service": [
+            "ts-config-service",
+            "ts-order-other-service",
+            "ts-order-service",
+        ],
         "ts-security-service": ["ts-order-other-service", "ts-order-service"],
-        "ts-travel2-service": ["ts-basic-service", "ts-route-service", "ts-seat-service", "ts-train-service"],
+        "ts-travel2-service": [
+            "ts-basic-service",
+            "ts-route-service",
+            "ts-seat-service",
+            "ts-train-service",
+        ],
         "ts-travel-plan-service": [
             "ts-route-plan-service",
             "ts-seat-service",
@@ -139,7 +161,12 @@ def predefined_dependency() -> nx.DiGraph:
             "ts-travel2-service",
             "ts-travel-service",
         ],
-        "ts-travel-service": ["ts-basic-service", "ts-route-service", "ts-seat-service", "ts-train-service"],
+        "ts-travel-service": [
+            "ts-basic-service",
+            "ts-route-service",
+            "ts-seat-service",
+            "ts-train-service",
+        ],
         "ts-user-service": ["ts-auth-service"],
         "loadgenerator": ["ts-ui-dashboard"],
     }

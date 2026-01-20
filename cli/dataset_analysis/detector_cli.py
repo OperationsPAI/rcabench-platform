@@ -296,7 +296,7 @@ def extract_span_relations(
             normalized_relationships.add((norm_parent, norm_child))
 
         logger.info(
-            f"Normalized: {len([1 for orig, norm in normalized_map.items() if orig != norm])} / {len(all_span_names)} span names"
+            f"Normalized: {len([1 for orig, norm in normalized_map.items() if orig != norm])} / {len(all_span_names)} span names"  # noqa: E501
         )
         logger.info(f"Normalized relationships: {len(normalized_relationships)}")
 
@@ -317,7 +317,17 @@ def extract_span_relations(
         normalized_map = {name: name for name in all_span_names}
 
     # Remove pure HTTP method nodes and connect their parents to children
-    http_methods = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
+    http_methods = {
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "HEAD",
+        "OPTIONS",
+        "TRACE",
+        "CONNECT",
+    }
 
     # Build parent->children and child->parents maps
     from collections import defaultdict

@@ -8,7 +8,12 @@ from zoneinfo import ZoneInfo
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import polars as pl
-from rcabench.openapi import BatchEvaluateDatapackReq, ContainerRef, EvaluateDatapackSpec, EvaluationsApi
+from rcabench.openapi import (
+    BatchEvaluateDatapackReq,
+    ContainerRef,
+    EvaluateDatapackSpec,
+    EvaluationsApi,
+)
 
 from rcabench_platform.v2.utils.fmap import fmap_processpool
 
@@ -76,7 +81,10 @@ class VisDetector:
                 pl.col("Timestamp").alias("datetime"),
                 (pl.col("Duration") / 1e9).alias("duration"),
                 pl.struct(["SpanAttributes", "StatusCode"])
-                .map_elements(lambda x: self._extract_status_code(x["SpanAttributes"]), return_dtype=pl.Utf8)
+                .map_elements(
+                    lambda x: self._extract_status_code(x["SpanAttributes"]),
+                    return_dtype=pl.Utf8,
+                )
                 .alias("status_code"),
             ]
         ).sort("Timestamp")
@@ -162,7 +170,11 @@ class VisDetector:
 
             # Add vertical line at last normal time
             ax_latency.axvline(
-                x=self.last_normal_time, color="blue", linestyle="--", alpha=0.7, label="Last Normal Time"
+                x=self.last_normal_time,
+                color="blue",
+                linestyle="--",
+                alpha=0.7,
+                label="Last Normal Time",
             )
 
             ax_latency.set_xlabel("Time")
@@ -209,7 +221,11 @@ class VisDetector:
 
             # Add vertical line at last normal time
             ax_status.axvline(
-                x=self.last_normal_time, color="blue", linestyle="--", alpha=0.7, label="Last Normal Time"
+                x=self.last_normal_time,
+                color="blue",
+                linestyle="--",
+                alpha=0.7,
+                label="Last Normal Time",
             )
 
             ax_status.set_xlabel("Time")

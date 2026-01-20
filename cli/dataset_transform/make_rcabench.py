@@ -61,7 +61,11 @@ def build_template():
     src_root = Path("data") / "rcabench_dataset"
 
     # Get all datapacks using the same logic as the dataset loader
-    from rcabench_platform.v2.sources.rcabench import create_template_miner, extract_unique_log_messages, scan_datapacks
+    from rcabench_platform.v2.sources.rcabench import (
+        create_template_miner,
+        extract_unique_log_messages,
+        scan_datapacks,
+    )
 
     datapacks = scan_datapacks(src_root)
     logger.info(f"Found {len(datapacks)} datapacks for template building")
@@ -108,7 +112,10 @@ def test_build_template():
     datapack = "ts0-mysql-bandwidth-5p8bkc"
 
     # Extract unique messages from the specified datapack
-    from rcabench_platform.v2.sources.rcabench import create_template_miner, extract_unique_log_messages
+    from rcabench_platform.v2.sources.rcabench import (
+        create_template_miner,
+        extract_unique_log_messages,
+    )
 
     unique_messages = extract_unique_log_messages(src_root, [datapack])
     logger.info(f"Extracted {unique_messages.height} unique log messages from {datapack}")

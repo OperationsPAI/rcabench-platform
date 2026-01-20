@@ -4,10 +4,7 @@ from pathlib import Path
 import polars as pl
 from dotenv import load_dotenv
 
-from rcabench_platform.v2.analysis.aggregation import (
-    DuckDBAggregator,
-    aggregate,
-)
+from rcabench_platform.v2.analysis.aggregation import DuckDBAggregator, aggregate
 from rcabench_platform.v2.analysis.algo_perf_vis import (
     algo_perf_by_fault_type,
     algo_perf_by_groups,
@@ -45,7 +42,12 @@ load_dotenv()
 
 
 @app.command(name="visualize")
-def visualize(dataset: str, simple: bool, dataset_version: str | None = None, execution_tag: str | None = None) -> None:
+def visualize(
+    dataset: str,
+    simple: bool,
+    dataset_version: str | None = None,
+    execution_tag: str | None = None,
+) -> None:
     items, _ = get_execution_item(
         ALGORITHMS,
         dataset,
@@ -84,8 +86,14 @@ def analysis():
         vis_hook(aggregator.perf_overall(), "perf_overall")
         vis_hook(aggregator.perf_common_failures(5, 10), "common_failures")
         vis_hook(aggregator.perf_group_by_fault_type(), "perf_by_fault_type")
-        algo_perf_by_fault_type(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_fault_type.pdf"))
-        algo_success_by_algo(aggregator.perf_group_by_fault_type(), Path("temp/algo/rq5_perf_by_algo.pdf"))
+        algo_perf_by_fault_type(
+            aggregator.perf_group_by_fault_type(),
+            Path("temp/algo/rq5_perf_by_fault_type.pdf"),
+        )
+        algo_success_by_algo(
+            aggregator.perf_group_by_fault_type(),
+            Path("temp/algo/rq5_perf_by_algo.pdf"),
+        )
     finally:
         aggregator.close()
 
@@ -95,9 +103,16 @@ def rq4():
     df = pl.read_parquet("temp/algo/aggregated_result_true.parquet")
     aggregator = DuckDBAggregator(df)
     try:
-        format_dataframe(aggregator.dataset_fault_type(), "csv", output_file="temp/algo/rq4_generation_process.csv")
+        format_dataframe(
+            aggregator.dataset_fault_type(),
+            "csv",
+            output_file="temp/algo/rq4_generation_process.csv",
+        )
 
-        dataset_anomaly_distribution(aggregator.dataset_fault_type(), Path("temp/algo/rq4_generation_process.pdf"))
+        dataset_anomaly_distribution(
+            aggregator.dataset_fault_type(),
+            Path("temp/algo/rq4_generation_process.pdf"),
+        )
     finally:
         aggregator.close()
 

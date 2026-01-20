@@ -81,7 +81,11 @@ def build_trace_path_encoding(trace_df: pl.DataFrame, dataset_name: str = "") ->
 
     # Start with root spans (sorted by service:operation label)
     root_spans_labeled = [
-        (span_id, f"{spans_data[span_id]['service_name']}:{spans_data[span_id]['span_name']}") for span_id in root_spans
+        (
+            span_id,
+            f"{spans_data[span_id]['service_name']}:{spans_data[span_id]['span_name']}",
+        )
+        for span_id in root_spans
     ]
     root_spans_labeled.sort(key=lambda x: x[1])  # Sort by label
 
@@ -244,7 +248,11 @@ def build_trace_path_encoding_dedup(trace_df: pl.DataFrame, dataset_name: str = 
 
     # Start with root spans (sorted by service:operation label)
     root_spans_labeled = [
-        (span_id, f"{spans_data[span_id]['service_name']}:{spans_data[span_id]['span_name']}") for span_id in root_spans
+        (
+            span_id,
+            f"{spans_data[span_id]['service_name']}:{spans_data[span_id]['span_name']}",
+        )
+        for span_id in root_spans
     ]
     root_spans_labeled.sort(key=lambda x: x[1])  # Sort by label
 

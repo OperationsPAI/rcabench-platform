@@ -508,9 +508,30 @@ def infer_server_fault(
                 containers = find_related_containers(sdg, pod)
                 for container in containers:
                     if detect_func(sdg, container):
-                        add_causal_edge(acg, sdg, container, pod, causal_edge_kind, sdg_edge_id=edge.id)
-                        add_causal_edge(acg, sdg, container, caller, causal_edge_kind, sdg_edge_id=edge.id)
-                        add_causal_edge(acg, sdg, container, callee, causal_edge_kind, sdg_edge_id=edge.id)
+                        add_causal_edge(
+                            acg,
+                            sdg,
+                            container,
+                            pod,
+                            causal_edge_kind,
+                            sdg_edge_id=edge.id,
+                        )
+                        add_causal_edge(
+                            acg,
+                            sdg,
+                            container,
+                            caller,
+                            causal_edge_kind,
+                            sdg_edge_id=edge.id,
+                        )
+                        add_causal_edge(
+                            acg,
+                            sdg,
+                            container,
+                            callee,
+                            causal_edge_kind,
+                            sdg_edge_id=edge.id,
+                        )
                         has_server_fault = True
 
             if has_server_fault:
@@ -523,7 +544,11 @@ def detect_server_failure(sdg: SDG, node: PlaceNode) -> bool:
 
     has_restart_up = has_anomaly(sdg, node, AnomalyKey.restart, AnomalyKind.up)
     if has_restart_up:
-        logger.debug("detected server failure for node: `{}`, anomalies: {}", node.uniq_name, anomalies)
+        logger.debug(
+            "detected server failure for node: `{}`, anomalies: {}",
+            node.uniq_name,
+            anomalies,
+        )
         return True
 
     cpu_threshold = 0.8
@@ -533,7 +558,11 @@ def detect_server_failure(sdg: SDG, node: PlaceNode) -> bool:
     has_memory_drop = has_anomaly(sdg, node, AnomalyKey.memory, AnomalyKind.down, score=memory_threshold)
 
     if has_cpu_drop and has_memory_drop:
-        logger.debug("detected server failure for node: `{}`, anomalies: {}", node.uniq_name, anomalies)
+        logger.debug(
+            "detected server failure for node: `{}`, anomalies: {}",
+            node.uniq_name,
+            anomalies,
+        )
         return True
 
     return False
@@ -544,12 +573,20 @@ def detect_server_exhaustion(sdg: SDG, node: PlaceNode) -> bool:
 
     if node.kind == PlaceKind.pod:
         if detect_pod_exhaustion(sdg, node):
-            logger.debug("detected pod exhaustion for node: `{}`, anomalies: {}", node.uniq_name, anomalies)
+            logger.debug(
+                "detected pod exhaustion for node: `{}`, anomalies: {}",
+                node.uniq_name,
+                anomalies,
+            )
             return True
 
     elif node.kind == PlaceKind.container:
         if detect_container_exhaustion(sdg, node):
-            logger.debug("detected container exhaustion for node: `{}`, anomalies: {}", node.uniq_name, anomalies)
+            logger.debug(
+                "detected container exhaustion for node: `{}`, anomalies: {}",
+                node.uniq_name,
+                anomalies,
+            )
             return True
 
     return False

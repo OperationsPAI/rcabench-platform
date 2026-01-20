@@ -109,11 +109,17 @@ def generate_perf_report(dataset: str, *, warn_missing: bool = False, include_sa
         if len(sampled_df) > 0:
             # Generate detailed sampler performance report (all datapack details)
             sampler_detailed_perf = calc_all_perf(sampled_df, agg_level="sampler", include_sampled=True)
-            save_parquet(sampler_detailed_perf, path=output_meta_folder / "sampler.detailed.perf.parquet")
+            save_parquet(
+                sampler_detailed_perf,
+                path=output_meta_folder / "sampler.detailed.perf.parquet",
+            )
 
             # Generate sampler performance aggregated at dataset level
             sampler_agg_perf = calc_all_perf(sampled_df, agg_level="sampler_dataset", include_sampled=True)
-            save_parquet(sampler_agg_perf, path=output_meta_folder / "sampler.aggregated.perf.parquet")
+            save_parquet(
+                sampler_agg_perf,
+                path=output_meta_folder / "sampler.aggregated.perf.parquet",
+            )
 
             # Generate sampler grouped performance using only sampled data
             sampler_grouped_perf = calc_all_perf(sampled_df, agg_level="sampler_dataset", include_sampled=True)

@@ -4,11 +4,7 @@ from typing import Any
 import polars as pl
 import streamlit as st
 
-from .utils import (
-    cached_load_json,
-    cached_load_parquet,
-    validate_dataset_folder,
-)
+from .utils import cached_load_json, cached_load_parquet, validate_dataset_folder
 
 
 class DataLoader:

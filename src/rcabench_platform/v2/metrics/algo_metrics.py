@@ -252,7 +252,11 @@ def calculate_metrics_for_level(
 
 
 def calculate_alignment_score(
-    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[GranularityResultItem], k: int = 5
+    datapack_path: Path,
+    entry: str,
+    groundtruth_items: list[str],
+    predictions: list[GranularityResultItem],
+    k: int = 5,
 ) -> list[float]:
     normal_traces = pl.scan_parquet(datapack_path / "normal_traces.parquet")
     anomal_traces = pl.scan_parquet(datapack_path / "abnormal_traces.parquet")
@@ -313,7 +317,10 @@ def calculate_alignment_score(
 
 
 def calculate_efficiency_score(
-    datapack_path: Path, entry: str, groundtruth_items: list[str], predictions: list[GranularityResultItem]
+    datapack_path: Path,
+    entry: str,
+    groundtruth_items: list[str],
+    predictions: list[GranularityResultItem],
 ) -> float:
     try:
         normal_traces = pl.scan_parquet(datapack_path / "normal_traces.parquet")
@@ -536,7 +543,12 @@ def get_algorithms_metrics_across_datasets(
             dataset_version = dsv[j]
             try:
                 metrics = get_metrics_by_dataset(
-                    algorithm, dataset, algorithm_version, dataset_version, filter_labels, base_url
+                    algorithm,
+                    dataset,
+                    algorithm_version,
+                    dataset_version,
+                    filter_labels,
+                    base_url,
                 )
 
                 if level is not None:
@@ -555,7 +567,12 @@ def get_algorithms_metrics_across_datasets(
                     # Return metrics for all levels
                     for metric in metrics:
                         result.append(
-                            {"algorithm": algorithm, "dataset": dataset, "dataset_version": dataset_version, **metric}
+                            {
+                                "algorithm": algorithm,
+                                "dataset": dataset,
+                                "dataset_version": dataset_version,
+                                **metric,
+                            }
                         )
             except Exception as e:
                 # If there's an error getting metrics for this combination, skip it

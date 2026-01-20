@@ -206,7 +206,10 @@ class EventEncoder:
             logger.warning(f"Failed to load performance thresholds: {e}")
 
     def encode_trace_events(
-        self, trace_spans_df: pl.DataFrame, trace_logs_df: pl.DataFrame | None = None, dataset_name: str = ""
+        self,
+        trace_spans_df: pl.DataFrame,
+        trace_logs_df: pl.DataFrame | None = None,
+        dataset_name: str = "",
     ) -> set[tuple[int, int]]:
         """Encode a single trace into event ID sequence respecting span hierarchy"""
 
@@ -538,7 +541,9 @@ def calculate_event_coverage(
     }
 
 
-def calculate_intra_sample_dissimilarity(sampled_trace_patterns: list[frozenset]) -> float:
+def calculate_intra_sample_dissimilarity(
+    sampled_trace_patterns: list[frozenset],
+) -> float:
     """
     Calculate intra-sample average dissimilarity for sampled traces.
 

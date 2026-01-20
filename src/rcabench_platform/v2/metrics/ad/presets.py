@@ -355,7 +355,8 @@ def get_preset_config(metric_type: MetricType, scenario: str = "default") -> Met
         Corresponding detection configuration
     """
     scenario_map: dict[
-        str, dict[MetricType, Callable[[], MetricDetectionConfig]] | Callable[[MetricType], MetricDetectionConfig]
+        str,
+        dict[MetricType, Callable[[], MetricDetectionConfig]] | Callable[[MetricType], MetricDetectionConfig],
     ] = {
         "default": {
             MetricType.LATENCY: create_latency_config,

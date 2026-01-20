@@ -302,7 +302,10 @@ class DatasetMetricsCalculator:
                         LabelItem(key="SDD@3", value=str(results["SDD@3"][0])),
                         LabelItem(key="SDD@5", value=str(results["SDD@5"][0])),
                         LabelItem(key="CPL", value=str(results["CPL"])),
-                        LabelItem(key="RootServiceDegree", value=str(results["RootServiceDegree"])),
+                        LabelItem(
+                            key="RootServiceDegree",
+                            value=str(results["RootServiceDegree"]),
+                        ),
                     ]
                 ),
             )

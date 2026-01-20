@@ -40,7 +40,11 @@ def run_batch(
         # Use the same scanning logic as sampler report
         from ..samplers.experiments.report import _scan_available_configurations
 
-        available_samplers, available_rates, available_modes = _scan_available_configurations(datasets)
+        (
+            available_samplers,
+            available_rates,
+            available_modes,
+        ) = _scan_available_configurations(datasets)
 
         if samplers is None:
             samplers = available_samplers
@@ -96,9 +100,12 @@ def run_batch(
             # Add sampled tasks
             if include_sampled and samplers and sampling_rates and sampling_modes:
                 # Use itertools.product to avoid deep nesting
-                for datapack, sampler, sampling_rate, sampling_mode in itertools.product(
-                    datapacks, samplers, sampling_rates, sampling_modes
-                ):
+                for (
+                    datapack,
+                    sampler,
+                    sampling_rate,
+                    sampling_mode,
+                ) in itertools.product(datapacks, samplers, sampling_rates, sampling_modes):
                     # Check if this sampler configuration exists for this datapack
                     datapack_folder = get_datapack_folder(dataset, datapack)
                     sampler_path = datapack_folder / "sampled" / f"{sampler}_{sampling_rate}_{sampling_mode}"
@@ -120,7 +127,10 @@ def run_batch(
 
             t0 = time.time()
             fmap_processpool(
-                tasks, parallel=parallel, cpu_limit_each=alg_cpu_count, ignore_exceptions=ignore_exceptions
+                tasks,
+                parallel=parallel,
+                cpu_limit_each=alg_cpu_count,
+                ignore_exceptions=ignore_exceptions,
             )
             t1 = time.time()
 

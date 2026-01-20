@@ -11,7 +11,12 @@ import polars as pl
 import typer
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label, convert_dataset
+from rcabench_platform.v2.sources.convert import (
+    DatapackLoader,
+    DatasetLoader,
+    Label,
+    convert_dataset,
+)
 from rcabench_platform.v2.utils.serde import load_json
 
 
@@ -436,7 +441,10 @@ def create_link(
         help="Source path where the Eadro dataset is located (default: /mnt/jfs/Eadro/)",
     ),
     target_path: str = typer.Option(
-        "data/eadro", "--target-path", "-t", help="Target path where the symbolic link will be created (default: data)"
+        "data/eadro",
+        "--target-path",
+        "-t",
+        help="Target path where the symbolic link will be created (default: data)",
     ),
 ):
     """We suposse the file layout as:

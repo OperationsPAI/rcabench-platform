@@ -197,7 +197,10 @@ class TrainTicketPedestal(Pedestal):
             del fix_client_spans
 
             if debug():
-                save_parquet(client_spans_df, path=get_config().temp / "sdg" / "client_spans.parquet")
+                save_parquet(
+                    client_spans_df,
+                    path=get_config().temp / "sdg" / "client_spans.parquet",
+                )
 
             traces = traces.join(client_spans_df, on="span_id", how="left")
             traces = traces.with_columns(pl.coalesce("op_name_right", "op_name").alias("op_name"))

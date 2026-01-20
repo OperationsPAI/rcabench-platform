@@ -118,7 +118,12 @@ def initialize_session_state() -> None:
 
 def configure_page() -> None:
     """Configure page settings."""
-    st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout=LAYOUT, initial_sidebar_state="expanded")
+    st.set_page_config(
+        page_title=APP_TITLE,
+        page_icon=APP_ICON,
+        layout=LAYOUT,
+        initial_sidebar_state="expanded",
+    )
 
     if "page_configured" not in st.session_state:
         st.session_state.page_configured = True
@@ -566,7 +571,11 @@ def render_logs_tab():
             data_type = st.selectbox(
                 "Data Type",
                 ["both", "normal", "abnormal"],
-                format_func=lambda x: {"both": "All", "normal": "Normal", "abnormal": "Abnormal"}[x],
+                format_func=lambda x: {
+                    "both": "All",
+                    "normal": "Normal",
+                    "abnormal": "Abnormal",
+                }[x],
                 key="logs_data_type",
             )
 
@@ -637,7 +646,10 @@ def render_logs_tab():
             col1, col2, col3 = st.columns(3)
             col1.metric("Total Logs", len(logs_df))
             col2.metric("Filtered Results", len(filtered_logs))
-            col3.metric("Match Rate", f"{len(filtered_logs) / len(logs_df) * 100:.1f}%" if len(logs_df) > 0 else "0%")
+            col3.metric(
+                "Match Rate",
+                f"{len(filtered_logs) / len(logs_df) * 100:.1f}%" if len(logs_df) > 0 else "0%",
+            )
 
             page_size = st.select_slider("Rows per Page", [10, 25, 50, 100], value=25, key="page_size")
             total_pages = max(1, (len(filtered_logs) - 1) // page_size + 1)
@@ -950,7 +962,10 @@ def render_traces_tab():
                         metric_col1, metric_col2, metric_col3 = st.columns(3)
                         metric_col1.metric("Total Calls", f"{total_calls:,}")
                         metric_col2.metric("Error Rate", f"{avg_error_rate:.2f}%")
-                        metric_col3.metric("Avg Duration", f"{avg_duration:.2f}ms" if avg_duration else "N/A")
+                        metric_col3.metric(
+                            "Avg Duration",
+                            f"{avg_duration:.2f}ms" if avg_duration else "N/A",
+                        )
 
                         # Format for display
                         normal_display = visualizer.format_aggregated_stats_for_display(normal_stats)
@@ -978,7 +993,10 @@ def render_traces_tab():
                         metric_col1, metric_col2, metric_col3 = st.columns(3)
                         metric_col1.metric("Total Calls", f"{total_calls:,}")
                         metric_col2.metric("Error Rate", f"{avg_error_rate:.2f}%")
-                        metric_col3.metric("Avg Duration", f"{avg_duration:.2f}ms" if avg_duration else "N/A")
+                        metric_col3.metric(
+                            "Avg Duration",
+                            f"{avg_duration:.2f}ms" if avg_duration else "N/A",
+                        )
 
                         # Format for display
                         abnormal_display = visualizer.format_aggregated_stats_for_display(abnormal_stats)
@@ -1079,7 +1097,11 @@ def render_annotations_tab():
             final_annotation_type = custom_type if annotation_type == "custom" else annotation_type
             if final_annotation_type and annotation_value:
                 if label_manager.add_annotation(
-                    str(dataset_path), final_annotation_type, annotation_value, confidence, notes
+                    str(dataset_path),
+                    final_annotation_type,
+                    annotation_value,
+                    confidence,
+                    notes,
                 ):
                     st.success("Annotation added successfully!")
                     st.session_state.annotations_refresh = True

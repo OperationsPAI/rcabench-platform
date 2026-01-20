@@ -6,7 +6,15 @@ from scipy import stats
 
 from ....logging import logger
 from ....utils.env import debug
-from .model import SDG, Observation, Relation, RelationChange, RootCauseCandidate, Symptom, SymptomType
+from .model import (
+    SDG,
+    Observation,
+    Relation,
+    RelationChange,
+    RootCauseCandidate,
+    Symptom,
+    SymptomType,
+)
 
 # ============================================================================
 # Module 5: Relation Computation (Distribution-based, not averages!)
@@ -68,7 +76,11 @@ class RelationComputer:
         return relations
 
     def _compute_for_symptom(
-        self, period: str, observations: list[Observation], symptom: Symptom, proxy_check: bool = False
+        self,
+        period: str,
+        observations: list[Observation],
+        symptom: Symptom,
+        proxy_check: bool = False,
     ) -> list[Relation]:
         """
         Compute relations between observations and a specific symptom.
@@ -158,7 +170,7 @@ class RelationComputer:
               AND service_name = ?
         ),
         symptom_counts_per_observation AS (
-            SELECT 
+            SELECT
                 p.span_id,
                 COUNT(s.span_id) AS s_count
             FROM observation_spans p
@@ -673,7 +685,12 @@ class CausalChainRefiner:
             if edge.callee_service == end_service and edge.callee_span_name == end_span:
                 # This is a direct predecessor (P' calls S)
                 # Check if P' is reachable from O
-                if self._is_on_path(start_service, start_span, edge.caller_service, edge.caller_span_name):
+                if self._is_on_path(
+                    start_service,
+                    start_span,
+                    edge.caller_service,
+                    edge.caller_span_name,
+                ):
                     predecessors.append({"service": edge.caller_service, "span": edge.caller_span_name})
 
         return predecessors
@@ -723,7 +740,12 @@ class CausalChainRefiner:
         return False
 
     def _compute_relation_change(
-        self, pred_service: str, pred_span: str, symp_service: str, symp_span: str, symptom_type: SymptomType
+        self,
+        pred_service: str,
+        pred_span: str,
+        symp_service: str,
+        symp_span: str,
+        symptom_type: SymptomType,
     ) -> RelationChange | None:
         """
         Compute relation change R(pred, symp) between good and bad periods.
@@ -769,7 +791,10 @@ class CausalChainRefiner:
         )
 
         relations_bad = self.computer.compute_relations(
-            period="bad", observations=[matching_obs], symptoms=[symptom], proxy_check=True
+            period="bad",
+            observations=[matching_obs],
+            symptoms=[symptom],
+            proxy_check=True,
         )
 
         # Filter to find significant changes

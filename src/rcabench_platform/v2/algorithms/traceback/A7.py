@@ -7,7 +7,16 @@ from pprint import pformat
 import numpy as np
 
 from ....compat import StrEnum
-from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, ExpandedGraphPath, GraphPath, Indicator, PlaceKind, PlaceNode
+from ...graphs.sdg.defintion import (
+    SDG,
+    DepEdge,
+    DepKind,
+    ExpandedGraphPath,
+    GraphPath,
+    Indicator,
+    PlaceKind,
+    PlaceNode,
+)
 from ...graphs.sdg.statistics import STAT_PREFIX, calc_statistics
 from ...logging import logger, timeit
 from ...utils.env import debug

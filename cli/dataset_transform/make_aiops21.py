@@ -1,4 +1,12 @@
 #!/usr/bin/env -S uv run -s
+"""Convert AIOps21 dataset to standardized format.
+
+single path overview
+    nn@debian ~/w/r/d/a/a/A/aiops2021-2> pwd
+    /home/nn/workspace/rcabench-platform/data/aiops/aiops2021-main/AIOps2021/aiops2021-2
+    nn@debian ~/w/r/d/a/a/A/aiops2021-2> ls
+    0304/  0305/  0306/ 0307/  0309/  0310/  0312/  0323/  0324/  0325/
+"""
 
 import datetime
 import functools
@@ -8,35 +16,14 @@ from typing import Any
 import polars as pl
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.datasets.spec import get_datapack_folder, get_datapack_list, get_dataset_meta_file
+from rcabench_platform.v2.datasets.spec import (
+    get_datapack_folder,
+    get_datapack_list,
+    get_dataset_meta_file,
+)
 from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label
 from rcabench_platform.v2.utils.fmap import fmap_threadpool
 from rcabench_platform.v2.utils.serde import save_parquet
-
-"""single path overview
-    nn@debian ~/w/r/d/a/a/A/aiops2021-2> pwd
-    /home/nn/workspace/rcabench-platform/data/aiops/aiops2021-main/AIOps2021/aiops2021-2
-    nn@debian ~/w/r/d/a/a/A/aiops2021-2> ls
-    0304/  0305/  0306/  0307/  0309/  0310/  0312/  0323/  0324/  0325/
-
-    nn@debian ~/w/r/d/a/a/A/a/0304> pwd
-/home/nn/workspace/rcabench-platform/data/aiops/aiops2021-main/AIOps2021/aiops2021-2/0304
-nn@debian ~/w/r/d/a/a/A/a/0304> tree
-.
-├── logs
-│   ├── log_apache_access_log_0304.csv
-│   ├── log_catalina_0304.csv
-│   ├── log_gc_0304.csv
-│   ├── log_localhost_0304.csv
-│   └── log_localhost_access_log_0304.csv
-├── metric
-│   ├── kpi_0304.csv
-│   └── metric_0304.csv
-└── trace
-    └── trace_0304.csv
-
-4 directories, 8 files
-"""
 
 
 def convert_traces(src: Path) -> pl.LazyFrame:
@@ -264,7 +251,12 @@ class AIops21DatapackLoader(DatapackLoader):
 
     def data(self) -> dict[str, Any]:
         # Calculate time windows: [normal_start, normal_end, fault_start, fault_end]
-        normal_start_time, normal_end_time, fault_start_time, fault_end_time = self._calculate_time_windows()
+        (
+            normal_start_time,
+            normal_end_time,
+            fault_start_time,
+            fault_end_time,
+        ) = self._calculate_time_windows()
 
         # Create data dict with filtered data for the specific time periods
         # Data range covers from normal start to fault end
@@ -519,7 +511,10 @@ def _calculate_time_windows_for_groundtruth(df: pl.DataFrame) -> pl.DataFrame:
                 )
                 .collect()
             )
-            date_time_ranges[date_str] = (times_df["min_time"][0], times_df["max_time"][0])
+            date_time_ranges[date_str] = (
+                times_df["min_time"][0],
+                times_df["max_time"][0],
+            )
             continue
 
         # Fallback to metrics file
@@ -535,7 +530,10 @@ def _calculate_time_windows_for_groundtruth(df: pl.DataFrame) -> pl.DataFrame:
                 )
                 .collect()
             )
-            date_time_ranges[date_str] = (times_df["min_time"][0], times_df["max_time"][0])
+            date_time_ranges[date_str] = (
+                times_df["min_time"][0],
+                times_df["max_time"][0],
+            )
 
     # Calculate time windows for each row
     result_rows = []

@@ -136,7 +136,14 @@ def algo_perf_by_groups(
 
         if group_data.height == 0:
             logger.warning(f"No data found for group: {group}")
-            ax.text(0.5, 0.5, f"No data for\n{group}", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                f"No data for\n{group}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.set_xticks([])
             ax.set_yticks([])
             continue
@@ -176,7 +183,10 @@ def algo_perf_by_groups(
 
         ax.set_xticks(x_pos)
         ax.set_xticklabels(
-            [get_display_algorithm_name(algo) for algo in algorithms], fontsize=9, rotation=45, ha="right"
+            [get_display_algorithm_name(algo) for algo in algorithms],
+            fontsize=9,
+            rotation=45,
+            ha="right",
         )
         ax.grid(True, alpha=0.3, axis="y")
 
@@ -200,7 +210,16 @@ def algo_perf_by_groups(
 
     # Add common axis labels to the figure
     fig.text(0.5, 0.02, "Algorithm", ha="center", va="bottom", fontsize=12, fontweight="bold")
-    fig.text(0.02, 0.5, "Performance Score", ha="center", va="center", rotation=90, fontsize=12, fontweight="bold")
+    fig.text(
+        0.02,
+        0.5,
+        "Performance Score",
+        ha="center",
+        va="center",
+        rotation=90,
+        fontsize=12,
+        fontweight="bold",
+    )
 
     # Add title with grouping information
     chart_title = f"Algorithm Performance by {group_title}"
@@ -289,7 +308,14 @@ def algo_perf_by_fault_type(
 
         if fault_data.height == 0:
             logger.warning(f"No data found for fault_type: {fault_type}")
-            ax.text(0.5, 0.5, f"No data for\n{fault_type}", ha="center", va="center", transform=ax.transAxes)
+            ax.text(
+                0.5,
+                0.5,
+                f"No data for\n{fault_type}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
             ax.set_xticks([])
             ax.set_yticks([])
             continue
@@ -329,7 +355,10 @@ def algo_perf_by_fault_type(
 
         ax.set_xticks(x_pos)
         ax.set_xticklabels(
-            [get_display_algorithm_name(algo) for algo in algorithms], fontsize=9, rotation=45, ha="right"
+            [get_display_algorithm_name(algo) for algo in algorithms],
+            fontsize=9,
+            rotation=45,
+            ha="right",
         )
         ax.grid(True, alpha=0.3, axis="y")
 

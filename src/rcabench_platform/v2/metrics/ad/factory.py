@@ -13,7 +13,13 @@ from .detectors import (
     ThresholdDetector,
     TrendDetector,
 )
-from .types import AnomalyResult, AnomalySeverity, AnomalyType, DetectionMethod, HistoricalData
+from .types import (
+    AnomalyResult,
+    AnomalySeverity,
+    AnomalyType,
+    DetectionMethod,
+    HistoricalData,
+)
 
 
 # ===== Detector Factory =====

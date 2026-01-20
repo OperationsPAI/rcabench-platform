@@ -21,7 +21,7 @@ class ObservationDetector:
         observations = []
 
         query = """
-        SELECT 
+        SELECT
             SpanName,
             Issues,
             AbnormalAvgDuration,
@@ -50,7 +50,13 @@ class ObservationDetector:
             trace_span_name = self._find_trace_span_name(span_name)
 
             # Check for latency issues (using keys from detector.py)
-            latency_keys = {"avg_duration", "p90_duration", "p95_duration", "p99_duration", "hard_timeout"}
+            latency_keys = {
+                "avg_duration",
+                "p90_duration",
+                "p95_duration",
+                "p99_duration",
+                "hard_timeout",
+            }
             if any(key in issues for key in latency_keys):
                 observations.append(
                     Observation(
@@ -352,7 +358,7 @@ class SymptomBootstrapper:
                 WHERE span_name = '{obs.entry_span_name}'
             ),
             all_spans_per_trace AS (
-                SELECT 
+                SELECT
                     e.trace_id,
                     e.duration AS entry_duration,
                     COUNT(s.span_id) AS total_span_count,
@@ -363,7 +369,7 @@ class SymptomBootstrapper:
                 LEFT JOIN sample_traces s ON e.trace_id = s.trace_id
                 GROUP BY e.trace_id, e.duration
             )
-            SELECT 
+            SELECT
                 trace_id,
                 entry_duration,
                 total_span_count,
@@ -378,7 +384,14 @@ class SymptomBootstrapper:
             try:
                 debug_results = self.con.execute(debug_query).fetchall()
                 logger.debug("   Top 5 slowest traces:")
-                for trace_id, entry_dur, span_count, total_dur, root_count, child_count in debug_results:
+                for (
+                    trace_id,
+                    entry_dur,
+                    span_count,
+                    total_dur,
+                    root_count,
+                    child_count,
+                ) in debug_results:
                     logger.debug(
                         f"     Trace {trace_id[:16]}...: entry={entry_dur / 1e9:.3f}s, "
                         f"spans={span_count} (root={root_count}, child={child_count}), "
@@ -391,7 +404,7 @@ class SymptomBootstrapper:
                     logger.debug(f"   Analyzing slowest trace {slowest_trace_id[:16]}... in detail:")
 
                     span_call_count_query = f"""
-                    SELECT 
+                    SELECT
                         span_name,
                         service_name,
                         COUNT(*) AS call_count,
@@ -407,7 +420,14 @@ class SymptomBootstrapper:
 
                     span_counts = self.con.execute(span_call_count_query).fetchall()
                     logger.debug("     Top spans by TOTAL duration (sum across all calls in this trace):")
-                    for span_name, service_name, count, avg_dur, total_dur, max_dur in span_counts:
+                    for (
+                        span_name,
+                        service_name,
+                        count,
+                        avg_dur,
+                        total_dur,
+                        max_dur,
+                    ) in span_counts:
                         logger.debug(
                             f"       {service_name}.{span_name[:35]}... "
                             f"called {count}x, total={total_dur / 1e9:.3f}s, "
@@ -419,7 +439,7 @@ class SymptomBootstrapper:
                     # ============================================================
                     timeline_query = f"""
                     WITH entry_span AS (
-                        SELECT 
+                        SELECT
                             time AS entry_start,
                             time + INTERVAL (duration || ' microseconds') AS entry_end,
                             duration AS entry_duration
@@ -429,7 +449,7 @@ class SymptomBootstrapper:
                         LIMIT 1
                     ),
                     trace_timeline AS (
-                        SELECT 
+                        SELECT
                             span_name,
                             service_name,
                             duration,
@@ -439,20 +459,20 @@ class SymptomBootstrapper:
                             span_id,
                             EPOCH_MS(time - (SELECT entry_start FROM entry_span)) / 1000.0 AS start_offset,
                             EPOCH_MS(
-                                (time + INTERVAL (duration || ' microseconds')) - 
+                                (time + INTERVAL (duration || ' microseconds')) -
                                 (SELECT entry_start FROM entry_span)
                             ) / 1000.0 AS end_offset
                         FROM traces_bad
                         WHERE trace_id = '{slowest_trace_id}'
                     )
-                    SELECT 
+                    SELECT
                         t.span_name,
                         t.service_name,
                         t.duration,
                         t.start_offset,
                         t.end_offset,
                         e.entry_duration,
-                        CASE 
+                        CASE
                             WHEN t.start_time < e.entry_start THEN 'BEFORE_ENTRY'
                             WHEN t.end_time > e.entry_end THEN 'AFTER_ENTRY'
                             ELSE 'WITHIN_ENTRY'
@@ -540,7 +560,7 @@ class SymptomBootstrapper:
         query_bad = f"""
         WITH
         bad_spans_raw AS (
-            SELECT 
+            SELECT
                 trace_id,
                 span_id,
                 span_name,
@@ -551,19 +571,19 @@ class SymptomBootstrapper:
             WHERE trace_id IN ('{trace_ids_str}')
         ),
         bad_exclusive_per_span AS (
-            SELECT 
+            SELECT
                 parent.trace_id,
                 parent.span_id,
                 parent.span_name,
                 parent.service_name,
                 parent.duration - COALESCE(SUM(child.duration), 0) AS exclusive_duration
             FROM bad_spans_raw parent
-            LEFT JOIN bad_spans_raw child 
-                ON parent.span_id = child.parent_span_id 
+            LEFT JOIN bad_spans_raw child
+                ON parent.span_id = child.parent_span_id
                 AND parent.trace_id = child.trace_id
             GROUP BY parent.trace_id, parent.span_id, parent.span_name, parent.service_name, parent.duration
         )
-        SELECT 
+        SELECT
             span_name,
             service_name,
             AVG(exclusive_duration) AS avg_exclusive,
@@ -604,7 +624,7 @@ class SymptomBootstrapper:
             )
             if top_spans_filter:
                 total_duration_query = f"""
-                SELECT 
+                SELECT
                     span_name,
                     service_name,
                     AVG(duration) AS avg_total_duration,
@@ -618,7 +638,13 @@ class SymptomBootstrapper:
                 try:
                     total_duration_results = self.con.execute(total_duration_query).fetchall()
                     logger.debug("  Comparing TOTAL vs EXCLUSIVE duration for top spans:")
-                    for span_name, service_name, avg_total, max_total, min_total in total_duration_results:
+                    for (
+                        span_name,
+                        service_name,
+                        avg_total,
+                        max_total,
+                        min_total,
+                    ) in total_duration_results:
                         # Find corresponding exclusive duration
                         exc_duration = next(
                             (avg_exc for sn, sv, avg_exc, _ in sorted_stats if sn == span_name and sv == service_name),
@@ -659,7 +685,7 @@ class SymptomBootstrapper:
                 LIMIT {len(obs.trace_ids) * 10}            -- Sample more to get better coverage
             ),
             good_spans_raw AS (
-                SELECT 
+                SELECT
                     t.trace_id,
                     t.span_id,
                     t.span_name,
@@ -671,19 +697,19 @@ class SymptomBootstrapper:
                 WHERE ({span_filters})
             ),
             good_exclusive_per_span AS (
-                SELECT 
+                SELECT
                     parent.trace_id,
                     parent.span_id,
                     parent.span_name,
                     parent.service_name,
                     parent.duration - COALESCE(SUM(child.duration), 0) AS exclusive_duration
                 FROM good_spans_raw parent
-                LEFT JOIN good_spans_raw child 
-                    ON parent.span_id = child.parent_span_id 
+                LEFT JOIN good_spans_raw child
+                    ON parent.span_id = child.parent_span_id
                     AND parent.trace_id = child.trace_id
                 GROUP BY parent.trace_id, parent.span_id, parent.span_name, parent.service_name, parent.duration
             )
-            SELECT 
+            SELECT
                 span_name,
                 service_name,
                 AVG(exclusive_duration) AS avg_exclusive,
@@ -727,10 +753,28 @@ class SymptomBootstrapper:
                 continue
             if span_name == obs.entry_span_name:
                 continue
-            if span_name in ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
+            if span_name in (
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "PATCH",
+                "HEAD",
+                "OPTIONS",
+            ):
                 continue
 
-            exclusive_deltas.append((span_name, service_name, delta, bad_avg, good_avg, bad_count, good_count))
+            exclusive_deltas.append(
+                (
+                    span_name,
+                    service_name,
+                    delta,
+                    bad_avg,
+                    good_avg,
+                    bad_count,
+                    good_count,
+                )
+            )
 
         exclusive_deltas.sort(key=lambda x: x[2], reverse=True)
 
@@ -742,7 +786,7 @@ class SymptomBootstrapper:
 
         # Calculate total duration stats for bad period
         query_bad_total = f"""
-        SELECT 
+        SELECT
             span_name,
             service_name,
             AVG(duration) AS avg_total,
@@ -766,7 +810,7 @@ class SymptomBootstrapper:
                 [f"(span_name = '{sn}' AND service_name = '{sv}')" for sn, sv, _, _ in bad_total_stats]
             )
             query_good_total = f"""
-            SELECT 
+            SELECT
                 span_name,
                 service_name,
                 AVG(duration) AS avg_total,
@@ -795,10 +839,28 @@ class SymptomBootstrapper:
                 continue
             if span_name == obs.entry_span_name:
                 continue
-            if span_name in ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
+            if span_name in (
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "PATCH",
+                "HEAD",
+                "OPTIONS",
+            ):
                 continue
 
-            total_deltas.append((span_name, service_name, delta, bad_avg, good_avg, bad_count, good_count))
+            total_deltas.append(
+                (
+                    span_name,
+                    service_name,
+                    delta,
+                    bad_avg,
+                    good_avg,
+                    bad_count,
+                    good_count,
+                )
+            )
 
         total_deltas.sort(key=lambda x: x[2], reverse=True)
 
@@ -841,9 +903,15 @@ class SymptomBootstrapper:
             # Show all deltas to understand what's being filtered
             if len(deltas) > 0:
                 logger.debug("  All DELTA results (sorted by delta):")
-                for i, (span_name, service_name, delta, bad_avg, good_avg, bad_count, good_count) in enumerate(
-                    deltas[:20], 1
-                ):
+                for i, (
+                    span_name,
+                    service_name,
+                    delta,
+                    bad_avg,
+                    good_avg,
+                    bad_count,
+                    good_count,
+                ) in enumerate(deltas[:20], 1):
                     logger.debug(
                         f"    #{i}: {service_name}.{span_name[:40]}... "
                         f"Δ={delta / 1e9:.3f}s (bad={bad_avg / 1e9:.3f}s [{bad_count}], "
@@ -862,7 +930,15 @@ class SymptomBootstrapper:
                         f"(sum_of_deltas={total_delta / 1e9:.3f}s / expected={expected_delta / 1e9:.3f}s)"
                     )
 
-        for span_name, service_name, delta, bad_avg, good_avg, bad_count, good_count in top_deltas:
+        for (
+            span_name,
+            service_name,
+            delta,
+            bad_avg,
+            good_avg,
+            bad_count,
+            good_count,
+        ) in top_deltas:
             symptoms.append(
                 Symptom(
                     symptom_type=SymptomType.LATENCY,
@@ -905,7 +981,7 @@ class SymptomBootstrapper:
         WITH
         -- 1. Error spans from TRACES (status code based)
         trace_error_spans AS (
-            SELECT 
+            SELECT
                 trace_id,
                 span_id,
                 span_name,
@@ -913,7 +989,7 @@ class SymptomBootstrapper:
                 "attr.http.response.status_code" AS status_code
             FROM traces_bad
             WHERE trace_id IN ('{trace_ids_str}')
-            AND ("attr.status_code" = 'Error' 
+            AND ("attr.status_code" = 'Error'
                 OR "attr.http.response.status_code" >= {self.HTTP_ERROR_STATUS_CODE})
         ),
         -- 2. Error spans from LOGS (ERROR/FATAL level)
@@ -926,14 +1002,14 @@ class SymptomBootstrapper:
                 T.service_name
             FROM logs_bad L
             INNER JOIN traces_bad T
-            ON L.trace_id = T.trace_id 
+            ON L.trace_id = T.trace_id
             AND L.span_id = T.span_id
             WHERE L.trace_id IN ('{trace_ids_str}')
             AND L.level NOT IN ('INFO')
             AND L.trace_id IS NOT NULL
             AND L.span_id IS NOT NULL
         ),
-        
+
         -- 3. Error spans from LOGS (fallback: pod-level correlation)
         --    When logs don't have trace_id/span_id
         log_error_spans_fallback AS (
@@ -951,7 +1027,7 @@ class SymptomBootstrapper:
             AND L."attr.k8s.pod.name" IS NOT NULL
             AND (L.trace_id IS NULL OR L.span_id IS NULL)
         ),
-        
+
         -- 4. UNION all error sources (trace + log gold + log fallback)
         all_error_spans AS (
             SELECT trace_id, span_id, span_name, service_name, 'trace' AS source
@@ -963,7 +1039,7 @@ class SymptomBootstrapper:
             SELECT trace_id, span_id, span_name, service_name, 'log_fallback' AS source
             FROM log_error_spans_fallback
         ),
-        
+
         -- 5. Find DEEPEST error generators (no child with errors)
         error_span_children AS (
             SELECT DISTINCT
@@ -974,7 +1050,7 @@ class SymptomBootstrapper:
             ON child.trace_id = T.trace_id AND child.span_id = T.span_id
             WHERE T.parent_span_id IS NOT NULL
         )
-        SELECT 
+        SELECT
             parent.span_name,
             parent.service_name,
             COUNT(DISTINCT parent.trace_id || '::' || parent.span_id) AS error_count,
@@ -1035,7 +1111,7 @@ class SymptomBootstrapper:
                 FROM traces_good
                 WHERE trace_id IN (SELECT trace_id FROM good_trace_ids)
                 AND ({span_filters})
-                AND ("attr.status_code" = 'Error' 
+                AND ("attr.status_code" = 'Error'
                     OR "attr.http.response.status_code" >= {self.HTTP_ERROR_STATUS_CODE})
             ),
             -- Error spans from LOGS (gold standard) in good period
@@ -1077,7 +1153,7 @@ class SymptomBootstrapper:
                 UNION
                 SELECT trace_id, span_id, span_name, service_name FROM good_log_errors_fallback_filtered
             )
-            SELECT 
+            SELECT
                 span_name,
                 service_name,
                 COUNT(DISTINCT trace_id || '::' || span_id) AS error_count
@@ -1128,7 +1204,14 @@ class SymptomBootstrapper:
         if debug():
             logger.debug(f"  Filtered results: {len(deltas)} candidates, taking top {len(top_deltas)}")
 
-        for span_name, service_name, delta, bad_count, good_count, sources in top_deltas:
+        for (
+            span_name,
+            service_name,
+            delta,
+            bad_count,
+            good_count,
+            sources,
+        ) in top_deltas:
             symptoms.append(
                 Symptom(
                     symptom_type=SymptomType.ERROR_RATE,

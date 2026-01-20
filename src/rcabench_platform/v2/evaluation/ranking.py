@@ -11,20 +11,19 @@ AGG_LEVEL = Literal["algorithm", "dataset", "datapack", "sampler", "sampler_data
 
 def agg_index(agg_level: AGG_LEVEL) -> list[str]:
     """Get the index columns for the specified aggregation level."""
-    match agg_level:
-        case "datapack":
-            return INDEX_COLUMNS
-        case "dataset":
-            return INDEX_COLUMNS[:-1]  # ["algorithm", "dataset"]
-        case "algorithm":
-            return INDEX_COLUMNS[:-2]  # ["algorithm"]
-        case "sampler":
-            return INDEX_COLUMNS + SAMPLER_COLUMNS
-        case "sampler_dataset":
-            # Include sampler info but aggregate at dataset level (no datapack)
-            return INDEX_COLUMNS[:-1] + SAMPLER_COLUMNS  # ["algorithm", "dataset"] + sampler columns
-        case _:
-            raise ValueError(f"Invalid agg_level: {agg_level}")
+    if agg_level == "datapack":
+        return INDEX_COLUMNS
+    elif agg_level == "dataset":
+        return INDEX_COLUMNS[:-1]  # ["algorithm", "dataset"]
+    elif agg_level == "algorithm":
+        return INDEX_COLUMNS[:-2]  # ["algorithm"]
+    elif agg_level == "sampler":
+        return INDEX_COLUMNS + SAMPLER_COLUMNS
+    elif agg_level == "sampler_dataset":
+        # Include sampler info but aggregate at dataset level (no datapack)
+        return INDEX_COLUMNS[:-1] + SAMPLER_COLUMNS  # ["algorithm", "dataset"] + sampler columns
+    else:
+        raise ValueError(f"Invalid agg_level: {agg_level}")
 
 
 def calc_avg_runtime(df: pl.DataFrame, agg_level: AGG_LEVEL) -> pl.DataFrame:

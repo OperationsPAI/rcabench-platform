@@ -107,7 +107,10 @@ def _build(image_name: str, image_prefix: str, no_cache: bool = False):
 @app.command()
 @timeit()
 def build(
-    image_name: str = "all", image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False, no_cache: bool = False
+    image_name: str = "all",
+    image_prefix: str = HARBOR_REPO,
+    skip_clean_check: bool = False,
+    no_cache: bool = False,
 ):
     if not skip_clean_check:
         assert_clean()
@@ -153,7 +156,11 @@ def push(image_name: str = "all", image_prefix: str = HARBOR_REPO):
 
 @app.command()
 @timeit()
-def update_all(image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False, no_cache: bool = False):
+def update_all(
+    image_prefix: str = HARBOR_REPO,
+    skip_clean_check: bool = False,
+    no_cache: bool = False,
+):
     logger.info("============== Starting FULL Image Update Process ==============")
 
     if not skip_clean_check:
@@ -166,7 +173,12 @@ def update_all(image_prefix: str = HARBOR_REPO, skip_clean_check: bool = False, 
         return
 
     logger.info("--- Phase 1: Building all images ---")
-    build("all", image_prefix=image_prefix, skip_clean_check=skip_clean_check, no_cache=no_cache)
+    build(
+        "all",
+        image_prefix=image_prefix,
+        skip_clean_check=skip_clean_check,
+        no_cache=no_cache,
+    )
 
     logger.info("--- Phase 2: Pushing all images ---")
     push("all", image_prefix=image_prefix)

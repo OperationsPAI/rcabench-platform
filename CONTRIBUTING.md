@@ -109,7 +109,7 @@ When you are developing a new feature, create a new branch from `main` and name 
 {your github id}/feat/{feature-name}
 ```
 
-This branch prefixed with your github id is **your own** working branch. You can force-push to it freely. Do anything you want in this branch. 
+This branch prefixed with your github id is **your own** working branch. You can force-push to it freely. Do anything you want in this branch.
 
 When you are done with the feature, **create a pull request** to `main` and invite other developers to review your code. If the code is approved, it will be merged into `main`. Then you can start a new branch from `main` and continue your work.
 

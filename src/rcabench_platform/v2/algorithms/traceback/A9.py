@@ -594,7 +594,10 @@ def find_root_cause_candidates_relational(
         )
         use_granger = False
 
-    logger.debug("computing relation scores (use_granger={}) with parallel processing", use_granger)
+    logger.debug(
+        "computing relation scores (use_granger={}) with parallel processing",
+        use_granger,
+    )
 
     # Collect all edges
     edges = list(sdg.iter_edges())
@@ -608,7 +611,9 @@ def find_root_cause_candidates_relational(
 
         # Create a partial function that can be pickled
         compute_func = partial(
-            _compute_edge_relation_score, use_granger=use_granger, min_relation_score=min_relation_score
+            _compute_edge_relation_score,
+            use_granger=use_granger,
+            min_relation_score=min_relation_score,
         )
 
         # Prepare tasks for fmap_processpool
@@ -630,7 +635,11 @@ def find_root_cause_candidates_relational(
                 relation_scores[(src_id, dst_id)] = score
 
     if debug():
-        logger.debug("computed {} significant relations along {} edges", len(relation_scores), total_edges)
+        logger.debug(
+            "computed {} significant relations along {} edges",
+            len(relation_scores),
+            total_edges,
+        )
 
     # Step 3: Calculate root cause scores based on relation changes
     # Relational Debugging principle: nodes that are sources of significant relation changes

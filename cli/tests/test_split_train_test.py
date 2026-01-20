@@ -54,7 +54,12 @@ def split_datapacks(datapacks: list, previous_datapacks: list[str]) -> tuple[lis
 
 
 def create_dataset(
-    datasets_api: DatasetsApi, name: str, dataset_type: str, version: str, description: str, datapacks: list
+    datasets_api: DatasetsApi,
+    name: str,
+    dataset_type: str,
+    version: str,
+    description: str,
+    datapacks: list,
 ) -> bool:
     resp = datasets_api.create_dataset(
         request=CreateDatasetReq(
