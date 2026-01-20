@@ -39,6 +39,35 @@ just lint
 just ci
 ```
 
+## Code Quality
+
+We use pre-commit hooks to maintain Python code quality. The configuration includes:
+- **ruff**: Fast Python linter and formatter
+- **mypy**: Static type checking with support for pandas and polars
+- **black**: Code formatting
+- **isort**: Import sorting
+- **flake8**: Additional linting rules
+- **bandit**: Security vulnerability scanning
+- **Self-test hook**: Runs RCABench validation before commits
+
+To set up pre-commit:
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install git hooks
+pre-commit install
+
+# Run on all files
+pre-commit run --all-files
+
+# Run specific checks
+pre-commit run --all-files --show-diff-on-failure --color=always ruff
+pre-commit run --all-files --show-diff-on-failure --color=always mypy
+```
+
+The pre-commit configuration will automatically run the RCABench self-test to ensure your changes don't break the platform functionality.
+
 ## Dataset Setup
 
 Datasets are stored on JuiceFS and must be symlinked:
