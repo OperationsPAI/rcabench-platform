@@ -342,6 +342,31 @@ def valid(path: Path, force_refresh: bool = False) -> tuple[Path, bool]:
                 invalid_f.write_text(reason)
                 return path, False
 
+    # Check if normal trace root span duration exceeds 3 seconds (environment stability check)
+    # Duration is in nanoseconds, so 3 seconds = 3e9 nanoseconds
+    normal_traces = path_obj / "normal_traces.parquet"
+    if normal_traces.exists():
+        try:
+            normal_df = pl.scan_parquet(normal_traces)
+            root_spans_df = normal_df.filter(pl.col("ParentSpanId").is_null() | (pl.col("ParentSpanId") == ""))
+            max_duration = root_spans_df.select(pl.col("Duration").max()).collect().item()
+            max_normal_duration_ns = 3e9
+            if max_duration is not None and max_duration > max_normal_duration_ns:
+                max_duration_sec = max_duration / 1e9
+                reason = (
+                    f"Normal trace root span duration exceeds 3s (max: {max_duration_sec:.2f}s), environment unstable"
+                )
+                logger.warning("Validation failed: {}", reason)
+                invalid_f = path_obj / ".invalid"
+                invalid_f.write_text(reason)
+                return path, False
+        except Exception as e:
+            reason = f"Failed to check normal trace duration: {e}"
+            logger.warning("Validation failed: {}", reason)
+            invalid_f = path_obj / ".invalid"
+            invalid_f.write_text(reason)
+            return path, False
+
     # All validation passed, create valid cache file
     valid_f = path_obj / ".valid"
     valid_f.touch()
