@@ -1,4 +1,4 @@
-import resource
+import sys
 
 import typer
 
@@ -22,9 +22,12 @@ def build(
 ) -> None:
     sdg = build_sdg(dataset, datapack, get_datapack_folder(dataset, datapack))
 
-    maxrss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    maxrss_mib = maxrss_kib / 1024
-    logger.info(f"Peak memory usage: {maxrss_mib:.3f} MiB")
+    if sys.platform != "win32":
+        import resource
+
+        maxrss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        maxrss_mib = maxrss_kib / 1024
+        logger.info(f"Peak memory usage: {maxrss_mib:.3f} MiB")
 
     temp_sdg = get_config().temp / "sdg"
 
