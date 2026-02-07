@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
+from rcabench_platform.v3.cli.main import app, logger, timeit
 
 CONTEXTS: dict[str, Path] = {
     "rcabench-platform": Path.cwd(),

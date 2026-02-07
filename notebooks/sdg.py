@@ -18,12 +18,12 @@ def _():
 
 @app.cell
 def _():
-    from rcabench_platform.v2.datasets.spec import (
+    from rcabench_platform.v2.sdk.datasets.spec import (
         get_datapack_folder,
         get_dataset_meta_file,
         read_dataset_index,
     )
-    from rcabench_platform.v2.graphs.sdg.defintion import (
+    from rcabench_platform.v2.sdk.graphs.sdg.defintion import (
         SDG,
         DepEdge,
         DepKind,
@@ -83,8 +83,8 @@ def _(dataset_dropdown, get_dataset_meta_file, mo, pl, read_dataset_index):
 
 @app.cell
 def _(datapack_table, dataset, get_datapack_folder, mo):
-    from rcabench_platform.v2.graphs.sdg.build_ import build_sdg
-    from rcabench_platform.v2.graphs.sdg.statistics import calc_statistics
+    from rcabench_platform.v2.sdk.graphs.sdg.build_ import build_sdg
+    from rcabench_platform.v2.sdk.graphs.sdg.statistics import calc_statistics
 
     datapack = datapack_table.value[0, "datapack"]
     mo.stop(
@@ -110,7 +110,7 @@ def _(mo):
 
 @app.cell
 def _(mo, neo4j_button, sdg):
-    from rcabench_platform.v2.graphs.sdg.neo4j import export_sdg_to_neo4j
+    from rcabench_platform.v2.sdk.graphs.sdg.neo4j import export_sdg_to_neo4j
 
     if neo4j_button.value:
         mo.output.append("Exporting SDG to Neo4j ...")
@@ -128,7 +128,7 @@ def _(mo):
 
 @app.cell
 def _(datapack, dataset, get_datapack_folder, json, mo):
-    from rcabench_platform.v2.datasets.rcabench import rcabench_fix_injection
+    from rcabench_platform.v2.sdk.datasets.rcabench import rcabench_fix_injection
 
     mo.stop(not isinstance(datapack, str))
     _datapack_folder = get_datapack_folder(dataset, datapack)
@@ -177,7 +177,7 @@ def _(mo):
 
 @app.cell
 def _(mo, sdg):
-    from rcabench_platform.v2.graphs.sdg.dump import dump_place_indicators
+    from rcabench_platform.v2.sdk.graphs.sdg.dump import dump_place_indicators
 
     _df = dump_place_indicators(sdg)
 
@@ -215,7 +215,7 @@ def _(all_node_names, mo):
 
 @app.cell
 def _(mo, query_indicators_of_node, sdg):
-    from rcabench_platform.v2.graphs.sdg.dump import dump_node_data
+    from rcabench_platform.v2.sdk.graphs.sdg.dump import dump_node_data
 
     _node = sdg.query_node_by_uniq_name(query_indicators_of_node.value)
     mo.stop(_node is None)
@@ -318,7 +318,7 @@ def _(mo, pl, query_by_place_node_1, query_by_place_node_2, sdg):
 
 @app.cell
 def _(mo, query_by_place_node_1, query_by_place_node_2, sdg):
-    from rcabench_platform.v2.graphs.sdg.dump import dump_edge_data
+    from rcabench_platform.v2.sdk.graphs.sdg.dump import dump_edge_data
 
     _node1 = sdg.query_node_by_uniq_name(query_by_place_node_1.value)
     _node2 = sdg.query_node_by_uniq_name(query_by_place_node_2.value)
@@ -348,7 +348,7 @@ def _(
     query_span_tree,
     sdg,
 ):
-    from rcabench_platform.v2.graphs.sdg.dump import dump_span_tree
+    from rcabench_platform.v2.sdk.graphs.sdg.dump import dump_span_tree
 
     _traces = []
 

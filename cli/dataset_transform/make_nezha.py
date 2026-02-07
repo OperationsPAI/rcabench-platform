@@ -10,8 +10,8 @@ from typing import Any, Optional
 import polars as pl
 import typer
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.sources.convert import (
     DatapackLoader,
     DatasetLoader,
     Label,

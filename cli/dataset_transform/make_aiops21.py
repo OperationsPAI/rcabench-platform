@@ -15,15 +15,15 @@ from typing import Any
 
 import polars as pl
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.datasets.spec import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.sources.convert import DatapackLoader, DatasetLoader, Label
+from rcabench_platform.v3.sdk.datasets.spec import (
     get_datapack_folder,
     get_datapack_list,
     get_dataset_meta_file,
 )
-from rcabench_platform.v2.sources.convert import DatapackLoader, DatasetLoader, Label
-from rcabench_platform.v2.utils.fmap import fmap_threadpool
-from rcabench_platform.v2.utils.serde import save_parquet
+from rcabench_platform.v3.sdk.utils.fmap import fmap_threadpool
+from rcabench_platform.v3.sdk.utils.serde import save_parquet
 
 
 def convert_traces(src: Path) -> pl.LazyFrame:
@@ -651,7 +651,7 @@ def local_test():
 @timeit()
 def run():
     """Convert AIOps21 dataset to RCABench format."""
-    from rcabench_platform.v2.sources.convert import convert_dataset
+    from rcabench_platform.v3.internal.sources.convert import convert_dataset
 
     src_folder = Path("data/aiops_challenge/aiops2021-main/AIOps2021/aiops2021-2")
     dataset_name = "aiops21"

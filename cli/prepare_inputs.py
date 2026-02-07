@@ -10,16 +10,16 @@ from typing import Any
 
 import pandas as pd
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.clients.clickhouse import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.clients.clickhouse import (
     get_clickhouse_client,
     query_parquet_stream,
 )
-from rcabench_platform.v2.clients.k8s import download_kube_info
-from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
-from rcabench_platform.v2.datasets.rcabench import valid
-from rcabench_platform.v2.utils.fmap import fmap_processpool, fmap_threadpool
-from rcabench_platform.v2.utils.serde import save_json
+from rcabench_platform.v3.internal.clients.k8s import download_kube_info
+from rcabench_platform.v3.internal.clients.rcabench_ import get_rcabench_client
+from rcabench_platform.v3.sdk.datasets.rcabench import valid
+from rcabench_platform.v3.sdk.utils.fmap import fmap_processpool, fmap_threadpool
+from rcabench_platform.v3.sdk.utils.serde import save_json
 
 
 @app.command()

@@ -7,14 +7,26 @@ An experiment framework for Root Cause Analysis (RCA), supporting fast developme
 To add this package to another uv-managed project:
 
 ```bash
-# Install basic package
+# Install lightweight SDK (for algorithm/sampler development)
 uv add rcabench-platform
 
-# Install with dataset analysis functionality
+# Install with platform-internal tools (kubernetes, neo4j, clickhouse, etc.)
+uv add "rcabench-platform[internal]"
+
+# Install with analysis/visualization tools (matplotlib, plotly, etc.)
 uv add "rcabench-platform[analysis]"
+
+# Install everything (equivalent to the old monolithic install)
+uv add "rcabench-platform[all]"
 ```
 
-The `analysis` extra includes additional dependencies like `graphviz` and `matplotlib` needed for the dataset analysis features.
+The base package includes only the SDK core for developing and evaluating RCA algorithms and trace samplers. Use optional dependency groups to install additional functionality:
+
+- **`[internal]`** — Platform server clients, cloud storage, dataset converters, SDG builder
+- **`[analysis]`** — Visualization, statistical analysis, Streamlit dashboards
+- **`[all]`** — All of the above
+
+See [Package Restructuring Plan](./docs/package-restructuring-plan.md) for details.
 
 ## Documentation
 
@@ -23,6 +35,7 @@ The `analysis` extra includes additional dependencies like `graphviz` and `matpl
 + [Specifications](./docs/specifications.md): Our design details about RCA algorithms and data formats.
 + [Workflow References](./docs/workflow-references.md): How to use the functionalities of this project.
 + [Maintenance](./docs/maintenance.md): Guidelines for maintaining the project and release procedures.
++ [Package Restructuring Plan](./docs/package-restructuring-plan.md): v3 directory structure, v2→v3 migration guide, and optional dependency groups.
 
 ## Related Projects
 
