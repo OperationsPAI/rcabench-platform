@@ -11,13 +11,13 @@ from rcabench.openapi import (
     UploadGranularityResultReq,
 )
 
-from ..internal.clients.rcabench_ import get_rcabench_client
-from ..internal.sources.convert import convert_datapack
-from ..internal.sources.rcabench import RCABenchDatapackLoader
-from ..sdk.algorithms.spec import AlgorithmArgs, global_algorithm_registry
-from ..sdk.config import get_config
-from ..sdk.logging import logger, timeit
-from ..sdk.utils.serde import load_json, save_csv
+from ..algorithms.spec import AlgorithmArgs, global_algorithm_registry
+from ..clients.rcabench_ import get_rcabench_client
+from ..config import get_config
+from ..logging import logger, timeit
+from ..sources.convert import convert_datapack
+from ..sources.rcabench import RCABenchDatapackLoader
+from ..utils.serde import load_json, save_csv
 
 app = typer.Typer()
 

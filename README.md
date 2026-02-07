@@ -35,7 +35,7 @@ See [Package Restructuring Plan](./docs/package-restructuring-plan.md) for detai
 + [Specifications](./docs/specifications.md): Our design details about RCA algorithms and data formats.
 + [Workflow References](./docs/workflow-references.md): How to use the functionalities of this project.
 + [Maintenance](./docs/maintenance.md): Guidelines for maintaining the project and release procedures.
-+ [Package Restructuring Plan](./docs/package-restructuring-plan.md): How the package is split into SDK, internal, and analysis optional dependency groups.
++ [Package Restructuring Plan](./docs/package-restructuring-plan.md): v3 directory structure, v2→v3 migration guide, and optional dependency groups.
 
 ## Related Projects
 

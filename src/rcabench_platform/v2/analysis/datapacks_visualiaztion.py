@@ -6,7 +6,7 @@ import altair as alt
 import numpy as np
 import polars as pl
 
-from ..sdk.logging import logger
+from ..logging import logger
 
 
 @dataclass

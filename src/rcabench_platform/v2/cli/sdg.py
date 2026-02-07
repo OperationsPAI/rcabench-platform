@@ -1,14 +1,14 @@
-import sys
+import resource
 
 import typer
 
-from ..sdk.config import get_config
-from ..sdk.datasets.spec import get_datapack_folder
-from ..sdk.graphs.sdg.build_ import build_sdg
-from ..sdk.graphs.sdg.dump import dump_place_indicators
-from ..sdk.graphs.sdg.neo4j import export_sdg_to_neo4j
-from ..sdk.logging import logger, timeit
-from ..sdk.utils.serde import save_parquet, save_pickle
+from ..config import get_config
+from ..datasets.spec import get_datapack_folder
+from ..graphs.sdg.build_ import build_sdg
+from ..graphs.sdg.dump import dump_place_indicators
+from ..graphs.sdg.neo4j import export_sdg_to_neo4j
+from ..logging import logger, timeit
+from ..utils.serde import save_parquet, save_pickle
 
 app = typer.Typer()
 
@@ -22,12 +22,9 @@ def build(
 ) -> None:
     sdg = build_sdg(dataset, datapack, get_datapack_folder(dataset, datapack))
 
-    if sys.platform != "win32":
-        import resource
-
-        maxrss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        maxrss_mib = maxrss_kib / 1024
-        logger.info(f"Peak memory usage: {maxrss_mib:.3f} MiB")
+    maxrss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    maxrss_mib = maxrss_kib / 1024
+    logger.info(f"Peak memory usage: {maxrss_mib:.3f} MiB")
 
     temp_sdg = get_config().temp / "sdg"
 

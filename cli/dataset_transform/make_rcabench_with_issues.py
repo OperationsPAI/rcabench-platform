@@ -4,21 +4,21 @@ from fractions import Fraction
 
 import polars as pl
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.internal.sources.convert import link_subset
-from rcabench_platform.v2.sdk.datasets.rcabench import FAULT_TYPES
-from rcabench_platform.v2.sdk.datasets.spec import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.sources.convert import link_subset
+from rcabench_platform.v3.sdk.datasets.rcabench import FAULT_TYPES
+from rcabench_platform.v3.sdk.datasets.spec import (
     get_dataset_folder,
     get_dataset_meta_file,
     read_dataset_index,
 )
-from rcabench_platform.v2.sdk.utils.serde import save_parquet
+from rcabench_platform.v3.sdk.utils.serde import save_parquet
 
 
 def get_analysis_with_issues():
     from rcabench.openapi import InjectionsApi
 
-    from rcabench_platform.v2.internal.clients.rcabench_ import get_rcabench_client
+    from rcabench_platform.v3.internal.clients.rcabench_ import get_rcabench_client
 
     api = InjectionsApi(get_rcabench_client())
     resp = api.list_successful_injections()

@@ -4,9 +4,9 @@ import multiprocessing
 import typer
 from tqdm.auto import tqdm
 
-from ..sdk.algorithms.spec import global_algorithm_registry
-from ..sdk.logging import logger, timeit
-from ..sdk.utils.env import getenv_bool
+from ..algorithms.spec import global_algorithm_registry
+from ..logging import logger, timeit
+from ..utils.env import getenv_bool
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -23,23 +23,15 @@ def _():
 
 
 def main(*, enable_builtin_algorithms: bool = True) -> None:
-    from . import eval, sample, tools
+    from . import container, eval, online, sample, sdg, self_, tools
 
+    app.add_typer(self_.app, name="self")
     app.add_typer(tools.app, name="tools")
+    app.add_typer(online.app, name="online")
+    app.add_typer(sdg.app, name="sdg")
     app.add_typer(eval.app, name="eval")
     app.add_typer(sample.app, name="sample")
-
-    # Platform-internal CLI modules require optional dependencies (rcabench-platform[internal])
-    try:
-        from . import container, online, sdg, self_
-
-        app.add_typer(self_.app, name="self")
-        app.add_typer(online.app, name="online")
-        app.add_typer(sdg.app, name="sdg")
-        app.add_typer(container.app, name="container")
-    except ImportError:
-        pass
-
+    app.add_typer(container.app, name="container")
     if enable_builtin_algorithms:
         register_builtin_algorithms()
 
@@ -47,13 +39,13 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
 
 
 def register_builtin_algorithms():
-    from ..sdk.algorithms.random_ import Random
-    from ..sdk.algorithms.rcaeval.baro import Baro
-    from ..sdk.algorithms.rcaeval.nsigma import NSigma
-    from ..sdk.algorithms.traceback.A7 import TraceBackA7
-    from ..sdk.algorithms.traceback.A8 import TraceBackA8
-    from ..sdk.algorithms.traceback.A9 import TraceBackA9
-    from ..sdk.algorithms.traceback.A10 import TraceBackA10
+    from ..algorithms.random_ import Random
+    from ..algorithms.rcaeval.baro import Baro
+    from ..algorithms.rcaeval.nsigma import NSigma
+    from ..algorithms.traceback.A7 import TraceBackA7
+    from ..algorithms.traceback.A8 import TraceBackA8
+    from ..algorithms.traceback.A9 import TraceBackA9
+    from ..algorithms.traceback.A10 import TraceBackA10
 
     getters = {
         "random": Random,

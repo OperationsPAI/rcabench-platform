@@ -1,147 +1,134 @@
 # Package Restructuring Plan
 
-## Status: Implemented ✅
+## Status: Implemented ✅ (v3)
 
-This document describes the restructuring of `rcabench-platform` from a monolithic package into a modular package with clear audience-based directory separation and optional dependency groups.
+The restructured codebase lives under `v3/`. The original `v2/` remains unchanged for backward compatibility.
 
-## Background
+## v2 → v3 Migration Guide
 
-The `rcabench-platform` package previously had all 95+ Python files in a flat directory structure under `v2/`, with 30+ mandatory dependencies. This caused:
+### Directory Structure Changes
 
-- **Bloated installs**: Algorithm developers pulled in ~30+ dependencies they never use
-- **Windows incompatibility**: `cli/sdg.py` imported the Unix-only `resource` module at the top level (see issue #76)
-- **Unclear boundaries**: SDK interfaces, platform internals, and analysis tools were all mixed in the same directory
-
-## Solution
-
-### 1. Code Directory Restructuring
-
-The codebase is now organized into three audience-based subpackages under `v2/`:
+v3 reorganizes the flat `v2/` layout into audience-based subpackages:
 
 ```
-v2/
-├── sdk/                    # Core SDK for algorithm/sampler developers
-│   ├── algorithms/         # RCA algorithm base classes & implementations
-│   ├── samplers/           # Trace sampler base classes & implementations
-│   ├── datasets/           # Dataset/datapack specs & helpers
-│   ├── evaluation/         # Performance metrics (Avg@k, Top-k, MRR, etc.)
-│   ├── experiments/        # Experiment runners (single, batch, report)
-│   ├── graphs/             # SDG data structures & builders
-│   ├── pedestals/          # Dataset-specific processors
-│   ├── utils/              # Shared utilities (serde, fmap, fs, etc.)
-│   ├── config.py           # Environment configuration
-│   └── logging.py          # Structured logging with loguru
-│
-├── internal/               # Platform-internal modules (operators)
-│   ├── clients/            # Infrastructure clients (rcabench, k8s, neo4j, clickhouse)
-│   ├── cloud/              # Cloud storage (MinIO, HuggingFace Hub)
-│   ├── sources/            # Dataset format converters
-│   └── metrics/            # Algorithm metrics & anomaly detection
-│
-├── analysis/               # Research & visualization tools
-│   ├── aggregation.py      # Fault type mapping
-│   ├── algo_perf_vis.py    # Algorithm performance visualization
-│   ├── data_prepare.py     # Data preparation
-│   └── ...
-│
-├── tools/                  # Interactive tools
-│   └── label/              # Streamlit-based trace labeling UI
-│
-├── cli/                    # CLI entry points
-│   ├── main.py             # Main entry (loads eval, sample, tools always)
-│   ├── eval.py             # Algorithm evaluation commands
-│   ├── sample.py           # Sampler execution commands
-│   ├── tools.py            # Utility commands
-│   ├── online.py           # Server API commands (requires [internal])
-│   ├── sdg.py              # SDG builder commands (requires [internal])
-│   ├── container.py        # Container management (requires [internal])
-│   └── self_.py            # Self-test commands (requires [internal])
-│
-├── config.py               # Backward-compatible re-export from sdk/
-└── logging.py              # Backward-compatible re-export from sdk/
+v2/ (original, unchanged)              v3/ (new, restructured)
+├── algorithms/                        ├── sdk/
+├── samplers/                          │   ├── algorithms/
+├── datasets/                          │   ├── samplers/
+├── evaluation/                        │   ├── datasets/
+├── experiments/                       │   ├── evaluation/
+├── graphs/                            │   ├── experiments/
+├── pedestals/                         │   ├── graphs/
+├── utils/                             │   ├── pedestals/
+├── config.py                          │   ├── utils/
+├── logging.py                         │   ├── config.py
+├── clients/                           │   └── logging.py
+├── cloud/                             ├── internal/
+├── sources/                           │   ├── clients/
+├── metrics/                           │   ├── cloud/
+├── analysis/                          │   ├── sources/
+├── tools/                             │   └── metrics/
+└── cli/                               ├── analysis/
+                                       ├── tools/
+                                       └── cli/
 ```
 
-### 2. Optional Dependency Groups
+### Import Path Changes
 
-**Base install: `rcabench-platform`** (SDK for algorithm/sampler developers)
+| v2 Import | v3 Import |
+|-----------|-----------|
+| `v2.algorithms.spec` | `v3.sdk.algorithms.spec` |
+| `v2.samplers.spec` | `v3.sdk.samplers.spec` |
+| `v2.datasets.spec` | `v3.sdk.datasets.spec` |
+| `v2.evaluation.ranking` | `v3.sdk.evaluation.ranking` |
+| `v2.experiments.single` | `v3.sdk.experiments.single` |
+| `v2.graphs.sdg.*` | `v3.sdk.graphs.sdg.*` |
+| `v2.pedestals.*` | `v3.sdk.pedestals.*` |
+| `v2.utils.*` | `v3.sdk.utils.*` |
+| `v2.config` | `v3.sdk.config` |
+| `v2.logging` | `v3.sdk.logging` |
+| `v2.clients.*` | `v3.internal.clients.*` |
+| `v2.cloud.*` | `v3.internal.cloud.*` |
+| `v2.sources.*` | `v3.internal.sources.*` |
+| `v2.metrics.*` | `v3.internal.metrics.*` |
+| `v2.analysis.*` | `v3.analysis.*` |
+| `v2.tools.*` | `v3.tools.*` |
+| `v2.cli.*` | `v3.cli.*` |
+
+### Quick Migration
+
+For most codebases, run these find-and-replace operations:
+
 ```bash
-pip install rcabench-platform
-```
-Core dependencies (~15 packages): `polars`, `pyarrow`, `numpy`, `scipy`, `scikit-learn`, `duckdb`, `networkx`, `loguru`, `typer`, etc.
+# SDK modules (algorithms, samplers, datasets, evaluation, experiments, graphs, pedestals, utils, config, logging)
+sed -i 's/rcabench_platform\.v2\.algorithms\./rcabench_platform.v3.sdk.algorithms./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.samplers\./rcabench_platform.v3.sdk.samplers./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.datasets\./rcabench_platform.v3.sdk.datasets./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.evaluation\./rcabench_platform.v3.sdk.evaluation./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.experiments\./rcabench_platform.v3.sdk.experiments./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.graphs\./rcabench_platform.v3.sdk.graphs./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.pedestals/rcabench_platform.v3.sdk.pedestals/g' your_code.py
+sed -i 's/rcabench_platform\.v2\.utils\./rcabench_platform.v3.sdk.utils./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.config/rcabench_platform.v3.sdk.config/g' your_code.py
+sed -i 's/rcabench_platform\.v2\.logging/rcabench_platform.v3.sdk.logging/g' your_code.py
 
-**`rcabench-platform[internal]`** (Platform maintainers)
-```bash
-pip install "rcabench-platform[internal]"
-```
-Additional: `rcabench`, `kubernetes`, `neo4j`, `clickhouse-connect`, `minio`, `huggingface-hub`, `drain3`
+# Internal modules (clients, cloud, sources, metrics)
+sed -i 's/rcabench_platform\.v2\.clients\./rcabench_platform.v3.internal.clients./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.cloud\./rcabench_platform.v3.internal.cloud./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.sources\./rcabench_platform.v3.internal.sources./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.metrics\./rcabench_platform.v3.internal.metrics./g' your_code.py
 
-**`rcabench-platform[analysis]`** (Researchers)
-```bash
-pip install "rcabench-platform[analysis]"
-```
-Additional: `matplotlib`, `plotly`, `altair`, `streamlit`, `statsmodels`, `graphviz`, etc.
-
-**`rcabench-platform[all]`** (Full installation)
-```bash
-pip install "rcabench-platform[all]"
-```
-
-### 3. Import Path Changes
-
-| Old Path | New Path |
-|----------|----------|
-| `v2.algorithms.spec` | `v2.sdk.algorithms.spec` |
-| `v2.samplers.spec` | `v2.sdk.samplers.spec` |
-| `v2.datasets.spec` | `v2.sdk.datasets.spec` |
-| `v2.evaluation.ranking` | `v2.sdk.evaluation.ranking` |
-| `v2.experiments.single` | `v2.sdk.experiments.single` |
-| `v2.config` | `v2.sdk.config` (also `v2.config` via re-export) |
-| `v2.logging` | `v2.sdk.logging` (also `v2.logging` via re-export) |
-| `v2.utils.*` | `v2.sdk.utils.*` |
-| `v2.clients.*` | `v2.internal.clients.*` |
-| `v2.cloud.*` | `v2.internal.cloud.*` |
-| `v2.sources.*` | `v2.internal.sources.*` |
-| `v2.metrics.*` | `v2.internal.metrics.*` |
-
-**Backward compatibility**: `v2.config` and `v2.logging` remain usable via re-export modules.
-
-## Implementation Details
-
-### Conditional CLI Loading
-
-```python
-def main(*, enable_builtin_algorithms: bool = True) -> None:
-    from . import eval, sample, tools
-    # Always available
-    app.add_typer(tools.app, name="tools")
-    app.add_typer(eval.app, name="eval")
-    app.add_typer(sample.app, name="sample")
-
-    # Requires rcabench-platform[internal]
-    try:
-        from . import container, online, sdg, self_
-        app.add_typer(self_.app, name="self")
-        app.add_typer(online.app, name="online")
-        app.add_typer(sdg.app, name="sdg")
-        app.add_typer(container.app, name="container")
-    except ImportError:
-        pass
+# Analysis, tools, CLI
+sed -i 's/rcabench_platform\.v2\.analysis\./rcabench_platform.v3.analysis./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.tools\./rcabench_platform.v3.tools./g' your_code.py
+sed -i 's/rcabench_platform\.v2\.cli\./rcabench_platform.v3.cli./g' your_code.py
 ```
 
-### Windows Compatibility
+### Package Substructure
 
-The `resource` module import in `cli/sdg.py` is guarded with `sys.platform != "win32"` (fixes #76).
+#### `v3/sdk/` — SDK Core (Algorithm & Sampler Developers)
 
-## Migration Guide
+Install: `pip install rcabench-platform`
 
-| Previous Install | New Install |
-|-----------------|-------------|
-| `pip install rcabench-platform` | `pip install "rcabench-platform[all]"` (to keep same behavior) |
-| Algorithm developer | `pip install rcabench-platform` (lightweight SDK) |
-| Platform operator | `pip install "rcabench-platform[internal]"` |
-| Researcher | `pip install "rcabench-platform[analysis]"` |
+| Module | Description |
+|--------|-------------|
+| `sdk/algorithms/` | `Algorithm` base class, TraceBACK (A7–A10), RCAEval (baro, nsigma) |
+| `sdk/samplers/` | `TraceSampler` base class, sampling experiments |
+| `sdk/datasets/` | Dataset/datapack path helpers, data loaders |
+| `sdk/evaluation/` | Performance metrics (Avg@k, Top-k, MRR, MAP) |
+| `sdk/experiments/` | Experiment runners (single, batch, report) |
+| `sdk/graphs/` | SDG data structures, builders, statistics |
+| `sdk/pedestals/` | Dataset-specific processors |
+| `sdk/utils/` | Shared utilities (serde, fmap, fs, etc.) |
+| `sdk/config.py` | Environment configuration |
+| `sdk/logging.py` | Structured logging with loguru |
+
+#### `v3/internal/` — Platform Internal (Operators)
+
+Install: `pip install "rcabench-platform[internal]"`
+
+| Module | Description |
+|--------|-------------|
+| `internal/clients/` | RCABench, K8s, Neo4j, ClickHouse clients |
+| `internal/cloud/` | MinIO, HuggingFace Hub storage |
+| `internal/sources/` | Dataset format converters |
+| `internal/metrics/` | Algorithm metrics calculation, anomaly detection |
+
+#### `v3/analysis/` — Research & Visualization
+
+Install: `pip install "rcabench-platform[analysis]"`
+
+#### `v3/cli/` — CLI Entry Points
+
+The CLI conditionally loads internal commands when `[internal]` deps are available.
+
+### What's NOT Changing
+
+- **v2 code remains untouched** — existing code using v2 imports continues to work
+- **Package name** — still `rcabench-platform`
+- **Dependency groups** — same `[internal]`, `[analysis]`, `[all]` optional groups
 
 ## Related Issues
 
-- #76 — Windows support blocked by `resource` module in `sdg.py` (fixed)
+- #76 — Windows support blocked by `resource` module in `sdg.py` (fixed in v3)
 - #80 — LLM agent evaluation judge needs clean SDK interface

@@ -10,13 +10,13 @@ from typing import Any
 import polars as pl
 from rcabench.openapi import InjectionsApi, LabelItem, SearchInjectionReq
 
-from rcabench_platform.v2.cli.main import app
-from rcabench_platform.v2.internal.clients.rcabench_ import get_rcabench_client
-from rcabench_platform.v2.internal.metrics.metrics_calculator import DatasetMetricsCalculator
-from rcabench_platform.v2.sdk.datasets.rcabench import RCABenchAnalyzerLoader
-from rcabench_platform.v2.sdk.datasets.rcaeval import RCAEvalAnalyzerLoader
-from rcabench_platform.v2.sdk.logging import logger
-from rcabench_platform.v2.sdk.utils.fmap import fmap_processpool
+from rcabench_platform.v3.cli.main import app
+from rcabench_platform.v3.internal.clients.rcabench_ import get_rcabench_client
+from rcabench_platform.v3.internal.metrics.metrics_calculator import DatasetMetricsCalculator
+from rcabench_platform.v3.sdk.datasets.rcabench import RCABenchAnalyzerLoader
+from rcabench_platform.v3.sdk.datasets.rcaeval import RCAEvalAnalyzerLoader
+from rcabench_platform.v3.sdk.logging import logger
+from rcabench_platform.v3.sdk.utils.fmap import fmap_processpool
 
 
 def _calculate_trace_depths_vectorized(df: pl.DataFrame) -> list[int]:

@@ -11,10 +11,10 @@ from rcabench.openapi import (
     SearchInjectionReq,
 )
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.internal.clients.rcabench_ import get_rcabench_client
-from rcabench_platform.v2.sdk.datasets.rcabench import rcabench_split_train_test, valid
-from rcabench_platform.v2.sdk.datasets.spec import get_datapack_list
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.clients.rcabench_ import get_rcabench_client
+from rcabench_platform.v3.sdk.datasets.rcabench import rcabench_split_train_test, valid
+from rcabench_platform.v3.sdk.datasets.spec import get_datapack_list
 
 DATASET_NAME = "pair-diag"
 

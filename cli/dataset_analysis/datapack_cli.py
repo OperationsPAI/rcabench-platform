@@ -4,21 +4,21 @@ from pathlib import Path
 import polars as pl
 from dotenv import load_dotenv
 
-from rcabench_platform.v2.analysis.aggregation import DuckDBAggregator, aggregate
-from rcabench_platform.v2.analysis.algo_perf_vis import (
+from rcabench_platform.v3.analysis.aggregation import DuckDBAggregator, aggregate
+from rcabench_platform.v3.analysis.algo_perf_vis import (
     algo_perf_by_fault_type,
     algo_perf_by_groups,
     algo_success_by_algo,
     dataset_anomaly_distribution,
 )
-from rcabench_platform.v2.analysis.data_prepare import (
+from rcabench_platform.v3.analysis.data_prepare import (
     build_items_with_cache,
     get_execution_item,
 )
-from rcabench_platform.v2.analysis.detector_visualization import batch_visualization
-from rcabench_platform.v2.cli.main import app, logger
-from rcabench_platform.v2.sdk.utils.dataframe import format_dataframe, print_dataframe
-from rcabench_platform.v2.sdk.utils.serde import save_parquet
+from rcabench_platform.v3.analysis.detector_visualization import batch_visualization
+from rcabench_platform.v3.cli.main import app, logger
+from rcabench_platform.v3.sdk.utils.dataframe import format_dataframe, print_dataframe
+from rcabench_platform.v3.sdk.utils.serde import save_parquet
 
 DEFAULT_NAMESPACE = "ts"
 ALGORITHMS = [

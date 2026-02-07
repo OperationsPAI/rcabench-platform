@@ -7,15 +7,15 @@ import polars as pl
 from matplotlib.axes import Axes
 from tqdm.auto import tqdm
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sdk.datasets.spec import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.sdk.datasets.spec import (
     get_datapack_folder,
     get_datapack_labels,
     get_datapack_list,
     get_dataset_meta_file,
 )
-from rcabench_platform.v2.sdk.utils.fmap import fmap_threadpool
-from rcabench_platform.v2.sdk.utils.serde import save_parquet
+from rcabench_platform.v3.sdk.utils.fmap import fmap_threadpool
+from rcabench_platform.v3.sdk.utils.serde import save_parquet
 
 
 @app.command()
@@ -177,7 +177,7 @@ def _scan_normal_duration(dataset: str, datapack: str) -> dict[str, Any]:
     if dataset.startswith("rcabench"):
         lf = pl.scan_parquet(datapack_folder / "normal_traces.parquet")
     elif dataset.startswith("rcaeval"):
-        from rcabench_platform.v2.sdk.graphs.sdg.build_.rcaeval import load_inject_time
+        from rcabench_platform.v3.sdk.graphs.sdg.build_.rcaeval import load_inject_time
 
         inject_time = load_inject_time(datapack_folder)
         lf = pl.scan_parquet(datapack_folder / "traces.parquet")

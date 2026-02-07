@@ -4,7 +4,7 @@ from typing import Any
 import polars as pl
 from rcabench.openapi import ChaosNode
 
-from ..sdk.logging import logger
+from ..logging import logger
 from .data_prepare import Item
 
 # Constants

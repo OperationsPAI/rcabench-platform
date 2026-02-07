@@ -34,8 +34,8 @@ dependencies = [ #
 ]
 
 [project.scripts]
-rca = "rcabench_platform.v2.cli.main:main"
-label = "rcabench_platform.v2.tools.label.app:run_streamlit"
+rca = "rcabench_platform.v3.cli.main:main"
+label = "rcabench_platform.v3.tools.label.app:run_streamlit"
 
 [project.optional-dependencies]
 internal = [

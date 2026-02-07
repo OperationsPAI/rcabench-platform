@@ -3,8 +3,8 @@ from pathlib import Path
 import polars as pl
 import typer
 
-from ..sdk.logging import logger, timeit
-from ..sdk.utils.dataframe import print_dataframe
+from ..logging import logger, timeit
+from ..utils.dataframe import print_dataframe
 
 app = typer.Typer()
 

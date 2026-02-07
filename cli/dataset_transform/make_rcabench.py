@@ -10,26 +10,26 @@ import dateutil.tz
 import polars as pl
 from tqdm.auto import tqdm
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.internal.sources.convert import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.sources.convert import (
     convert_datapack,
     convert_dataset,
     link_subset,
 )
-from rcabench_platform.v2.internal.sources.rcabench import (
+from rcabench_platform.v3.internal.sources.rcabench import (
     RCABenchDatapackLoader,
     RcabenchDatasetLoader,
 )
-from rcabench_platform.v2.sdk.datasets.rcabench import FAULT_TYPES
-from rcabench_platform.v2.sdk.datasets.spec import (
+from rcabench_platform.v3.sdk.datasets.rcabench import FAULT_TYPES
+from rcabench_platform.v3.sdk.datasets.spec import (
     get_datapack_folder,
     get_datapack_list,
     get_dataset_meta_file,
 )
-from rcabench_platform.v2.sdk.utils.dataframe import print_dataframe
-from rcabench_platform.v2.sdk.utils.dict_ import flatten_dict
-from rcabench_platform.v2.sdk.utils.fmap import fmap_threadpool
-from rcabench_platform.v2.sdk.utils.serde import load_json, save_parquet
+from rcabench_platform.v3.sdk.utils.dataframe import print_dataframe
+from rcabench_platform.v3.sdk.utils.dict_ import flatten_dict
+from rcabench_platform.v3.sdk.utils.fmap import fmap_threadpool
+from rcabench_platform.v3.sdk.utils.serde import load_json, save_parquet
 
 
 @app.command()
@@ -61,7 +61,7 @@ def build_template():
     src_root = Path("data") / "rcabench_dataset"
 
     # Get all datapacks using the same logic as the dataset loader
-    from rcabench_platform.v2.internal.sources.rcabench import (
+    from rcabench_platform.v3.internal.sources.rcabench import (
         create_template_miner,
         extract_unique_log_messages,
         scan_datapacks,
@@ -112,7 +112,7 @@ def test_build_template():
     datapack = "ts0-mysql-bandwidth-5p8bkc"
 
     # Extract unique messages from the specified datapack
-    from rcabench_platform.v2.internal.sources.rcabench import (
+    from rcabench_platform.v3.internal.sources.rcabench import (
         create_template_miner,
         extract_unique_log_messages,
     )

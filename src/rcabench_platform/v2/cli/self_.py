@@ -2,10 +2,10 @@ import traceback
 
 import typer
 
-from ..internal.clients.clickhouse import get_clickhouse_client
-from ..internal.clients.rcabench_ import get_rcabench_client
-from ..sdk.config import get_config
-from ..sdk.logging import logger, timeit
+from ..clients.clickhouse import get_clickhouse_client
+from ..clients.rcabench_ import get_rcabench_client
+from ..config import get_config
+from ..logging import logger, timeit
 
 app = typer.Typer()
 

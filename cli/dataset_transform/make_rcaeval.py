@@ -3,14 +3,14 @@ from pathlib import Path
 
 import polars as pl
 
-from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.internal.sources.convert import convert_datapack, convert_dataset
-from rcabench_platform.v2.internal.sources.rcaeval import (
+from rcabench_platform.v3.cli.main import app, logger, timeit
+from rcabench_platform.v3.internal.sources.convert import convert_datapack, convert_dataset
+from rcabench_platform.v3.internal.sources.rcaeval import (
     RcaevalDatapackLoader,
     RcaevalDatasetLoader,
 )
-from rcabench_platform.v2.sdk.datasets.spec import get_dataset_meta_file, read_dataset_index
-from rcabench_platform.v2.sdk.utils.serde import save_parquet
+from rcabench_platform.v3.sdk.datasets.spec import get_dataset_meta_file, read_dataset_index
+from rcabench_platform.v3.sdk.utils.serde import save_parquet
 
 
 @app.command()

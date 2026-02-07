@@ -5,10 +5,10 @@ from pathlib import Path
 import polars as pl
 from dotenv import load_dotenv
 
-from rcabench_platform.v2.analysis.detector_visualization import batch_visualization
-from rcabench_platform.v2.cli.main import app, logger
-from rcabench_platform.v2.sdk.datasets.rcabench import valid
-from rcabench_platform.v2.sdk.pedestals.train_ticket import TrainTicketPedestal
+from rcabench_platform.v3.analysis.detector_visualization import batch_visualization
+from rcabench_platform.v3.cli.main import app, logger
+from rcabench_platform.v3.sdk.datasets.rcabench import valid
+from rcabench_platform.v3.sdk.pedestals.train_ticket import TrainTicketPedestal
 
 load_dotenv()
 
