@@ -23,6 +23,7 @@ The `analysis` extra includes additional dependencies like `graphviz` and `matpl
 + [Specifications](./docs/specifications.md): Our design details about RCA algorithms and data formats.
 + [Workflow References](./docs/workflow-references.md): How to use the functionalities of this project.
 + [Maintenance](./docs/maintenance.md): Guidelines for maintaining the project and release procedures.
++ [Package Restructuring Plan](./docs/package-restructuring-plan.md): Plan to split the monolithic package into SDK, internal, and analysis packages.
 
 ## Related Projects
 

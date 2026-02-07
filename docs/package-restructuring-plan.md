@@ -98,7 +98,7 @@ This causes problems:
 - `huggingface-hub` — Model/dataset hub
 - `drain3` — Log template extraction
 - `networkx` — Graph algorithms
-- `resource` (stdlib, Unix-only) — Memory profiling
+- `resource` (stdlib, Unix-only) — System resource usage monitoring
 
 **Entry points**:
 - `rca` CLI command (all subcommands including online, sdg, container)
