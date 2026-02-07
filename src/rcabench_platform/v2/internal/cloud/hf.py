@@ -3,8 +3,8 @@ from pathlib import Path
 
 from huggingface_hub import HfApi
 
-from ..sdk.logging import timeit
-from ..sdk.utils.fmap import fmap_threadpool
+from ...sdk.logging import timeit
+from ...sdk.utils.fmap import fmap_threadpool
 from .spec import Storage
 
 

@@ -6,7 +6,7 @@ import kubernetes
 import kubernetes.client
 import kubernetes.config
 
-from ..sdk.logging import logger, timeit
+from ...sdk.logging import logger, timeit
 
 
 @dataclass(kw_only=True)

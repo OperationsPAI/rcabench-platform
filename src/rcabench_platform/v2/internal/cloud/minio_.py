@@ -6,8 +6,8 @@ from pathlib import Path
 
 import minio
 
-from ..sdk.logging import timeit
-from ..sdk.utils.fmap import fmap_threadpool
+from ...sdk.logging import timeit
+from ...sdk.utils.fmap import fmap_threadpool
 from .spec import Storage, unzipped_folder, zipped_folder
 
 

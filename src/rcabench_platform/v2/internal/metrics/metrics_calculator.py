@@ -10,9 +10,9 @@ from rcabench.openapi import (
     ManageInjectionLabelReq,
 )
 
+from ...sdk.datasets.spec import DatasetAnalyzer
+from ...sdk.logging import logger
 from ..clients.rcabench_ import get_rcabench_client
-from ..sdk.datasets.spec import DatasetAnalyzer
-from ..sdk.logging import logger
 
 
 # TODO 多注入情况下的处理

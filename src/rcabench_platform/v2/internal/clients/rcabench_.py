@@ -3,7 +3,7 @@ import os
 from rcabench.client import RCABenchClient
 from rcabench.openapi import ApiClient
 
-from ..sdk.config import get_config
+from ...sdk.config import get_config
 
 
 def get_rcabench_client(*, base_url: str | None = None) -> ApiClient:
