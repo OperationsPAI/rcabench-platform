@@ -15,13 +15,13 @@ from rcabench.openapi import (
     EvaluationsApi,
 )
 
-from rcabench_platform.v2.utils.fmap import fmap_processpool
+from rcabench_platform.v2.sdk.utils.fmap import fmap_processpool
 
-from ..cli.main import logger
-from ..clients.rcabench_ import get_rcabench_client
-from ..datasets.rcabench import valid
-from ..pedestals import Pedestal, get_pedestal
-from ..utils.display import get_timestamp
+from ..internal.clients.rcabench_ import get_rcabench_client
+from ..sdk.datasets.rcabench import valid
+from ..sdk.logging import logger
+from ..sdk.pedestals import Pedestal, get_pedestal
+from ..sdk.utils.display import get_timestamp
 
 DETECTOR_NAME = "detector"
 

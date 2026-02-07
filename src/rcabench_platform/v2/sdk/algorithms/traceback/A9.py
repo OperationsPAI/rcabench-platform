@@ -39,7 +39,7 @@ try:
 except ImportError:
     HAS_STATSMODELS = False
 
-from ....compat import StrEnum
+from .....compat import StrEnum
 from ...datasets.rcabench import rcabench_fix_injection
 from ...graphs.sdg.defintion import SDG, PlaceNode
 from ...graphs.sdg.statistics import calc_statistics

@@ -10,8 +10,8 @@ from typing import Any
 import polars as pl
 from tqdm.auto import tqdm
 
-from ..config import get_config
-from ..datasets.spec import (
+from ..sdk.config import get_config
+from ..sdk.datasets.spec import (
     Label,
     get_datapack_folder,
     get_dataset_folder,
@@ -19,11 +19,11 @@ from ..datasets.spec import (
     get_dataset_labels_path,
     read_dataset_labels,
 )
-from ..logging import logger, timeit
-from ..utils.display import human_byte_size
-from ..utils.fmap import fmap_processpool
-from ..utils.fs import running_mark
-from ..utils.serde import save_csv, save_json, save_parquet, save_txt
+from ..sdk.logging import logger, timeit
+from ..sdk.utils.display import human_byte_size
+from ..sdk.utils.fmap import fmap_processpool
+from ..sdk.utils.fs import running_mark
+from ..sdk.utils.serde import save_csv, save_json, save_parquet, save_txt
 
 
 class DatapackLoader(ABC):

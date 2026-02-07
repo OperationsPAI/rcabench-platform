@@ -11,7 +11,7 @@ import polars as pl
 import typer
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import (
+from rcabench_platform.v2.internal.sources.convert import (
     DatapackLoader,
     DatasetLoader,
     Label,

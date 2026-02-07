@@ -20,21 +20,21 @@ from rcabench.openapi import (
 from tqdm import tqdm
 
 from rcabench_platform.v2.cli.main import app
-from rcabench_platform.v2.clients.rcabench_ import get_rcabench_client
-from rcabench_platform.v2.datasets.rcabench import RCABenchAnalyzerLoader, valid
-from rcabench_platform.v2.logging import logger, timeit
-from rcabench_platform.v2.metrics.ad.configs import (
+from rcabench_platform.v2.internal.clients.rcabench_ import get_rcabench_client
+from rcabench_platform.v2.internal.metrics.ad.configs import (
     EnhancedLatencyConfig,
     SuccessRateConfig,
 )
-from rcabench_platform.v2.metrics.ad.detectors import (
+from rcabench_platform.v2.internal.metrics.ad.detectors import (
     EnhancedLatencyDetector,
     SuccessRateDetector,
 )
-from rcabench_platform.v2.metrics.ad.types import HistoricalData
-from rcabench_platform.v2.metrics.metrics_calculator import DatasetMetricsCalculator
-from rcabench_platform.v2.pedestals import Pedestal, get_pedestal
-from rcabench_platform.v2.utils.fmap import fmap_processpool
+from rcabench_platform.v2.internal.metrics.ad.types import HistoricalData
+from rcabench_platform.v2.internal.metrics.metrics_calculator import DatasetMetricsCalculator
+from rcabench_platform.v2.sdk.datasets.rcabench import RCABenchAnalyzerLoader, valid
+from rcabench_platform.v2.sdk.logging import logger, timeit
+from rcabench_platform.v2.sdk.pedestals import Pedestal, get_pedestal
+from rcabench_platform.v2.sdk.utils.fmap import fmap_processpool
 
 load_dotenv(Path.cwd() / ".env")
 
@@ -750,8 +750,8 @@ def platform_convert(
     ou_p: Path | None = None,
     system: str = "ts",
 ) -> None:
-    from rcabench_platform.v2.sources.convert import convert_datapack
-    from rcabench_platform.v2.sources.rcabench import RCABenchDatapackLoader
+    from rcabench_platform.v2.internal.sources.convert import convert_datapack
+    from rcabench_platform.v2.internal.sources.rcabench import RCABenchDatapackLoader
 
     if in_p is None:
         in_p = Path(os.environ.get("INPUT_PATH", ""))

@@ -7,16 +7,16 @@ import matplotlib.pyplot as plt
 import polars as pl
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.clients.clickhouse import (
+from rcabench_platform.v2.internal.clients.clickhouse import (
     get_clickhouse_client,
     query_parquet_stream,
 )
-from rcabench_platform.v2.config import get_config
-from rcabench_platform.v2.datasets.spec import (
+from rcabench_platform.v2.sdk.config import get_config
+from rcabench_platform.v2.sdk.datasets.spec import (
     get_datapack_folder,
     get_dataset_meta_file,
 )
-from rcabench_platform.v2.pedestals import get_pedestal
+from rcabench_platform.v2.sdk.pedestals import get_pedestal
 
 
 @app.command()

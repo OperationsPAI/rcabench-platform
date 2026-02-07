@@ -12,12 +12,12 @@ from rcabench.openapi import (
     TracesApi,
 )
 
-from ..clients.k8s import download_kube_info
-from ..clients.rcabench_ import get_rcabench_client
-from ..config import get_config
-from ..logging import logger, timeit
-from ..utils.dataframe import print_dataframe
-from ..utils.serde import save_json
+from ..internal.clients.k8s import download_kube_info
+from ..internal.clients.rcabench_ import get_rcabench_client
+from ..sdk.config import get_config
+from ..sdk.logging import logger, timeit
+from ..sdk.utils.dataframe import print_dataframe
+from ..sdk.utils.serde import save_json
 
 PROTJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 

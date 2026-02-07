@@ -3,12 +3,12 @@ from typing import Annotated
 import polars as pl
 import typer
 
-from ..algorithms.spec import global_algorithm_registry
-from ..datasets.spec import get_dataset_index_path, get_dataset_list
-from ..experiments.batch import run_batch
-from ..experiments.report import generate_perf_report
-from ..experiments.single import run_single
-from ..logging import logger, timeit
+from ..sdk.algorithms.spec import global_algorithm_registry
+from ..sdk.datasets.spec import get_dataset_index_path, get_dataset_list
+from ..sdk.experiments.batch import run_batch
+from ..sdk.experiments.report import generate_perf_report
+from ..sdk.experiments.single import run_single
+from ..sdk.logging import logger, timeit
 
 app = typer.Typer()
 

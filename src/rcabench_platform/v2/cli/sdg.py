@@ -2,13 +2,13 @@ import sys
 
 import typer
 
-from ..config import get_config
-from ..datasets.spec import get_datapack_folder
-from ..graphs.sdg.build_ import build_sdg
-from ..graphs.sdg.dump import dump_place_indicators
-from ..graphs.sdg.neo4j import export_sdg_to_neo4j
-from ..logging import logger, timeit
-from ..utils.serde import save_parquet, save_pickle
+from ..sdk.config import get_config
+from ..sdk.datasets.spec import get_datapack_folder
+from ..sdk.graphs.sdg.build_ import build_sdg
+from ..sdk.graphs.sdg.dump import dump_place_indicators
+from ..sdk.graphs.sdg.neo4j import export_sdg_to_neo4j
+from ..sdk.logging import logger, timeit
+from ..sdk.utils.serde import save_parquet, save_pickle
 
 app = typer.Typer()
 

@@ -17,8 +17,8 @@ from rcabench_platform.v2.analysis.data_prepare import (
 )
 from rcabench_platform.v2.analysis.detector_visualization import batch_visualization
 from rcabench_platform.v2.cli.main import app, logger
-from rcabench_platform.v2.utils.dataframe import format_dataframe, print_dataframe
-from rcabench_platform.v2.utils.serde import save_parquet
+from rcabench_platform.v2.sdk.utils.dataframe import format_dataframe, print_dataframe
+from rcabench_platform.v2.sdk.utils.serde import save_parquet
 
 DEFAULT_NAMESPACE = "ts"
 ALGORITHMS = [

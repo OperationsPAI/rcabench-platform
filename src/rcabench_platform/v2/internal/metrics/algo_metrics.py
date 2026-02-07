@@ -19,8 +19,8 @@ from rcabench.openapi import (
 )
 
 from ..clients.rcabench_ import get_rcabench_client
-from ..datasets.spec import build_service_graph
-from ..logging import logger
+from ..sdk.datasets.spec import build_service_graph
+from ..sdk.logging import logger
 
 
 class AlgoMetrics(TypedDict):

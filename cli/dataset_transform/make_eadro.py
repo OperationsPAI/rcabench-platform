@@ -11,13 +11,13 @@ import polars as pl
 import typer
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.sources.convert import (
+from rcabench_platform.v2.internal.sources.convert import (
     DatapackLoader,
     DatasetLoader,
     Label,
     convert_dataset,
 )
-from rcabench_platform.v2.utils.serde import load_json
+from rcabench_platform.v2.sdk.utils.serde import load_json
 
 
 def trace_process(filepath: Path) -> pd.DataFrame:

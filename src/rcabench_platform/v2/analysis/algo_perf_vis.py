@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from ..logging import logger
+from ..sdk.logging import logger
 
 # Algorithm name mapping for display
 ALGORITHM_NAME_MAPPING = {

@@ -9,7 +9,7 @@ import networkx as nx
 import polars as pl
 from typing_extensions import Self
 
-from ....compat import StrEnum
+from .....compat import StrEnum
 from ...logging import logger
 
 

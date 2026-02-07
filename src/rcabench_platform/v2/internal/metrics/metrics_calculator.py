@@ -11,8 +11,8 @@ from rcabench.openapi import (
 )
 
 from ..clients.rcabench_ import get_rcabench_client
-from ..datasets.spec import DatasetAnalyzer
-from ..logging import logger
+from ..sdk.datasets.spec import DatasetAnalyzer
+from ..sdk.logging import logger
 
 
 # TODO 多注入情况下的处理

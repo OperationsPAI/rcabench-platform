@@ -1,6 +1,6 @@
 import neo4j
 
-from ...clients.neo4j import get_neo4j_driver
+from ....internal.clients.neo4j import get_neo4j_driver
 from ...logging import logger, timeit
 from .defintion import SDG
 

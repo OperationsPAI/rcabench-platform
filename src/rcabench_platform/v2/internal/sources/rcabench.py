@@ -9,10 +9,10 @@ from drain3.drain import LogCluster
 from drain3.file_persistence import FilePersistence
 from drain3.template_miner_config import TemplateMinerConfig
 
-from ..datasets.rcabench import get_service_names
-from ..logging import logger, timeit
-from ..pedestals import get_pedestal
-from ..utils.serde import load_json
+from ..sdk.datasets.rcabench import get_service_names
+from ..sdk.logging import logger, timeit
+from ..sdk.pedestals import get_pedestal
+from ..sdk.utils.serde import load_json
 from .convert import DatapackLoader, DatasetLoader, Label
 
 

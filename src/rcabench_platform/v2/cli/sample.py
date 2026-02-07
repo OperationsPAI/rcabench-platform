@@ -3,14 +3,14 @@ from typing import Annotated
 
 import typer
 
-from ..datasets.spec import get_datapack_folder, get_dataset_list
-from ..logging import logger, timeit
-from ..samplers.experiments.batch import run_sampler_batch
-from ..samplers.experiments.report import generate_sampler_perf_report
-from ..samplers.experiments.single import run_sampler_single
-from ..samplers.metrics_sli import generate_metrics_sli
-from ..samplers.spec import SamplingMode, global_sampler_registry
-from ..utils.fmap import fmap_processpool
+from ..sdk.datasets.spec import get_datapack_folder, get_dataset_list
+from ..sdk.logging import logger, timeit
+from ..sdk.samplers.experiments.batch import run_sampler_batch
+from ..sdk.samplers.experiments.report import generate_sampler_perf_report
+from ..sdk.samplers.experiments.single import run_sampler_single
+from ..sdk.samplers.metrics_sli import generate_metrics_sli
+from ..sdk.samplers.spec import SamplingMode, global_sampler_registry
+from ..sdk.utils.fmap import fmap_processpool
 
 app = typer.Typer()
 
@@ -144,7 +144,7 @@ def generate_sli_metrics(
         generate_metrics_sli(input_folder)
     else:
         # Generate for all datapacks in dataset
-        from ..datasets.spec import get_datapack_list
+        from ..sdk.datasets.spec import get_datapack_list
 
         datapacks = get_datapack_list(dataset)
         logger.info(f"Generating metrics_sli.parquet for {len(datapacks)} datapacks in {dataset}")

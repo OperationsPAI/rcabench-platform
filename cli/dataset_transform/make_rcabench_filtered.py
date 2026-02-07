@@ -9,17 +9,17 @@ import networkx as nx
 import polars as pl
 
 from rcabench_platform.v2.cli.main import app, logger, timeit
-from rcabench_platform.v2.datasets.rcabench import rcabench_fix_injection_display_config
-from rcabench_platform.v2.datasets.spec import (
+from rcabench_platform.v2.internal.sources.convert import link_subset
+from rcabench_platform.v2.sdk.datasets.rcabench import rcabench_fix_injection_display_config
+from rcabench_platform.v2.sdk.datasets.spec import (
     build_service_graph,
     get_datapack_folder,
     get_dataset_folder,
     get_dataset_meta_file,
     get_dataset_meta_folder,
 )
-from rcabench_platform.v2.sources.convert import link_subset
-from rcabench_platform.v2.utils.fmap import fmap_threadpool
-from rcabench_platform.v2.utils.serde import save_parquet
+from rcabench_platform.v2.sdk.utils.fmap import fmap_threadpool
+from rcabench_platform.v2.sdk.utils.serde import save_parquet
 
 
 @app.command()

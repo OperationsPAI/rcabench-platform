@@ -8,7 +8,7 @@ from queue import Queue
 import networkx as nx
 import polars as pl
 
-from ....compat import StrEnum
+from .....compat import StrEnum
 from ...datasets.rcabench import rcabench_fix_injection
 from ...graphs.networkx.neo4j import export_networkx_to_neo4j
 from ...graphs.sdg.defintion import SDG, DepEdge, DepKind, PlaceKind, PlaceNode

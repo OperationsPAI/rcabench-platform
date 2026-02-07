@@ -6,7 +6,7 @@ from pprint import pformat
 
 import numpy as np
 
-from ....compat import StrEnum
+from .....compat import StrEnum
 from ...graphs.sdg.defintion import (
     SDG,
     DepEdge,

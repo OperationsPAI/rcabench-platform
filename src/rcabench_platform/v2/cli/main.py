@@ -4,9 +4,9 @@ import multiprocessing
 import typer
 from tqdm.auto import tqdm
 
-from ..algorithms.spec import global_algorithm_registry
-from ..logging import logger, timeit
-from ..utils.env import getenv_bool
+from ..sdk.algorithms.spec import global_algorithm_registry
+from ..sdk.logging import logger, timeit
+from ..sdk.utils.env import getenv_bool
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 
@@ -47,13 +47,13 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
 
 
 def register_builtin_algorithms():
-    from ..algorithms.random_ import Random
-    from ..algorithms.rcaeval.baro import Baro
-    from ..algorithms.rcaeval.nsigma import NSigma
-    from ..algorithms.traceback.A7 import TraceBackA7
-    from ..algorithms.traceback.A8 import TraceBackA8
-    from ..algorithms.traceback.A9 import TraceBackA9
-    from ..algorithms.traceback.A10 import TraceBackA10
+    from ..sdk.algorithms.random_ import Random
+    from ..sdk.algorithms.rcaeval.baro import Baro
+    from ..sdk.algorithms.rcaeval.nsigma import NSigma
+    from ..sdk.algorithms.traceback.A7 import TraceBackA7
+    from ..sdk.algorithms.traceback.A8 import TraceBackA8
+    from ..sdk.algorithms.traceback.A9 import TraceBackA9
+    from ..sdk.algorithms.traceback.A10 import TraceBackA10
 
     getters = {
         "random": Random,
