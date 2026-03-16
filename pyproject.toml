@@ -1,6 +1,6 @@
 [project]
-name = "rcabench-platform"
-version = "0.4.3"
+name = "aegislab"
+version = "0.4.4"
 description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
 authors = [ #
@@ -87,9 +87,7 @@ llm-eval = [
     # Type stubs
     "types-pyyaml>=6.0.12",
 ]
-all = [
-    "rcabench-platform[sdk,internal,analysis,llm-eval]",
-]
+all = ["rcabench-platform[sdk,internal,analysis,llm-eval]"]
 
 [dependency-groups]
 dev = [ #
