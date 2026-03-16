@@ -11,25 +11,13 @@ authors = [ #
 ]
 requires-python = ">=3.10"
 dependencies = [ #
-    # SDK core: data processing
-    "polars>=1.31.0",
-    "pyarrow>=20.0.0",
-    "numpy>=2.2.6",
-    "pandas>=2.3.1",
-    "duckdb>=1.3.2",
-    "networkx>=3.4.2",
-    # SDK core: computation
-    "scikit-learn>=1.7.0",
-    "scipy>=1.15.0",
-    # SDK core: CLI, logging, config
+    # CLI, logging, config (minimal base for all features)
     "loguru>=0.7.3",
     "tqdm>=4.67.1",
     "typer>=0.16.0",
     "python-dotenv>=1.1.1",
-    "tomli>=2.2.1",
     "pydantic>=2.12.4",
-    "requests>=2.32.4",
-    # SDK core: compatibility
+    # Compatibility
     "backports-strenum>=1.3.1 ; python_full_version < '3.11'",
 ]
 
@@ -38,6 +26,16 @@ rca = "rcabench_platform.v3.cli.main:main"
 label = "rcabench_platform.v3.tools.label.app:run_streamlit"
 
 [project.optional-dependencies]
+sdk = [
+    # Data processing (algorithms, datasets, graphs, samplers, evaluation/ranking)
+    "polars>=1.31.0",
+    "numpy>=2.2.6",
+    "pandas>=2.3.1",
+    "duckdb>=1.3.2",
+    "networkx>=3.4.2",
+    # Computation (algorithms)
+    "scipy>=1.15.0",
+]
 internal = [
     # Platform server API client
     "rcabench>=1.1.51",
@@ -69,8 +67,28 @@ analysis = [
     "python-dateutil>=2.9.0.post0",
     "sqlalchemy>=2.0.43",
 ]
+llm-eval = [
+    # Database
+    "sqlmodel>=0.0.22",
+    # LLM client (judge + evaluation semantic matching)
+    "openai>=1.40.0",
+    # Config loading
+    "pyyaml>=6.0.0",
+    # Logging & CLI
+    "colorlog>=6.9.0",
+    "jinja2>=3.1.0",
+    "questionary>=2.1.0",
+    "rich>=13.7.0",
+    # HTTP & data
+    "requests>=2.32.4",
+    "openpyxl>=3.1.0",
+    # PostgreSQL support
+    "psycopg2-binary>=2.9.0",
+    # Type stubs
+    "types-pyyaml>=6.0.12",
+]
 all = [
-    "rcabench-platform[internal,analysis]",
+    "rcabench-platform[sdk,internal,analysis,llm-eval]",
 ]
 
 [dependency-groups]

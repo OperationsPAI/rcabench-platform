@@ -40,6 +40,14 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
     except ImportError:
         pass
 
+    # LLM agent eval CLI (requires rcabench-platform[llm-eval])
+    try:
+        from . import llm_eval
+
+        app.add_typer(llm_eval.app, name="llm-eval")
+    except ImportError:
+        pass
+
     if enable_builtin_algorithms:
         register_builtin_algorithms()
 
