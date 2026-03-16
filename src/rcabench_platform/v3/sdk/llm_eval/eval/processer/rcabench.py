@@ -2,10 +2,11 @@ import json
 import math
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ....evaluation.causal_graph import CausalGraph
 from ....evaluation.rca_metrics import evaluate_graphs
+from ...config import EvalConfig
 from ..data import EvaluationSample
 from .base_match_processor import BaseMatchProcesser
 from .prompts import AUGMENTATION_PROMPTS
@@ -20,6 +21,14 @@ class RCABenchProcesser(BaseMatchProcesser):
     """
 
     name: str = "RCABench"
+
+    def __init__(
+        self,
+        config: EvalConfig,
+        source_path_fn: Callable[[str], str | Path] | None = None,
+    ) -> None:
+        super().__init__(config)
+        self.source_path_fn = source_path_fn
 
     def preprocess_one(self, sample: EvaluationSample) -> EvaluationSample:
         """Preprocess a sample by dynamically generating symlink and question.
@@ -39,8 +48,11 @@ class RCABenchProcesser(BaseMatchProcesser):
         assert sample.meta is not None
         meta = dict(sample.meta)
 
-        # Check if this is new-style data (with source_data_dir) or legacy (with path)
-        source_data_dir = meta.get("source_data_dir") or meta.get("path")
+        # Resolve source data directory: fn takes priority, then meta fields
+        if self.source_path_fn is not None:
+            source_data_dir = str(self.source_path_fn(sample.source))
+        else:
+            source_data_dir = meta.get("source_data_dir") or meta.get("path")
         if not source_data_dir:
             raise ValueError(f"Sample {sample.id} has no source_data_dir or path in meta")
 
