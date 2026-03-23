@@ -126,7 +126,7 @@ class RCABenchProcesser(BaseMatchProcesser):
         """
         if "::" in component:
             # Standard format: "span|service::ENDPOINT"
-            endpoint = component.split("::", 1)[1]
+            endpoint = component.split("::", 1)[1].strip()
         elif "|" in component:
             # Fallback format: "span|ENDPOINT" (no :: separator)
             endpoint = component.split("|", 1)[1].strip()
