@@ -396,3 +396,75 @@ pyproject.toml (entry-point)          CLI
          │  stat()                      │
          └──────────────────────────────┘
 ```
+
+## Custom Source Path Resolution
+
+By default, when `source_path` is set (via config or CLI `--source-path`), the framework resolves each sample's data directory as:
+
+```
+{source_path}/{source}/converted
+```
+
+You can customize this in two ways: **YAML pattern** (config-driven) or **SDK function** (code-driven).
+
+### Option 1: YAML `source_path_pattern` (config-driven)
+
+Set `source_path_pattern` in your YAML config. Available placeholders: `{source_path}`, `{source}`.
+
+```yaml
+# config.yaml
+source_path: /mnt/jfs/rcabench_dataset
+source_path_pattern: "{source_path}/{source}/processed"
+# resolved as: /mnt/jfs/rcabench_dataset/RCABench/processed
+```
+
+If `source_path_pattern` is omitted, the default `{source_path}/{source}/converted` is used.
+
+### Option 2: SDK `source_path_fn` (code-driven)
+
+Pass a callable to `EvalConfig` for full control. This cannot be set from YAML.
+
+```python
+from rcabench_platform.v3.sdk.llm_eval.config import EvalConfig
+from rcabench_platform.v3.sdk.llm_eval.eval import BaseBenchmark
+
+# Simple pattern
+config = EvalConfig(
+    source_path_fn=lambda source: f"/my/data/{source}/processed",
+)
+
+# Complex logic
+def resolve(source: str) -> str:
+    mapping = {"RCABench": "/data/v2/rca", "OtherBench": "/data/v1/other"}
+    return mapping[source]
+
+config = EvalConfig(source_path_fn=resolve)
+
+benchmark = BaseBenchmark(config)
+```
+
+### Priority
+
+```
+BaseBenchmark(config, source_path_fn=fn)   # 1. explicit constructor arg (highest)
+config.source_path_fn                       # 2. SDK callable
+config.source_path_pattern + source_path    # 3. YAML pattern template
+config.source_path (default pattern)        # 4. auto-built: {source_path}/{source}/converted
+None                                        # 5. fallback (uses sample meta fields)
+```
+
+### CLI
+
+From the CLI, `--source-path` sets `config.source_path`. Combine with `source_path_pattern` in YAML to customize:
+
+```yaml
+# config.yaml — CLI --source-path overrides source_path here
+source_path: /mnt/jfs/rcabench_dataset
+source_path_pattern: "{source_path}/{source}/processed"
+```
+
+```bash
+# Uses pattern from YAML with path from CLI
+rca llm-eval run config.yaml -a my-agent --source-path /other/data
+# resolved as: /other/data/RCABench/processed
+```

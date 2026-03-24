@@ -175,7 +175,7 @@ async def _run_with_agent(
     from ..sdk.llm_eval.eval.tracker import EvalTracker
 
     # 1. Create agent
-    agent = AGENT_REGISTRY.get(agent_name, **agent_kwargs)
+    agent = AGENT_REGISTRY.get(agent_name, exp_id=config.exp_id, **agent_kwargs)
     config.agent_type = agent_name
 
     # 2. Apply CLI overrides
@@ -183,29 +183,22 @@ async def _run_with_agent(
         config.concurrency = concurrency
     if max_samples is not None:
         config.max_samples = max_samples
-    resolved_source_path = source_path or config.source_path
     if source_path is not None:
         config.source_path = source_path
 
-    # 3. Build source_path_fn
-    def _resolve_source(source: str) -> str:
-        return os.path.join(resolved_source_path, source, "converted")  # type: ignore[arg-type]
-
-    src_path_fn = _resolve_source if resolved_source_path else None
-
-    # 4. Set up DB URL
+    # 3. Set up DB URL
     if config.db_url:
         os.environ["LLM_EVAL_DB_URL"] = config.db_url
 
-    # 5. Create benchmark
-    benchmark = BaseBenchmark(config, source_path_fn=src_path_fn)
+    # 4. Build benchmark (source_path_fn is resolved from config automatically)
+    benchmark = BaseBenchmark(config)
 
     console.print(
         f"[bold]Eval:[/] agent=[cyan]{agent_name}[/]  exp_id=[cyan]{config.exp_id}[/]  "
         f"concurrency=[cyan]{config.concurrency}[/]"
     )
 
-    # 6. Optional dashboard
+    # 5. Optional dashboard
     tracker: EvalTracker | None = None
     dashboard_server_task = None
 
@@ -235,11 +228,11 @@ async def _run_with_agent(
         await asyncio.sleep(0.3)
         console.print(f"Dashboard: [link=http://localhost:{dashboard_port}]http://localhost:{dashboard_port}[/link]")
 
-    # 7. Preprocess
+    # 6. Preprocess
     console.print("[bold]Phase 1:[/] preprocess")
     benchmark.preprocess()
 
-    # 8. Rollout with on_event
+    # 7. Rollout with on_event
     console.print("[bold]Phase 2:[/] rollout")
 
     def on_event(sample_id: str, event: dict) -> None:
@@ -298,14 +291,14 @@ async def _run_with_agent(
     )
     console.print(f"  [green]{ok_count} ok[/] / [red]{fail_count} failed[/]")
 
-    # 9. Judge + stat
+    # 8. Judge + stat
     console.print("[bold]Phase 3:[/] judge")
     await benchmark.judge()
 
     console.print("[bold]Phase 4:[/] stat")
     await benchmark.stat()
 
-    # 10. Keep dashboard alive
+    # 9. Keep dashboard alive
     if dashboard_server_task is not None:
         console.print(
             f"\nDashboard running at [link=http://localhost:{dashboard_port}]"

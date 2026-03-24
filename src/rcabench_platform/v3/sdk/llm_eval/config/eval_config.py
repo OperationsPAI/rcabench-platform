@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -46,7 +50,62 @@ class EvalConfig(ConfigBaseModel):
     max_samples: int | None = None
     """Maximum number of samples to rollout (None = all)"""
     source_path: str | None = None
-    """Root path for dataset sources. Used to build source_path_fn for data resolution."""
+    """Root path for dataset sources. Used to build a default source_path_fn when source_path_fn is not set."""
+    source_path_pattern: str | None = None
+    """Pattern template for resolving source data directories.
+
+    Available placeholders: ``{source_path}``, ``{source}``.
+
+    When set (via YAML or code), the framework builds a resolver from this
+    pattern, replacing ``{source_path}`` with *source_path* and ``{source}``
+    with the sample's source name at runtime.
+
+    Default (when only *source_path* is set): ``{source_path}/{source}/converted``
+
+    Example YAML::
+
+        source_path: /mnt/jfs/rcabench_dataset
+        source_path_pattern: "{source_path}/{source}/processed"
+    """
+    source_path_fn: Callable[[str], str | Path] | None = Field(default=None, exclude=True)
+    """Custom function to resolve a source name to a data directory path (SDK only).
+
+    Signature: ``(source: str) -> str | Path``
+
+    Takes the highest priority.  Cannot be set from YAML — use
+    *source_path_pattern* for config-driven customisation.
+
+    Example::
+
+        config = EvalConfig(
+            source_path_fn=lambda source: f"/my/data/{source}/processed"
+        )
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    _DEFAULT_PATTERN: str = "{source_path}/{source}/converted"
+
+    def get_source_path_fn(self) -> Callable[[str], str | Path] | None:
+        """Return the effective source path resolver.
+
+        Priority:
+          1. explicit *source_path_fn*  (SDK code)
+          2. *source_path_pattern*      (YAML / code)
+          3. default pattern            (when only *source_path* is set)
+          4. None
+        """
+        if self.source_path_fn is not None:
+            return self.source_path_fn
+        if self.source_path is not None:
+            _root = self.source_path
+            _pattern = self.source_path_pattern or self._DEFAULT_PATTERN
+
+            def _pattern_resolve(source: str) -> str:
+                return _pattern.format(source_path=_root, source=source)
+
+            return _pattern_resolve
+        return None
 
     # judgement
     judge_model: ModelConfigs = Field(default_factory=ModelConfigs)

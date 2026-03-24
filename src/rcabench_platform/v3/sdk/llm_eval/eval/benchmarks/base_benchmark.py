@@ -54,7 +54,8 @@ class BaseBenchmark:
         if isinstance(config, str):
             config = ConfigLoader.load_eval_config(path=config)
         self.config = config
-        self._source_path_fn = source_path_fn
+        # Explicit arg > config.source_path_fn > config.source_path auto-build
+        self._source_path_fn = source_path_fn or config.get_source_path_fn()
 
         # dataset
         self.dataset = DBDataManager(config)
