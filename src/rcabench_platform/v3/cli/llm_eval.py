@@ -110,9 +110,23 @@ def run(
     Without --agent: preprocess + judge + stat (no rollout).
     With --agent: preprocess + rollout + judge + stat (full pipeline).
     """
+    from pathlib import Path
+
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # find_dotenv() may fail in some environments; explicitly search from cwd upward.
+    _env_path = None
+    for _d in [Path.cwd(), *Path.cwd().parents]:
+        _candidate = _d / ".env"
+        if _candidate.is_file():
+            _env_path = _candidate
+            break
+
+    print(f"[DEBUG] cwd={Path.cwd()}, env_path={_env_path}")
+    if _env_path:
+        load_dotenv(str(_env_path))
+    else:
+        load_dotenv()
 
     config = _load_config(config_path, exp_id)
 
