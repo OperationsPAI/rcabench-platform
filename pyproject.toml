@@ -86,10 +86,10 @@ llm-eval = [
     "psycopg2-binary>=2.9.0",
     # Type stubs
     "types-pyyaml>=6.0.12",
+    "fastapi>=0.135.2",
+    "uvicorn>=0.38.0",
 ]
-all = [
-    "rcabench-platform[sdk,internal,analysis,llm-eval]",
-]
+all = ["rcabench-platform[sdk,internal,analysis,llm-eval]"]
 
 [dependency-groups]
 dev = [ #

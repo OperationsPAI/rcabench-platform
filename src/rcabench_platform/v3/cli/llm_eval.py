@@ -212,33 +212,28 @@ async def _run_with_agent(
     if dashboard:
         tracker = EvalTracker(trajectory_dir="./trajectories")
 
-        try:
-            import uvicorn
+        import uvicorn
 
-            from ..sdk.llm_eval.eval.dashboard import Broadcaster, create_eval_dashboard
+        from ..sdk.llm_eval.eval.dashboard import Broadcaster, create_eval_dashboard
 
-            bc = Broadcaster()
-            dash_app = create_eval_dashboard(eval_tracker=tracker, broadcaster=bc)
+        bc = Broadcaster()
+        dash_app = create_eval_dashboard(eval_tracker=tracker, broadcaster=bc)
 
-            _loop = asyncio.get_running_loop()
+        _loop = asyncio.get_running_loop()
 
-            def _tracker_to_ws(event: dict) -> None:
-                try:
-                    asyncio.run_coroutine_threadsafe(bc.broadcast(event), _loop)
-                except RuntimeError:
-                    pass
+        def _tracker_to_ws(event: dict) -> None:
+            try:
+                asyncio.run_coroutine_threadsafe(bc.broadcast(event), _loop)
+            except RuntimeError:
+                pass
 
-            tracker.add_listener(_tracker_to_ws)
+        tracker.add_listener(_tracker_to_ws)
 
-            uvi_config = uvicorn.Config(dash_app, host=dashboard_host, port=dashboard_port, log_level="warning")
-            server = uvicorn.Server(uvi_config)
-            dashboard_server_task = asyncio.create_task(server.serve())
-            await asyncio.sleep(0.3)
-            console.print(
-                f"Dashboard: [link=http://localhost:{dashboard_port}]http://localhost:{dashboard_port}[/link]"
-            )
-        except ImportError:
-            console.print("[yellow]Dashboard requires uvicorn and fastapi (pip install uvicorn fastapi)[/]")
+        uvi_config = uvicorn.Config(dash_app, host=dashboard_host, port=dashboard_port, log_level="warning")
+        server = uvicorn.Server(uvi_config)
+        dashboard_server_task = asyncio.create_task(server.serve())
+        await asyncio.sleep(0.3)
+        console.print(f"Dashboard: [link=http://localhost:{dashboard_port}]http://localhost:{dashboard_port}[/link]")
 
     # 7. Preprocess
     console.print("[bold]Phase 1:[/] preprocess")
