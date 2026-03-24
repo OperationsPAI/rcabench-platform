@@ -23,11 +23,15 @@ def _():
 
 
 def main(*, enable_builtin_algorithms: bool = True) -> None:
-    from . import eval, sample, tools
+    # SDK-based CLI modules require optional dependencies (rcabench-platform[sdk])
+    try:
+        from . import eval, sample, tools
 
-    app.add_typer(tools.app, name="tools")
-    app.add_typer(eval.app, name="eval")
-    app.add_typer(sample.app, name="sample")
+        app.add_typer(tools.app, name="tools")
+        app.add_typer(eval.app, name="eval")
+        app.add_typer(sample.app, name="sample")
+    except ImportError:
+        pass
 
     # Platform-internal CLI modules require optional dependencies (rcabench-platform[internal])
     try:
@@ -49,7 +53,10 @@ def main(*, enable_builtin_algorithms: bool = True) -> None:
         pass
 
     if enable_builtin_algorithms:
-        register_builtin_algorithms()
+        try:
+            register_builtin_algorithms()
+        except ImportError:
+            pass
 
     app()
 

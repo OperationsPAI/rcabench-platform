@@ -25,12 +25,20 @@ class BaseLLMJudgeProcesser(BaseProcesser):
 
     def __init__(self, config: EvalConfig) -> None:
         super().__init__(config)
+        self._judge_client: AsyncOpenAI | None = None
         provider_config = config.judge_model.model_provider.model_dump()
-        self.judge_client = AsyncOpenAI(
-            base_url=provider_config.get("base_url") or None,
-            api_key=provider_config.get("api_key") or None,
-        )
+        self._judge_provider_config = provider_config
         self.judge_model = str(provider_config.get("model") or "gpt-4o-mini")
+
+    @property
+    def judge_client(self) -> AsyncOpenAI:
+        """Lazily initialize the OpenAI client (only when LLM judging is needed)."""
+        if self._judge_client is None:
+            self._judge_client = AsyncOpenAI(
+                base_url=self._judge_provider_config.get("base_url") or None,
+                api_key=self._judge_provider_config.get("api_key") or None,
+            )
+        return self._judge_client
 
     def preprocess_one(self, sample: EvaluationSample) -> EvaluationSample:
         """Preprocess a single sample."""

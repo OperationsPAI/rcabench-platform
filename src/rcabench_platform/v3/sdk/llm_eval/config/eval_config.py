@@ -29,7 +29,9 @@ class EvalConfig(ConfigBaseModel):
     """Experiment ID"""
 
     # data
-    db_url: str | None = EnvUtils.get_env("LLM_EVAL_DB_URL", None) or EnvUtils.get_env("UTU_DB_URL", "sqlite:///test.db")
+    db_url: str | None = EnvUtils.get_env("LLM_EVAL_DB_URL", None) or EnvUtils.get_env(
+        "UTU_DB_URL", "sqlite:///test.db"
+    )
     """Database URL"""
     data: DataConfig | None = None
     """Data config"""
@@ -43,6 +45,8 @@ class EvalConfig(ConfigBaseModel):
     """Rollout parallelism"""
     max_samples: int | None = None
     """Maximum number of samples to rollout (None = all)"""
+    source_path: str | None = None
+    """Root path for dataset sources. Used to build source_path_fn for data resolution."""
 
     # judgement
     judge_model: ModelConfigs = Field(default_factory=ModelConfigs)

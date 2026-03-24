@@ -1,8 +1,9 @@
 import json
 import math
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ....evaluation.causal_graph import CausalGraph
 from ....evaluation.rca_metrics import evaluate_graphs

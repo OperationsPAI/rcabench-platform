@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from tqdm import tqdm
 
@@ -13,6 +16,9 @@ from ...utils import get_logger
 from ..data import DBDataManager, EvaluationSample
 from ..processer import PROCESSER_FACTORY, BaseProcesser
 from ..processer.rcabench import RCABenchProcesser
+
+if TYPE_CHECKING:
+    from ...agents.base_agent import BaseAgent
 
 logger = get_logger(__name__, "INFO")
 
@@ -54,9 +60,7 @@ class BaseBenchmark:
         self.dataset = DBDataManager(config)
         _samples = self.dataset.load()
         if len(_samples) == 0:
-            raise ValueError(
-                f"No samples found for data config '{self.config.data}'! Please check the data config."
-            )
+            raise ValueError(f"No samples found for data config '{self.config.data}'! Please check the data config.")
 
     @property
     def agent_type(self) -> str | None:
@@ -76,9 +80,7 @@ class BaseBenchmark:
         return None
 
     async def main(self):
-        logger.info(
-            f"> Running with config: \n{json.dumps(self.config.model_dump(), indent=2, ensure_ascii=False)}"
-        )
+        logger.info(f"> Running with config: \n{json.dumps(self.config.model_dump(), indent=2, ensure_ascii=False)}")
         self.preprocess()
         await self.judge()
         logger.info("> Running stat...")
@@ -98,13 +100,8 @@ class BaseBenchmark:
 
         results = []
         with ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(self.preprocess_one, sample): sample
-                for sample in samples
-            }
-            for future in tqdm(
-                as_completed(futures), total=len(futures), desc="Preprocessing"
-            ):
+            futures = {executor.submit(self.preprocess_one, sample): sample for sample in samples}
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Preprocessing"):
                 result = future.result()
                 if result is not None:
                     results.append(result)
@@ -160,9 +157,7 @@ class BaseBenchmark:
 
             sample = _session.exec(stmt).first()
             if sample is None:
-                raise ValueError(
-                    f"Sample not found (sample_id={sample_id}, dataset_index={dataset_index})"
-                )
+                raise ValueError(f"Sample not found (sample_id={sample_id}, dataset_index={dataset_index})")
 
             sample.update(
                 response=response,
@@ -175,33 +170,101 @@ class BaseBenchmark:
             _session.commit()
             _session.refresh(sample)
             return sample
-        sample.update(
-            response=response,
-            trajectories=trajectory_json,
-            time_cost=time_cost,
-            trace_id=trace_id,
-            stage="rollout",
-        )
-        self.dataset.save(sample)
-        return sample
+
+    def _wrap_agent(
+        self,
+        agent: BaseAgent,
+        on_event: Callable[[str, dict], Any] | None = None,
+        **kwargs,
+    ) -> Callable[[EvaluationSample], Awaitable[RolloutResult]]:
+        """Wrap a :class:`BaseAgent` into a rollout runner callable.
+
+        Handles sample field extraction, error logging, ``RunContext``
+        creation, and result conversion so that agent implementations
+        stay clean.
+
+        Args:
+            agent: The agent to wrap.
+            on_event: Optional callback ``(sample_id, event_dict)`` invoked
+                whenever the agent emits an event via :class:`RunContext`.
+                Use this to feed an ``EvalTracker`` or similar.
+            **kwargs: Forwarded to :meth:`BaseAgent.run`.
+        """
+        from ...agents.base_agent import RunContext
+
+        async def _runner(sample: EvaluationSample) -> RolloutResult:
+            sample_id = str(sample.id)
+            incident = (sample.augmented_question or sample.raw_question or "").strip()
+            meta = sample.meta if isinstance(sample.meta, dict) else {}
+            data_dir: str = meta.get("path", "")
+
+            if not incident or not data_dir:
+                logger.warning(
+                    "Skip sample %s (idx=%s): %s",
+                    sample.id,
+                    sample.dataset_index,
+                    "missing incident" if not incident else "missing data_dir",
+                )
+                if on_event:
+                    on_event(sample_id, {"type": "skipped", "sample": sample})
+                return RolloutResult()
+
+            ctx = RunContext()
+            if on_event:
+                _on_event = on_event  # bind for closure
+                ctx.add_listener(lambda evt: _on_event(sample_id, evt))
+                on_event(sample_id, {"type": "started", "sample": sample, "data_dir": data_dir})
+
+            result = await agent.run(incident=incident, data_dir=data_dir, ctx=ctx, **kwargs)
+
+            if on_event:
+                evt_type = "completed" if result.response else "failed"
+                on_event(sample_id, {"type": evt_type, "sample": sample})
+
+            traj_json = result.trajectory.to_json() if result.trajectory else None
+            return RolloutResult(
+                response=result.response,
+                trajectory_json=traj_json,
+            )
+
+        return _runner
 
     async def rollout(
         self,
-        runner: Callable[[EvaluationSample], Awaitable[RolloutResult]],
+        runner: Callable[[EvaluationSample], Awaitable[RolloutResult]] | BaseAgent,
         max_samples: int | None = None,
+        on_event: Callable[[str, dict], Any] | None = None,
+        **agent_kwargs,
     ) -> tuple[int, int]:
         """Run rollout for all pending (stage=init) samples with bounded concurrency.
 
+        ``runner`` accepts either:
+
+        * A :class:`BaseAgent` instance (recommended) — the framework handles
+          sample parsing, error handling, and trajectory serialisation.
+        * A bare async callable ``(EvaluationSample) -> RolloutResult`` for
+          backward compatibility.
+
         Args:
-            runner: Async callable that receives an EvaluationSample and returns a
-                RolloutResult. The sample has already been preprocessed — use
-                ``sample.augmented_question`` as the prompt and ``sample.meta["path"]``
-                as the data directory.
+            runner: Agent instance or async callable.
             max_samples: Override max_samples from config (None = use config value).
+            on_event: Optional callback ``(sample_id, event_dict)`` invoked
+                for lifecycle events (started, completed, failed, skipped)
+                and any events the agent emits via :class:`RunContext`.
+                Only used when *runner* is a :class:`BaseAgent`.
+            **agent_kwargs: Extra keyword arguments forwarded to
+                :meth:`BaseAgent.run` when *runner* is a :class:`BaseAgent`.
 
         Returns:
             (ok_count, fail_count) tuple.
         """
+        from ...agents.base_agent import BaseAgent as _BaseAgent
+
+        if isinstance(runner, _BaseAgent):
+            actual_runner = self._wrap_agent(runner, on_event=on_event, **agent_kwargs)
+        else:
+            actual_runner = runner
+
         samples = self.dataset.get_samples(
             stage="init",
             agent_type=self.agent_type,
@@ -216,9 +279,7 @@ class BaseBenchmark:
             logger.info("No samples to rollout.")
             return 0, 0
 
-        logger.info(
-            f"Rolling out {len(samples)} samples (concurrency={self.config.concurrency})..."
-        )
+        logger.info(f"Rolling out {len(samples)} samples (concurrency={self.config.concurrency})...")
         semaphore = asyncio.Semaphore(self.config.concurrency)
         ok_count = 0
         fail_count = 0
@@ -228,11 +289,9 @@ class BaseBenchmark:
                 t0 = time.monotonic()
                 result: RolloutResult | None = None
                 try:
-                    result = await runner(sample)
+                    result = await actual_runner(sample)
                 except Exception as exc:  # pylint: disable=broad-except
-                    logger.error(
-                        f"Rollout failed for sample {sample.id}: {exc}", exc_info=True
-                    )
+                    logger.error(f"Rollout failed for sample {sample.id}: {exc}", exc_info=True)
                 elapsed = time.monotonic() - t0
                 self.submit_result(
                     sample_id=sample.id,
@@ -254,9 +313,7 @@ class BaseBenchmark:
         logger.info(f"Rollout complete: {ok_count} ok / {fail_count} failed.")
         return ok_count, fail_count
 
-    async def judge(
-        self, stage: Literal["init", "rollout", "judged"] | None = "rollout"
-    ) -> list[EvaluationSample]:
+    async def judge(self, stage: Literal["init", "rollout", "judged"] | None = "rollout") -> list[EvaluationSample]:
         """Judge samples.
 
         Args:
@@ -306,9 +363,7 @@ class BaseBenchmark:
             model_name=self.model_name,
             tags=self.tags,
         )
-        logger.info(
-            f"Stat from {len(judged_samples)} samples (agent={self.agent_type}, model={self.model_name}):"
-        )
+        logger.info(f"Stat from {len(judged_samples)} samples (agent={self.agent_type}, model={self.model_name}):")
 
         data_by_benchmark = self._group_data_by_benchmark(judged_samples)
         overall_results: list[dict] = []
@@ -333,9 +388,7 @@ class BaseBenchmark:
             self._source_to_processer[source] = processer
         return self._source_to_processer[source]
 
-    def _group_data_by_benchmark(
-        self, predict_data: list[EvaluationSample]
-    ) -> dict[str, list[EvaluationSample]]:
+    def _group_data_by_benchmark(self, predict_data: list[EvaluationSample]) -> dict[str, list[EvaluationSample]]:
         data_by_benchmark: dict[str, list[EvaluationSample]] = {}
         for data in predict_data:
             benchmark = data.dataset
