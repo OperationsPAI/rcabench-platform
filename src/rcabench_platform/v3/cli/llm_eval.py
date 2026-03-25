@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Annotated, Any, Literal, cast
 
 import typer
@@ -173,6 +174,10 @@ async def _run_with_agent(
     from ..sdk.llm_eval.agents import AGENT_REGISTRY
     from ..sdk.llm_eval.eval import BaseBenchmark
     from ..sdk.llm_eval.eval.tracker import EvalTracker
+    from ..sdk.utils.notify import Notifier
+
+    notifier = Notifier()
+    t_start = time.monotonic()
 
     # 1. Create agent and auto-fill config metadata
     agent = AGENT_REGISTRY.get(agent_name, exp_id=config.exp_id, **agent_kwargs)
@@ -236,6 +241,7 @@ async def _run_with_agent(
 
     # 7. Rollout with on_event
     console.print("[bold]Phase 2:[/] rollout")
+    ok_count, fail_count = 0, 0
 
     def on_event(sample_id: str, event: dict) -> None:
         evt_type = event.get("type", "")
@@ -268,6 +274,10 @@ async def _run_with_agent(
             idx = sample.dataset_index if sample else "?"
             error = event.get("error", "empty response")
             console.print(f"  [red]FAIL[/] sample id={sample_id} idx={idx}: {error}")
+            notifier.error(
+                f"Sample failed: {sample_id}",
+                f"**exp_id:** {config.exp_id}\n**sample:** {sample_id} (idx={idx})\n**error:** {error}",
+            )
             if tracker:
                 tracker.mark_failed(sample_id, error)
 
@@ -285,22 +295,45 @@ async def _run_with_agent(
     if max_steps is not None:
         rollout_kwargs["max_steps"] = max_steps
 
-    ok_count, fail_count = await benchmark.rollout(
-        agent,
-        max_samples=config.max_samples,
-        on_event=on_event,
-        **rollout_kwargs,
-    )
-    console.print(f"  [green]{ok_count} ok[/] / [red]{fail_count} failed[/]")
+    try:
+        ok_count, fail_count = await benchmark.rollout(
+            agent,
+            max_samples=config.max_samples,
+            on_event=on_event,
+            **rollout_kwargs,
+        )
+        console.print(f"  [green]{ok_count} ok[/] / [red]{fail_count} failed[/]")
 
-    # 8. Judge + stat
-    console.print("[bold]Phase 3:[/] judge")
-    await benchmark.judge()
+        # 8. Judge + stat
+        console.print("[bold]Phase 3:[/] judge")
+        await benchmark.judge()
 
-    console.print("[bold]Phase 4:[/] stat")
-    await benchmark.stat()
+        console.print("[bold]Phase 4:[/] stat")
+        await benchmark.stat()
 
-    # 9. Keep dashboard alive
+        # 9. Notify completion
+        elapsed = time.monotonic() - t_start
+        elapsed_str = f"{elapsed / 60:.1f}min"
+        notifier.info(
+            f"Eval completed: {config.exp_id}",
+            f"**agent:** {agent_name}\n**exp_id:** {config.exp_id}\n"
+            f"**results:** {ok_count} ok / {fail_count} failed\n"
+            f"**elapsed:** {elapsed_str}",
+        )
+    except Exception as exc:
+        elapsed = time.monotonic() - t_start
+        elapsed_str = f"{elapsed / 60:.1f}min"
+        notifier.error(
+            f"Eval crashed: {config.exp_id}",
+            f"**agent:** {agent_name}\n**exp_id:** {config.exp_id}\n"
+            f"**results so far:** {ok_count} ok / {fail_count} failed\n"
+            f"**elapsed:** {elapsed_str}\n**error:** {exc}",
+        )
+        raise
+    finally:
+        notifier.flush()
+
+    # 10. Keep dashboard alive
     if dashboard_server_task is not None:
         console.print(
             f"\nDashboard running at [link=http://localhost:{dashboard_port}]"
