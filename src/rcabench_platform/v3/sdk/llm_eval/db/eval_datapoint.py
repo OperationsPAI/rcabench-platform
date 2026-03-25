@@ -49,7 +49,7 @@ class EvaluationSample(EvalBaseModel, SQLModel, table=True):
     trace_url: str | None = Field(default=None)
     response: str | None = Field(default=None)
     time_cost: float | None = Field(default=None)  # time cost in seconds
-    trajectories: str | None = Field(default=None)
+    trajectories: Any | None = Field(default=None, sa_column=Column(JSON))
     # 3) judgement
     extracted_final_answer: str | None = Field(default=None)
     judged_response: str | None = Field(default=None)

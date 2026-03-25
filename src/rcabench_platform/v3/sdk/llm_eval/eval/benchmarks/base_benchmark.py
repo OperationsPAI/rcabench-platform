@@ -160,9 +160,21 @@ class BaseBenchmark:
             if sample is None:
                 raise ValueError(f"Sample not found (sample_id={sample_id}, dataset_index={dataset_index})")
 
+            # DB column is JSONB — deserialise the string so SQLAlchemy
+            # sends a proper JSON value instead of a VARCHAR.
+            trajectories_value: Any = None
+            if trajectory_json is not None:
+                if isinstance(trajectory_json, str):
+                    try:
+                        trajectories_value = json.loads(trajectory_json)
+                    except json.JSONDecodeError:
+                        trajectories_value = trajectory_json
+                else:
+                    trajectories_value = trajectory_json
+
             sample.update(
                 response=response,
-                trajectories=trajectory_json,
+                trajectories=trajectories_value,
                 time_cost=time_cost,
                 trace_id=trace_id,
                 stage="rollout",
