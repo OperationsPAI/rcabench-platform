@@ -1,6 +1,6 @@
 [project]
 name = "rcabench-platform"
-version = "0.4.10"
+version = "0.4.11"
 description = "An experiment framework for Root Cause Analysis"
 readme = "README.md"
 authors = [ #
@@ -135,6 +135,7 @@ exclude = [ #
     "logs/",
     "vendor/",
     "output/",
+    "notebooks/",
 ]
 
 # [tool.uv]
