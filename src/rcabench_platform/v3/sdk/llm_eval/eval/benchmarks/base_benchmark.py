@@ -228,7 +228,9 @@ class BaseBenchmark:
                 ctx.add_listener(lambda evt: _on_event(sample_id, evt))
                 on_event(sample_id, {"type": "started", "sample": sample, "data_dir": data_dir})
 
+            t0 = time.monotonic()
             result = await agent.run(incident=incident, data_dir=data_dir, ctx=ctx, **kwargs)
+            elapsed = time.monotonic() - t0
 
             if on_event:
                 evt_type = "completed" if result.response else "failed"
@@ -238,6 +240,7 @@ class BaseBenchmark:
             return RolloutResult(
                 response=result.response,
                 trajectory_json=traj_json,
+                time_cost=elapsed,
             )
 
         return _runner
