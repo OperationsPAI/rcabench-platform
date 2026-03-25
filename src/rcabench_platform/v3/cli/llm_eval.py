@@ -174,9 +174,11 @@ async def _run_with_agent(
     from ..sdk.llm_eval.eval import BaseBenchmark
     from ..sdk.llm_eval.eval.tracker import EvalTracker
 
-    # 1. Create agent
+    # 1. Create agent and auto-fill config metadata
     agent = AGENT_REGISTRY.get(agent_name, exp_id=config.exp_id, **agent_kwargs)
     config.agent_type = agent_name
+    if config.model_name is None:
+        config.model_name = agent.model_name()
 
     # 2. Apply CLI overrides
     if concurrency is not None:

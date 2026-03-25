@@ -107,6 +107,17 @@ class BaseAgent(ABC):
         """Agent version string (optional)."""
         return None
 
+    def model_name(self) -> str | None:
+        """LLM model name used by this agent (optional).
+
+        When the agent knows which model it uses (e.g. from its own config
+        or environment variables), it should return the model name here.
+        The framework uses this to auto-fill ``EvalConfig.model_name`` when
+        the config doesn't specify one, so that DB records are correctly
+        labelled without requiring YAML duplication.
+        """
+        return None
+
     @abstractmethod
     async def run(
         self,
