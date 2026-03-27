@@ -1,6 +1,7 @@
 import abc
 from typing import Any, Literal
 
+from sqlalchemy.orm import defer
 from sqlmodel import select
 
 from ...config import EvalConfig
@@ -59,10 +60,10 @@ class DBDataManager(BaseDataManager):
             logger.info(f"Filtered to {len(datapoints)} samples with tags: {filter_tags}")
 
         # Get existing dataset_index values for this exp_id + agent_type + model_name
+        # Only query the dataset_index column to avoid loading heavy fields like trajectories
         existing_indices: set[int] = set()
         if self._check_exp_id():
-            existing_samples = self.get_samples()  # Don't filter by tags when checking existing samples
-            existing_indices = {s.dataset_index for s in existing_samples if s.dataset_index is not None}
+            existing_indices = self._get_existing_indices()
             logger.info(
                 f"exp_id {self.config.exp_id} already exists with {len(existing_indices)} samples. "
                 f"Checking for new samples to add..."
@@ -95,7 +96,10 @@ class DBDataManager(BaseDataManager):
             logger.info("No new samples to add.")
 
         # Return all samples for this exp (filtered by agent_type, model_name, and tags)
-        self.data = self.get_samples(agent_type=agent_type, model_name=model_name, tags=filter_tags)
+        # Exclude trajectories during load — they are only needed during judge phase
+        self.data = self.get_samples(
+            agent_type=agent_type, model_name=model_name, tags=filter_tags, exclude_trajectories=True
+        )
         return self.data
 
     def get_samples(
@@ -105,10 +109,20 @@ class DBDataManager(BaseDataManager):
         agent_type: str | None = None,
         model_name: str | None = None,
         tags: list[str] | None = None,
+        exclude_trajectories: bool = False,
     ) -> list[EvaluationSample]:
-        """Get samples from exp_id with specified stage and optional agent_type/model_name filter."""
+        """Get samples from exp_id with specified stage and optional agent_type/model_name filter.
+
+        Args:
+            exclude_trajectories: If True, defer loading of the ``trajectories``
+                column to avoid transferring large JSON payloads from the DB.
+                The attribute is set to ``None`` on the returned objects so that
+                downstream code can safely check it without triggering a lazy load.
+        """
         with SQLModelUtils.create_session() as session:
             stmt = select(EvaluationSample).where(EvaluationSample.exp_id == self.config.exp_id)
+            if exclude_trajectories:
+                stmt = stmt.options(defer(EvaluationSample.trajectories))  # type: ignore[arg-type]
             if stage:
                 stmt = stmt.where(EvaluationSample.stage == stage)
             if agent_type is not None:
@@ -117,6 +131,13 @@ class DBDataManager(BaseDataManager):
                 stmt = stmt.where(EvaluationSample.model_name == model_name)
             stmt = stmt.order_by(EvaluationSample.dataset_index).limit(limit)  # type: ignore[arg-type]
             samples = list(session.exec(stmt).all())
+
+            # Neutralise deferred trajectories before the session closes so that
+            # accessing .trajectories on a detached object returns None instead
+            # of raising DetachedInstanceError.
+            if exclude_trajectories:
+                for s in samples:
+                    s.trajectories = None
 
             # Filter by tags if specified (OR logic - query tags from DatasetSample)
             if tags and samples:
@@ -163,15 +184,31 @@ class DBDataManager(BaseDataManager):
                 session.delete(samples)
                 session.commit()
 
+    def _get_existing_indices(self) -> set[int]:
+        """Return the set of dataset_index values already stored for this exp_id.
+
+        Only queries the ``dataset_index`` column to avoid transferring heavy
+        payload columns like ``trajectories``.
+        """
+        with SQLModelUtils.create_session() as session:
+            stmt = select(EvaluationSample.dataset_index).where(
+                EvaluationSample.exp_id == self.config.exp_id
+            )
+            return {idx for idx in session.exec(stmt).all() if idx is not None}
+
     def _check_exp_id(self) -> bool:
         """Check if any record has the same exp_id, agent_type, and model_name."""
+        from sqlmodel import func
+
         agent_type = self.config.agent_type
         model_name = self.config.model_name
         with SQLModelUtils.create_session() as session:
-            stmt = select(EvaluationSample).where(EvaluationSample.exp_id == self.config.exp_id)
+            stmt = select(func.count()).select_from(EvaluationSample).where(  # type: ignore[call-overload]
+                EvaluationSample.exp_id == self.config.exp_id
+            )
             if agent_type is not None:
                 stmt = stmt.where(EvaluationSample.agent_type == agent_type)
             if model_name is not None:
                 stmt = stmt.where(EvaluationSample.model_name == model_name)
-            has_exp_id = session.exec(stmt).first()
-        return has_exp_id is not None
+            count = session.exec(stmt).one()
+        return count > 0

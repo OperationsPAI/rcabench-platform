@@ -301,6 +301,7 @@ async def _run_with_agent(
         agent_type=benchmark.agent_type,
         model_name=benchmark.model_name,
         tags=benchmark.tags,
+        exclude_trajectories=True,
     )
     _total_samples = len(_init_samples[: config.max_samples] if config.max_samples else _init_samples)
 

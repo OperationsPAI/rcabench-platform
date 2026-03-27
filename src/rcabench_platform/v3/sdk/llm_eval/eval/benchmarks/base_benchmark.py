@@ -94,6 +94,7 @@ class BaseBenchmark:
             agent_type=self.agent_type,
             model_name=self.model_name,
             tags=self.tags,
+            exclude_trajectories=True,
         )
         if self.config.max_samples is not None:
             samples = samples[: self.config.max_samples]
@@ -286,6 +287,7 @@ class BaseBenchmark:
             agent_type=self.agent_type,
             model_name=self.model_name,
             tags=self.tags,
+            exclude_trajectories=True,
         )
         limit = max_samples if max_samples is not None else self.config.max_samples
         if limit is not None:
@@ -365,6 +367,7 @@ class BaseBenchmark:
             agent_type=self.agent_type,
             model_name=self.model_name,
             tags=self.tags,
+            exclude_trajectories=True,
         )
         limit = max_samples if max_samples is not None else self.config.max_samples
         if limit is not None:
@@ -500,6 +503,7 @@ class BaseBenchmark:
             agent_type=self.agent_type,
             model_name=self.model_name,
             tags=self.tags,
+            exclude_trajectories=True,
         )
         logger.info(f"Stat from {len(judged_samples)} samples (agent={self.agent_type}, model={self.model_name}):")
 
