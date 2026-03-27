@@ -329,6 +329,128 @@ class BaseBenchmark:
         logger.info(f"Rollout complete: {ok_count} ok / {fail_count} failed.")
         return ok_count, fail_count
 
+    async def rollout_and_judge(
+        self,
+        runner: Callable[[EvaluationSample], Awaitable[RolloutResult]] | BaseAgent,
+        max_samples: int | None = None,
+        on_event: Callable[[str, dict], Any] | None = None,
+        on_judge: Callable[[EvaluationSample, list[EvaluationSample]], Any] | None = None,
+        **agent_kwargs,
+    ) -> tuple[int, int, list[EvaluationSample]]:
+        """Rollout and judge incrementally — judge each sample as soon as its rollout finishes.
+
+        Combines :meth:`rollout` and :meth:`judge` into a single pass so that
+        evaluation metrics can be observed in real-time.
+
+        Args:
+            runner: Agent instance or async callable.
+            max_samples: Override max_samples from config.
+            on_event: Rollout lifecycle event callback (same as :meth:`rollout`).
+            on_judge: Called after each sample is judged with
+                ``(judged_sample, all_judged_so_far)``.
+            **agent_kwargs: Extra kwargs forwarded to :meth:`BaseAgent.run`.
+
+        Returns:
+            ``(ok_count, fail_count, judged_samples)`` tuple.
+        """
+        from ...agents.base_agent import BaseAgent as _BaseAgent
+
+        if isinstance(runner, _BaseAgent):
+            actual_runner = self._wrap_agent(runner, on_event=on_event, **agent_kwargs)
+        else:
+            actual_runner = runner
+
+        samples = self.dataset.get_samples(
+            stage="init",
+            agent_type=self.agent_type,
+            model_name=self.model_name,
+            tags=self.tags,
+        )
+        limit = max_samples if max_samples is not None else self.config.max_samples
+        if limit is not None:
+            samples = samples[:limit]
+
+        if not samples:
+            logger.info("No samples to rollout.")
+            return 0, 0, []
+
+        logger.info(
+            f"Rolling out + judging {len(samples)} samples "
+            f"(rollout_concurrency={self.config.concurrency}, "
+            f"judge_concurrency={self.config.judge_concurrency})..."
+        )
+
+        semaphore = asyncio.Semaphore(self.config.concurrency)
+        judge_semaphore = asyncio.Semaphore(self.config.judge_concurrency)
+        judge_queue: asyncio.Queue[EvaluationSample | None] = asyncio.Queue()
+        judged_samples: list[EvaluationSample] = []
+        ok_count = 0
+        fail_count = 0
+
+        async def _bounded(sample: EvaluationSample) -> bool:
+            async with semaphore:
+                t0 = time.monotonic()
+                result: RolloutResult | None = None
+                try:
+                    result = await actual_runner(sample)
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.error(f"Rollout failed for sample {sample.id}: {exc}", exc_info=True)
+                elapsed = time.monotonic() - t0
+                updated = self.submit_result(
+                    sample_id=sample.id,
+                    response=result.response if result else "",
+                    trajectory_json=result.trajectory_json if result else None,
+                    time_cost=result.time_cost if result else elapsed,
+                    trace_id=result.trace_id if result else None,
+                )
+                await judge_queue.put(updated)
+                return result is not None and bool(result.response)
+
+        async def _judge_one_bounded(sample: EvaluationSample) -> None:
+            async with judge_semaphore:
+                try:
+                    result = await self.judge_one(sample)
+                    judged_samples.append(result)
+                    if on_judge:
+                        on_judge(result, judged_samples)
+                except Exception as e:  # pylint: disable=broad-except
+                    logger.error(f"Judge failed for sample {sample.id}: {e}", exc_info=True)
+
+        pending_judge_tasks: list[asyncio.Task] = []
+
+        async def _judge_consumer() -> None:
+            while True:
+                sample = await judge_queue.get()
+                if sample is None:
+                    break
+                task = asyncio.create_task(_judge_one_bounded(sample))
+                pending_judge_tasks.append(task)
+            # Wait for all remaining judge tasks to finish
+            if pending_judge_tasks:
+                await asyncio.gather(*pending_judge_tasks, return_exceptions=True)
+
+        # Start judge consumer in background
+        consumer_task = asyncio.create_task(_judge_consumer())
+
+        # Run rollouts
+        rollout_tasks = [_bounded(s) for s in samples]
+        for coro in asyncio.as_completed(rollout_tasks):
+            success = await coro
+            if success:
+                ok_count += 1
+            else:
+                fail_count += 1
+
+        # Signal judge consumer to stop and wait for all judge tasks
+        await judge_queue.put(None)
+        await consumer_task
+
+        logger.info(
+            f"Rollout+judge complete: {ok_count} ok / {fail_count} failed, "
+            f"{len(judged_samples)} judged."
+        )
+        return ok_count, fail_count, judged_samples
+
     async def judge(self, stage: Literal["init", "rollout", "judged"] | None = "rollout") -> list[EvaluationSample]:
         """Judge samples.
 

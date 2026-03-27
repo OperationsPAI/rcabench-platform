@@ -239,8 +239,8 @@ async def _run_with_agent(
     console.print("[bold]Phase 1:[/] preprocess")
     benchmark.preprocess()
 
-    # 7. Rollout with on_event
-    console.print("[bold]Phase 2:[/] rollout")
+    # 7. Rollout + Judge (incremental)
+    console.print("[bold]Phase 2:[/] rollout + judge (incremental)")
     ok_count, fail_count = 0, 0
 
     def on_event(sample_id: str, event: dict) -> None:
@@ -295,20 +295,51 @@ async def _run_with_agent(
     if max_steps is not None:
         rollout_kwargs["max_steps"] = max_steps
 
+    # Count total samples for incremental stat display
+    _init_samples = benchmark.dataset.get_samples(
+        stage="init",
+        agent_type=benchmark.agent_type,
+        model_name=benchmark.model_name,
+        tags=benchmark.tags,
+    )
+    _total_samples = len(_init_samples[: config.max_samples] if config.max_samples else _init_samples)
+
+    _judge_stats: dict[str, Any] = {"correct": 0, "incorrect": 0, "rc_f1_sum": 0.0, "rc_f1_count": 0}
+
+    def on_judge(sample: Any, all_judged: list[Any]) -> None:
+        if sample.correct is True:
+            _judge_stats["correct"] += 1
+        elif sample.correct is False:
+            _judge_stats["incorrect"] += 1
+        if isinstance(sample.meta, dict) and "graph_metrics" in sample.meta:
+            primary = sample.meta["graph_metrics"].get("primary", {})
+            _judge_stats["rc_f1_sum"] += primary.get("root_cause_f1", 0.0)
+            _judge_stats["rc_f1_count"] += 1
+        total = len(all_judged)
+        correct = _judge_stats["correct"]
+        judged = correct + _judge_stats["incorrect"]
+        accuracy = (correct / judged * 100) if judged > 0 else 0.0
+        parts = [
+            f"[cyan]STAT[/] {total}/{_total_samples} judged",
+            f"Accuracy: {accuracy:.1f}% ({correct}/{judged})",
+        ]
+        if _judge_stats["rc_f1_count"] > 0:
+            avg_rc_f1 = _judge_stats["rc_f1_sum"] / _judge_stats["rc_f1_count"]
+            parts.append(f"RC_F1: {avg_rc_f1:.3f}")
+        console.print("  " + " | ".join(parts))
+
     try:
-        ok_count, fail_count = await benchmark.rollout(
+        ok_count, fail_count, _judged = await benchmark.rollout_and_judge(
             agent,
             max_samples=config.max_samples,
             on_event=on_event,
+            on_judge=on_judge,
             **rollout_kwargs,
         )
         console.print(f"  [green]{ok_count} ok[/] / [red]{fail_count} failed[/]")
 
-        # 8. Judge + stat
-        console.print("[bold]Phase 3:[/] judge")
-        await benchmark.judge()
-
-        console.print("[bold]Phase 4:[/] stat")
+        # 8. Stat
+        console.print("[bold]Phase 3:[/] stat")
         await benchmark.stat()
 
         # 9. Notify completion
