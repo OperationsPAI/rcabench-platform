@@ -261,11 +261,23 @@ class RCABenchProcesser(BaseMatchProcesser):
             print(f"  Score with Bonus: {score_with_bonus:.2f}")
             print("=" * 80 + "\n")
 
+        # Enrich reasoning with fault injection context
+        base_reasoning = evaluation_details.get("reasoning") or ""
+        injection = self._load_injection_json(data)
+        if injection:
+            injection_context = self._format_injection_context(injection)
+            if injection_context:
+                reasoning_str = f"{base_reasoning} | Injection: {injection_context}"
+            else:
+                reasoning_str = base_reasoning
+        else:
+            reasoning_str = base_reasoning
+
         data.update(
             judged_response=None,
             correct=evaluation_details.get("correct", False),
             confidence=score_with_bonus,
-            reasoning=evaluation_details.get("reasoning", None),
+            reasoning=reasoning_str or None,
             extracted_final_answer=None,
             meta=meta,
         )
@@ -494,6 +506,29 @@ class RCABenchProcesser(BaseMatchProcesser):
         except Exception:
             return None
 
+    def _load_injection_json(self, sample: EvaluationSample) -> dict[str, Any] | None:
+        """Load injection.json for a sample.
+
+        Args:
+            sample: The evaluation sample containing meta with path
+
+        Returns:
+            Parsed injection dict, or None if unavailable
+        """
+        if not sample.meta or "path" not in sample.meta:
+            return None
+
+        injection_path = Path(sample.meta["path"]) / "injection.json"
+
+        if not injection_path.exists():
+            return None
+
+        try:
+            with open(injection_path) as f:
+                return json.load(f)
+        except Exception:
+            return None
+
     def _load_gt_root_cause_services(self, sample: EvaluationSample) -> set[str] | None:
         """Load ground truth root cause services from injection.json.
 
@@ -506,21 +541,75 @@ class RCABenchProcesser(BaseMatchProcesser):
         Returns:
             Set of root cause service names, or None if unavailable
         """
-        if not sample.meta or "path" not in sample.meta:
+        injection = self._load_injection_json(sample)
+        if not injection:
             return None
+        services = injection.get("ground_truth", {}).get("service", [])
+        return set(services) if services else None
 
-        injection_path = Path(sample.meta["path"]) / "injection.json"
+    @staticmethod
+    def _format_injection_context(injection: dict[str, Any]) -> str:
+        """Format injection.json into a human-readable fault context string.
 
-        if not injection_path.exists():
-            return None
+        Extracts fault type, injection target, duration, and ground truth
+        to help downstream analysis understand what was injected.
+        """
+        parts: list[str] = []
 
-        try:
-            with open(injection_path) as f:
-                injection = json.load(f)
-            services = injection.get("ground_truth", {}).get("service", [])
-            return set(services) if services else None
-        except Exception:
-            return None
+        # Fault type
+        fault_type = injection.get("fault_type")
+        if fault_type is not None:
+            parts.append(f"Fault type: {fault_type}")
+
+        # Parse display_config for injection point details
+        display_config_raw = injection.get("display_config")
+        if display_config_raw:
+            try:
+                dc = json.loads(display_config_raw) if isinstance(display_config_raw, str) else display_config_raw
+                ip = dc.get("injection_point", {})
+                if ip:
+                    target_parts = []
+                    if ip.get("app_name"):
+                        target_parts.append(f"service={ip['app_name']}")
+                    if ip.get("class_name"):
+                        target_parts.append(f"class={ip['class_name']}")
+                    if ip.get("method_name"):
+                        target_parts.append(f"method={ip['method_name']}")
+                    if target_parts:
+                        parts.append(f"Injection target: {', '.join(target_parts)}")
+                duration = dc.get("duration")
+                if duration:
+                    parts.append(f"Duration: {duration} min")
+                mem_type = dc.get("mem_type")
+                if mem_type is not None:
+                    label = "Heap" if mem_type == 1 else "Stack" if mem_type == 2 else str(mem_type)
+                    parts.append(f"Memory type: {label}")
+                namespace = dc.get("namespace")
+                if namespace:
+                    parts.append(f"Namespace: {namespace}")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Ground truth summary
+        gt = injection.get("ground_truth", {})
+        if gt:
+            gt_parts = []
+            if gt.get("service"):
+                gt_parts.append(f"service={gt['service']}")
+            if gt.get("function"):
+                gt_parts.append(f"function={gt['function']}")
+            if gt.get("metric"):
+                gt_parts.append(f"metric={gt['metric']}")
+            if gt_parts:
+                parts.append(f"Ground truth: {', '.join(gt_parts)}")
+
+        # Time window
+        start = injection.get("start_time")
+        end = injection.get("end_time")
+        if start and end:
+            parts.append(f"Time window: {start} ~ {end}")
+
+        return "; ".join(parts) if parts else ""
 
     def calculate_metrics(self, samples: list[EvaluationSample]) -> dict:
         """Calculate metrics from the judged data."""
