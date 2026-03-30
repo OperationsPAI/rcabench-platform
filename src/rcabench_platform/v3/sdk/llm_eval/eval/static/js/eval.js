@@ -190,8 +190,6 @@ function buildEventTree(events) {
     const lastAgent = agentPath[agentPath.length - 1] || '';
     const data = ev.data || {};
 
-    if (eventType === 'llm_start') continue;
-
     // task_complete / task_fail / task_abort update group status
     if (eventType === 'task_complete' || eventType === 'task_fail' || eventType === 'task_abort') {
       const agentId = data.agent_id || lastAgent;
@@ -241,6 +239,7 @@ function EventRow({ ev, index }) {
   let detail = eventType;
 
   switch (eventType) {
+    case 'llm_start': icon = '\u25B7'; color = C.blue || '#6cb6ff'; detail = `LLM call (${data.new_message_count || 0} new msgs)`; break;
     case 'tool_call': icon = '\u2192'; color = C.yellow; detail = data.tool_name || 'tool'; break;
     case 'tool_result': icon = '\u2190'; color = C.green; detail = `${data.tool_name || 'tool'}: ${(typeof data.result === 'string' ? data.result : '').slice(0, 80)}`; break;
     case 'llm_end': icon = '\u25C7'; color = C.purple; detail = (data.content || '').slice(0, 80) || `${(data.tool_calls || []).length} tool call(s)`; break;
@@ -278,7 +277,7 @@ function AgentEventGroup({ group, colorIndex }) {
     : group.status === 'failed' ? C.red
     : group.status === 'aborted' ? C.yellow
     : C.teal;
-  const visibleChildren = group.children.filter(e => e.event_type !== 'llm_start');
+  const visibleChildren = group.children;
   const eventCount = visibleChildren.length;
 
   return (
@@ -524,7 +523,7 @@ function EvalSampleDetail({ sampleId, onClose }) {
   }
 
   const statusColor = STATUS_COLORS[info.status] || C.muted;
-  const visibleEventCount = events.filter(e => e.event_type !== 'llm_start').length;
+  const visibleEventCount = events.length;
   const agentCount = tree.agentGroups.size;
   const groundTruth = info.ground_truth || info.groundtruth;
   const normalizedRootCauseServices = [];
