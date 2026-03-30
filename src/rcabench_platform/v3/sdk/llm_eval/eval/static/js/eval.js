@@ -451,39 +451,31 @@ function EvalSampleDetail({ sampleId, onClose }) {
       .catch(() => setLoading(false));
   }, [sampleId]);
 
-  // Fetch events + poll for running samples (incremental)
+  // Load events: one-time REST fetch for history + WebSocket for real-time
   useEffect(() => {
     if (!sampleId) return;
 
-    // Track how many events we already have to request only new ones
-    let knownCount = 0;
+    // One-time REST fetch for already-buffered events (covers reconnect/refresh)
+    fetch(`/api/eval/samples/${encodeURIComponent(sampleId)}/events`)
+      .then(r => r.json())
+      .then(data => {
+        const initial = data.events || [];
+        if (initial.length > 0) setEvents(initial);
+      })
+      .catch(() => {});
 
-    function fetchEvents() {
-      const afterParam = knownCount > 0 ? `?after=${knownCount}` : '';
-      fetch(`/api/eval/samples/${encodeURIComponent(sampleId)}/events${afterParam}`)
-        .then(r => r.json())
-        .then(data => {
-          const newEvents = data.events || [];
-          if (knownCount === 0) {
-            // First fetch — full replacement
-            setEvents(newEvents);
-          } else if (newEvents.length > 0) {
-            // Incremental — append only new events
-            setEvents(prev => [...prev, ...newEvents]);
-          }
-          knownCount = data.total || (knownCount + newEvents.length);
-          // Stop polling once completed/failed/skipped
-          if (data.status && data.status !== 'running' && data.status !== 'pending') {
-            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-          }
-        })
-        .catch(() => {});
+    // WebSocket listener for real-time trajectory events
+    function handleTrajectoryEvent(e) {
+      const event = e.detail;
+      if (!event || event.channel !== 'eval') return;
+      if (event.event_type !== 'sample_trajectory_event') return;
+      if (event.sample_id !== sampleId) return;
+      const traj = event.data;
+      if (traj) setEvents(prev => [...prev, traj]);
     }
 
-    fetchEvents();
-    // Poll every 3s for running samples (was 2s; slightly relaxed for large trajectories)
-    pollRef.current = setInterval(fetchEvents, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    window.addEventListener('eval_event', handleTrajectoryEvent);
+    return () => window.removeEventListener('eval_event', handleTrajectoryEvent);
   }, [sampleId]);
 
   // Auto-scroll events
