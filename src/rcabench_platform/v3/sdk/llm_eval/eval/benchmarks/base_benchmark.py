@@ -465,6 +465,7 @@ class BaseBenchmark:
             agent_type=self.agent_type,
             model_name=self.model_name,
             tags=self.tags,
+            exclude_trajectories=True,
         )
         logger.info(f"Judging {len(samples)} samples...")
 
@@ -491,6 +492,9 @@ class BaseBenchmark:
         return results
 
     async def judge_one(self, data: EvaluationSample) -> EvaluationSample:
+        # Lazy-load trajectories if they were deferred during bulk query
+        if data.trajectories is None and data.id is not None:
+            data = self.dataset.load_with_trajectories(data)
         judger = self._get_processer(data.dataset)
         result = await judger.judge_one(data)
         result.update(stage="judged")  # update stage to judged

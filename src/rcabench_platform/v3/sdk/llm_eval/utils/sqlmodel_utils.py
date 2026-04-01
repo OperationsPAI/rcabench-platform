@@ -19,8 +19,8 @@ class SQLModelUtils:
                 raise ValueError("LLM_EVAL_DB_URL or UTU_DB_URL environment variable is not set")
             cls._engine = create_engine(
                 db_url,
-                pool_size=300,
-                max_overflow=500,
+                pool_size=10,
+                max_overflow=20,
                 pool_timeout=30,
                 pool_pre_ping=True,
             )
@@ -118,6 +118,14 @@ class SQLModelUtils:
             ("evaluation_data", "tags", "JSON"),
         ]
 
+        # Index migrations: (index_name, create_sql)
+        _t = "evaluation_data"
+        index_migrations = [
+            ("ix_eval_exp_id", f"CREATE INDEX IF NOT EXISTS ix_eval_exp_id ON {_t} (exp_id)"),
+            ("ix_eval_stage", f"CREATE INDEX IF NOT EXISTS ix_eval_stage ON {_t} (stage)"),
+            ("ix_eval_exp_stage", f"CREATE INDEX IF NOT EXISTS ix_eval_exp_stage ON {_t} (exp_id, stage)"),
+        ]
+
         with engine.connect() as conn:
             for table_name, column_name, column_type in migrations:
                 if not SQLModelUtils._column_exists(conn, table_name, column_name):
@@ -127,6 +135,15 @@ class SQLModelUtils:
                         logger.info(f"Migration: Added column '{column_name}' to table '{table_name}'")
                     except Exception as e:
                         logger.debug(f"Migration skipped for {table_name}.{column_name}: {e}")
+
+            # Create indexes if they don't exist
+            for index_name, create_sql in index_migrations:
+                try:
+                    conn.execute(text(create_sql))
+                    conn.commit()
+                    logger.info(f"Migration: Ensured index '{index_name}'")
+                except Exception as e:
+                    logger.debug(f"Index migration skipped for {index_name}: {e}")
 
     @staticmethod
     def _column_exists(conn, table_name: str, column_name: str) -> bool:

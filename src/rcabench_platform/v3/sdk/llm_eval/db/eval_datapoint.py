@@ -57,10 +57,10 @@ class EvaluationSample(EvalBaseModel, SQLModel, table=True):
     correct: bool | None = Field(default=None)
     confidence: float | None = Field(default=None)
     # id
-    exp_id: str = Field(default="default")
+    exp_id: str = Field(default="default", index=True)
     agent_type: str | None = Field(default=None, index=True)  # agent type: simple, orchestra, orchestrator, etc.
     model_name: str | None = Field(default=None, index=True)  # LLM model name for differentiation
-    stage: str = "init"  # Literal["init", "rollout", "judged]
+    stage: str = Field(default="init", index=True)  # Literal["init", "rollout", "judged]
 
     def model_dump(self, *args, **kwargs):
         keys = [

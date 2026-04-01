@@ -184,6 +184,18 @@ class DBDataManager(BaseDataManager):
                 session.delete(samples)
                 session.commit()
 
+    def load_with_trajectories(self, sample: EvaluationSample) -> EvaluationSample:
+        """Reload a single sample from DB with its trajectories column.
+
+        Used when trajectories were deferred during a bulk query to avoid
+        loading large JSON payloads for all rows at once.
+        """
+        with SQLModelUtils.create_session() as session:
+            full = session.get(EvaluationSample, sample.id)
+            if full is not None:
+                return full
+        return sample
+
     def _get_existing_indices(self) -> set[int]:
         """Return the set of dataset_index values already stored for this exp_id.
 
