@@ -302,12 +302,29 @@ class BaseBenchmark:
         ok_count = 0
         fail_count = 0
 
+        timeout = self.config.rollout_timeout
+
         async def _bounded(sample: EvaluationSample) -> bool:
             async with semaphore:
                 t0 = time.monotonic()
                 result: RolloutResult | None = None
                 try:
-                    result = await actual_runner(sample)
+                    coro = actual_runner(sample)
+                    if timeout is not None:
+                        result = await asyncio.wait_for(coro, timeout=timeout)
+                    else:
+                        result = await coro
+                except asyncio.TimeoutError:
+                    elapsed = time.monotonic() - t0
+                    logger.warning(
+                        f"Rollout timed out for sample {sample.id} after {elapsed:.1f}s (limit={timeout}s), skipping."
+                    )
+                    self.submit_result(
+                        sample_id=sample.id,
+                        response="",
+                        time_cost=elapsed,
+                    )
+                    return False
                 except Exception as exc:  # pylint: disable=broad-except
                     logger.error(f"Rollout failed for sample {sample.id}: {exc}", exc_info=True)
                 elapsed = time.monotonic() - t0
@@ -389,13 +406,30 @@ class BaseBenchmark:
         judged_samples: list[EvaluationSample] = []
         ok_count = 0
         fail_count = 0
+        timeout = self.config.rollout_timeout
 
         async def _bounded(sample: EvaluationSample) -> bool:
             async with semaphore:
                 t0 = time.monotonic()
                 result: RolloutResult | None = None
                 try:
-                    result = await actual_runner(sample)
+                    coro = actual_runner(sample)
+                    if timeout is not None:
+                        result = await asyncio.wait_for(coro, timeout=timeout)
+                    else:
+                        result = await coro
+                except asyncio.TimeoutError:
+                    elapsed = time.monotonic() - t0
+                    logger.warning(
+                        f"Rollout timed out for sample {sample.id} after {elapsed:.1f}s (limit={timeout}s), skipping."
+                    )
+                    updated = self.submit_result(
+                        sample_id=sample.id,
+                        response="",
+                        time_cost=elapsed,
+                    )
+                    await judge_queue.put(updated)
+                    return False
                 except Exception as exc:  # pylint: disable=broad-except
                     logger.error(f"Rollout failed for sample {sample.id}: {exc}", exc_info=True)
                 elapsed = time.monotonic() - t0

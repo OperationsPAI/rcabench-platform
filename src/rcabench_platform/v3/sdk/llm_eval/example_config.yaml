@@ -16,6 +16,7 @@ data:
 
 concurrency: 10
 judge_concurrency: 5
+# rollout_timeout: 600  # per-sample timeout in seconds (None = no limit)
 
 judge_model:
   model_provider:

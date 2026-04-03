@@ -47,6 +47,8 @@ class EvalConfig(ConfigBaseModel):
     """Model name label for tracking"""
     concurrency: int = 1
     """Rollout parallelism"""
+    rollout_timeout: float | None = None
+    """Per-sample rollout timeout in seconds. Samples exceeding this limit are skipped. None = no timeout."""
     max_samples: int | None = None
     """Maximum number of samples to rollout (None = all)"""
     source_path: str | None = None
