@@ -160,17 +160,26 @@ class DBDataManager(BaseDataManager):
             return samples
 
     def save(self, samples: list[EvaluationSample] | EvaluationSample | None = None, **kwargs: Any) -> None:
-        """Update or add sample(s) to db."""
+        """Update or add sample(s) to db.
+
+        After commit, all objects are refreshed so that their attributes
+        remain accessible even after the session closes. Without this,
+        accessing lazy-loaded or expired attributes on the detached
+        objects raises ``DetachedInstanceError``.
+        """
         if samples is None:
             return
         if isinstance(samples, list):
             with SQLModelUtils.create_session() as session:
                 session.add_all(samples)
                 session.commit()
+                for s in samples:
+                    session.refresh(s)
         else:
             with SQLModelUtils.create_session() as session:
                 session.add(samples)
                 session.commit()
+                session.refresh(samples)
 
     def delete_samples(self, samples: list[EvaluationSample] | EvaluationSample) -> None:
         """Delete sample(s) from db."""
@@ -189,10 +198,14 @@ class DBDataManager(BaseDataManager):
 
         Used when trajectories were deferred during a bulk query to avoid
         loading large JSON payloads for all rows at once.
+
+        The returned object is refreshed before the session closes so
+        that all attributes are eagerly loaded and accessible after detach.
         """
         with SQLModelUtils.create_session() as session:
             full = session.get(EvaluationSample, sample.id)
             if full is not None:
+                session.refresh(full)
                 return full
         return sample
 

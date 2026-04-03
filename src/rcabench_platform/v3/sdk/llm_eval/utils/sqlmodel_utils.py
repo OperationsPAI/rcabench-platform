@@ -33,7 +33,7 @@ class SQLModelUtils:
 
     @staticmethod
     def create_session():
-        return Session(SQLModelUtils.get_engine())
+        return Session(SQLModelUtils.get_engine(), expire_on_commit=False)
 
     @classmethod
     def check_db_available(cls, force_check: bool = False, cache_ttl: int = 60) -> bool:

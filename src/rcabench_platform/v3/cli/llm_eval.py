@@ -308,14 +308,17 @@ async def _run_with_agent(
     _judge_stats: dict[str, Any] = {"correct": 0, "incorrect": 0, "rc_f1_sum": 0.0, "rc_f1_count": 0}
 
     def on_judge(sample: Any, all_judged: list[Any]) -> None:
-        if sample.correct is True:
-            _judge_stats["correct"] += 1
-        elif sample.correct is False:
-            _judge_stats["incorrect"] += 1
-        if isinstance(sample.meta, dict) and "graph_metrics" in sample.meta:
-            primary = sample.meta["graph_metrics"].get("primary", {})
-            _judge_stats["rc_f1_sum"] += primary.get("root_cause_f1", 0.0)
-            _judge_stats["rc_f1_count"] += 1
+        try:
+            if sample.correct is True:
+                _judge_stats["correct"] += 1
+            elif sample.correct is False:
+                _judge_stats["incorrect"] += 1
+            if isinstance(sample.meta, dict) and "graph_metrics" in sample.meta:
+                primary = sample.meta["graph_metrics"].get("primary", {})
+                _judge_stats["rc_f1_sum"] += primary.get("root_cause_f1", 0.0)
+                _judge_stats["rc_f1_count"] += 1
+        except Exception as exc:
+            console.print(f"  [yellow]WARN[/] on_judge stat failed for sample {getattr(sample, 'id', '?')}: {exc}")
         total = len(all_judged)
         correct = _judge_stats["correct"]
         judged = correct + _judge_stats["incorrect"]

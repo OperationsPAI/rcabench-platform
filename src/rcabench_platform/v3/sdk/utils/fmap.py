@@ -94,7 +94,7 @@ def _fmap(
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-        with pool:
+        try:
             asyncs = [pool.apply_async(task) for task in tasks]
             finished = [False] * len(asyncs)
             index_results: list[tuple[int, R]] = []
@@ -125,6 +125,14 @@ def _fmap(
                                 raise e
                     pbar.update(0)
                     time.sleep(1)
+        finally:
+            # Graceful shutdown: close() stops accepting new tasks, then
+            # join() waits for workers to finish. This properly releases
+            # OS-level semaphores that the spawn-context Pool creates.
+            # The previous `with pool:` only called terminate()+join()
+            # which can leave semaphores leaked on abrupt exit.
+            pool.close()
+            pool.join()
 
         index_results.sort(key=lambda x: x[0])
         results = [result for _, result in index_results]

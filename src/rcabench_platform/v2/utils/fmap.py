@@ -94,7 +94,7 @@ def _fmap(
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-        with pool:
+        try:
             asyncs = [pool.apply_async(task) for task in tasks]
             finished = [False] * len(asyncs)
             index_results: list[tuple[int, R]] = []
@@ -125,6 +125,9 @@ def _fmap(
                                 raise e
                     pbar.update(0)
                     time.sleep(1)
+        finally:
+            pool.close()
+            pool.join()
 
         index_results.sort(key=lambda x: x[0])
         results = [result for _, result in index_results]
