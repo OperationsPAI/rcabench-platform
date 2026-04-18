@@ -230,18 +230,35 @@ def query_trace_id_ts(save_path: Path, namespace: str, start_time: str, end_time
 
 @timeit()
 def query_injection(base_url: str, name: str):
-    from rcabench.openapi import InjectionsApi, SearchInjectionReq
+    # NOTE: We intentionally bypass the generated `rcabench` OpenAPI client here.
+    # The backend returns `engine_config` as a structured dict (e.g.
+    # {"system": ..., "chaos_type": ..., "target_service": ..., ...}), but the
+    # installed rcabench 1.1.51 SDK's `InjectionDetailResp` pydantic model types
+    # `engine_config` as `list`, so validation explodes and this function
+    # silently returned None — preventing `injection.json` from being written
+    # and failing downstream datapack validation.
+    #
+    # The proper fix is to regenerate the OpenAPI client (just swag-init +
+    # just generate-python-sdk + publish), which is too invasive for this
+    # hotfix. Using raw requests + RCABENCH_TOKEN is the scoped workaround.
+    import requests
+
+    token = os.environ.get("RCABENCH_TOKEN", "")
+    url = f"{base_url.rstrip('/')}/api/v2/injections/search"
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     try:
-        client = get_rcabench_client(base_url=base_url)
-        api = InjectionsApi(client)
-        search_req = SearchInjectionReq(name_pattern=name)
-        resp = api.search_injections(search=search_req)
-        if resp.data and resp.data.items and len(resp.data.items) == 1:
-            item = resp.data.items[0]
-            if item.name == name and item.id is not None:
+        resp = requests.post(url, json={"name_pattern": name}, headers=headers, timeout=30)
+        resp.raise_for_status()
+        payload = resp.json()
+        data = payload.get("data") or {}
+        items = data.get("items") or []
+        for item in items:
+            if item.get("name") == name and item.get("id") is not None:
                 return item
-            return None
+        return None
     except Exception:
         traceback.print_exc()
         logger.error(f"Failed to query injection details: {name}")
@@ -348,7 +365,7 @@ def run():
 
         injection = query_injection(base_url, output_path.name)
         if injection:
-            save_json(injection.model_dump(), path=tempdir / "injection.json")
+            save_json(injection, path=tempdir / "injection.json")
 
         kube_info = query_kube_info(namespace)
         if kube_info:
